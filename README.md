@@ -39,7 +39,7 @@ private values. No value in it gives access to the server.
 5. In Gandi LiveDNS, set the records of the next section.
 6. When `dig +short teoyujie.org` shows the new address:
    `ssh -t ADMIN_USER@10.8.0.1 'doas acme-client -v teoyujie.org && doas rcctl reload httpd && doas rcctl restart smtpd'`
-7. Deploy the site and the app pages from their repos.
+7. Deploy the site from its repo. The site repo also has the app pages.
 8. Test on the server: `ssh -t ADMIN_USER@10.8.0.1 doas sh server/test.sh`.
    Test from outside that the server is not an open relay. Expect 550:
    `python3 -c 'import smtplib; s=smtplib.SMTP("teoyujie.org"); s.ehlo(); s.mail("a@example.org"); print(s.rcpt("a@example.net"))'`

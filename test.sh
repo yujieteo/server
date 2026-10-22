@@ -30,19 +30,19 @@ t "jobs in crontab" "crontab -l | grep -q health-check"
 if [ -n "${1:-}" ]; then
 	k="ssh -i $1 -o StrictHostKeyChecking=accept-new -o BatchMode=yes deploy@127.0.0.1"
 	p=$(mktemp -d)
-	mkdir -p "$p/play/beamdiag"
-	for f in index.html play/beamdiag/index.html privacy.html support.html; do echo test > "$p/$f"; done
-	t "deploy: site" "tar -czf - -C $p index.html play | $k site"
-	t "deploy: lullapixie" "tar -czf - -C $p privacy.html support.html | $k apps/lullapixie"
-	t "deploy: marklove" "tar -czf - -C $p privacy.html support.html | $k apps/marklove"
-	t "deploy: old files go away" "touch /var/www/web/site/old.html && tar -czf - -C $p index.html play | $k site && [ ! -e /var/www/web/site/old.html ]"
+	mkdir -p "$p/play/beamdiag" "$p/lullapixie" "$p/marklove"
+	for f in index.html play/beamdiag/index.html lullapixie/privacy.html lullapixie/support.html \
+		marklove/privacy.html marklove/support.html; do echo test > "$p/$f"; done
+	t "deploy: site" "tar -czf - -C $p index.html play lullapixie marklove | $k site"
+	t "deploy: app" "tar -czf - -C $p index.html | $k apps/test"
+	t "deploy: old files go away" "touch /var/www/web/site/old.html && tar -czf - -C $p index.html play lullapixie marklove | $k site && [ ! -e /var/www/web/site/old.html ]"
 	t "deploy: no shell" "! $k sh </dev/null"
 	t "deploy: no other folder" "! $k apps/../x </dev/null"
 	rm -rf "$p"
 fi
 
 for u in / /lullapixie/privacy.html /lullapixie/support.html /marklove/privacy.html /marklove/support.html \
-	/play/beamdiag/ /.well-known/security.txt /contact.gpg; do
+	/play/beamdiag/ /.well-known/security.txt /contact.gpg /.well-known/openpgpkey/hu/dj3498u4hyyarh35rkjfnghbjxug6b19; do
 	t "web: $u" "[ \"\$(web 443 teoyujie.org $u)\" = '200 ' ]"
 done
 t "web: old URL is 404" "[ \"\$(web 443 teoyujie.org /old.html)\" = '404 ' ]"
