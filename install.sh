@@ -24,7 +24,7 @@ if grep -q "^$ADMIN_USER:\*:" /etc/master.passwd; then
 	if [ -t 0 ]; then passwd "$ADMIN_USER"; else echo "Set the doas password: passwd $ADMIN_USER"; fi
 fi
 install -d -o "$ADMIN_USER" -m 700 /home/"$ADMIN_USER"/.ssh
-echo "from=\"10.8.0.0/24,127.0.0.1\" $ADMIN_KEY" > /home/"$ADMIN_USER"/.ssh/authorized_keys
+printf '%s\n' "$ADMIN_KEY" | sed '/^[[:space:]]*$/d; s#^[[:space:]]*#from="10.8.0.0/24,127.0.0.1" #' > /home/"$ADMIN_USER"/.ssh/authorized_keys
 chown "$ADMIN_USER" /home/"$ADMIN_USER"/.ssh/authorized_keys
 install -d -m 755 /home/deploy/.ssh
 echo "from=\"10.8.0.0/24,127.0.0.1\",restrict,command=\"/usr/local/sbin/deploy-only\" $DEPLOY_KEY" > /home/deploy/.ssh/authorized_keys

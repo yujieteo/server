@@ -25,6 +25,7 @@ t "configs: pf" "pfctl -nf /etc/pf.conf"
 t "services run" "rcctl check httpd smtpd unbound sshd cron"
 t "sshd: no root login" "sshd -T | grep -qix 'permitrootlogin no'"
 t "sshd: keys only" "sshd -T | grep -qix 'authenticationmethods publickey'"
+t "admin keys: VPN only" "! grep -qv '^from=\"10.8.0.0/24,127.0.0.1\" ssh-' /home/$ADMIN_USER/.ssh/authorized_keys"
 t "jobs in crontab" "crontab -l | grep -q health-check"
 
 if [ -n "${1:-}" ]; then
