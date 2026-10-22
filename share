@@ -1,0 +1,9 @@
+#!/bin/sh
+# Run on the Mac: ./share FILE. It copies FILE to the server and prints a link to it.
+# The link has 128 random bits. cron deletes it after 30 days. To delete it sooner:
+#   ssh yujie@10.8.0.1 rm -r /var/www/files/f/HEX
+set -eu
+n=$(basename "$1" | tr -c 'A-Za-z0-9._\n-' _)
+d=$(openssl rand -hex 16)
+ssh yujie@10.8.0.1 "mkdir /var/www/files/f/$d && cat > /var/www/files/f/$d/$n" < "$1"
+echo "https://teoyujie.org/f/$d/$n"

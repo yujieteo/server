@@ -1,0 +1,17 @@
+#!/bin/sh
+# Forced command of the user deploy (see its authorized_keys). The only use is:
+#   tar -czf - -C public . | ssh deploy@10.8.0.1 site        (or apps/NAME)
+# It puts the archive in place of that folder in /var/www/web. Files not in the archive go away.
+# OpenBSD tar removes "/" and "../" from names and does not write through symlinks.
+set -eu
+f=${SSH_ORIGINAL_COMMAND:-}
+case $f in site|apps/*) ;; *) echo "deploy: use 'site' or 'apps/NAME'" >&2; exit 1 ;; esac
+case ${f#apps/} in ""|*[!a-z0-9-]*) echo "deploy: bad name" >&2; exit 1 ;; esac
+cd /var/www/web
+rm -rf "$f.new" "$f.old"
+mkdir "$f.new"
+tar -xzf - -C "$f.new"
+chmod -R u+w,go=rX "$f.new"
+[ ! -d "$f" ] || mv "$f" "$f.old"
+mv "$f.new" "$f"
+rm -rf "$f.old"

@@ -1,0 +1,4 @@
+#!/bin/sh
+# Stop a commit that has a secret in it. Turn the hook on once: git config core.hooksPath .githooks
+# It needs gitleaks 8.30.1 (the CI version). Without gitleaks, no commit is possible.
+exec gitleaks git --pre-commit --staged --redact --no-banner
