@@ -1,0 +1,55 @@
+#!/bin/sh
+# Daily check. It prints 1 line for each problem and nothing when all is well.
+# cron mails the output to root, and root goes to contact@teoyujie.org.
+d=teoyujie.org
+ip4=$(ifconfig egress | awk '$1 == "inet" { print $2 }')
+ip6=$(ifconfig egress | awk '$1 == "inet6" && $2 !~ /^fe80/ { print $2 }')
+# soon DATE: true when DATE (YYYY-MM-DD) is less than 30 days away.
+soon() { [ $(($(date -j -f %Y-%m-%d "$1" +%s) - $(date +%s))) -lt 2592000 ]; }
+
+# Disk, daemons, patches, certificate.
+df -kl | awk 'NR > 1 && $5 + 0 > 85 { print "disk " $6 " is " $5 " full" }'
+rcctl ls failed | sed 's/^/not running: /'
+syspatch -c 2>&1 | sed 's/^/patch not installed: /'
+openssl x509 -checkend 1209600 -noout -in /etc/ssl/$d.fullchain.pem >/dev/null ||
+	echo "the certificate ends in less than 14 days"
+
+# Domain expiry, from the RDAP server of the .org registry.
+end=$(ftp -MVo - https://rdap.publicinterestregistry.org/rdap/domain/$d | tr -d ' \t\n' |
+	sed -n 's/.*"eventAction":"expiration","eventDate":"\([0-9-]*\)T.*/\1/p')
+if [ -z "$end" ]; then
+	echo "domain expiry: no answer from RDAP"
+elif soon "$end"; then
+	echo "the domain ends on $end: renew it at Gandi"
+fi
+
+e=$(sed -n 's/^Expires: \([0-9-]*\)T.*/\1/p' /var/www/htdocs/server/.well-known/security.txt)
+soon "$e" && echo "security.txt ends on $e: change Expires in the server repo and run apply"
+
+# DNS, from a public resolver (Quad9), so that a change at the registrar shows.
+q() { dig +short @9.9.9.9 $d "$1" | sort | tr '\n' ' '; }
+[ "$(q NS)" = "ns-126-c.gandi.net. ns-130-a.gandi.net. ns-225-b.gandi.net. " ] || echo "NS is now: $(q NS)"
+[ "$(q MX)" = "10 $d. " ] || echo "MX is now: $(q MX)"
+[ "$(q A)" = "$ip4 " ] || echo "A is now: $(q A)"
+[ -n "$(q AAAA)" ] || echo "AAAA is now empty"
+for a in $(q AAAA); do echo "$ip6" | grep -qx "$a" || echo "AAAA is now: $a"; done
+
+# Spamhaus ZEN. Spamhaus refuses queries from public resolvers, so ask the local unbound.
+r=$(dig +short @127.0.0.1 "$(echo "$ip4" | awk -F. '{ print $4 "." $3 "." $2 "." $1 }')".zen.spamhaus.org)
+case $r in
+"") ;;
+127.255.255.*) echo "Spamhaus refused the query: $r" ;;
+*) echo "$ip4 is on Spamhaus ZEN: $r" ;;
+esac
+
+# Certificate Transparency: a new certificate for the domain with a key that this server did not make.
+# Cert Spotter gives the issuances after the last one seen. The first run only stores the last one.
+s=/var/db/ct-last-id
+key=$(openssl pkey -in /etc/ssl/private/$d.key -pubout -outform DER | sha256)
+last=$(cat $s 2>/dev/null)
+ftp -MVo - "https://api.certspotter.com/v1/issuances?domain=$d&include_subdomains=true${last:+&after=$last}" |
+	tr -d ' \t"[]{}\n' | tr ',' '\n' | awk -F: -v key="$key" -v s="$s" -v new="${last:+yes}" '
+	$1 == "id" { id = $2 }
+	$1 == "cert_sha256" { cert = $2 }
+	$1 == "pubkey_sha256" && $2 != key && new { print "certificate not made by this server: https://crt.sh/?q=" cert }
+	END { if (id) print id > s }'

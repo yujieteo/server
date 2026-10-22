@@ -1,0 +1,5 @@
+# teoyujie.org SSH server: keys only, no root. Check: sshd -t
+PermitRootLogin no
+AuthenticationMethods publickey
+AuthorizedKeysFile .ssh/authorized_keys
+Subsystem sftp /usr/libexec/sftp-server

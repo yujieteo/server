@@ -1,0 +1,14 @@
+#!/bin/sh
+# Weekly: make the unbound blocklist from the StevenBlack hosts list (ads, trackers, malware).
+# Only domain names go in, each as "always_nxdomain", so the list can block a name but never
+# send it to another address.
+set -eu
+d=/var/unbound/etc
+ftp -MVo $d/hosts.new https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts
+awk '$1 == "0.0.0.0" && $2 ~ /^[a-z0-9_-]+(\.[a-z0-9_-]+)*\.[a-z]+$/ { print "local-zone: \"" $2 ".\" always_nxdomain" }' \
+	$d/hosts.new | sort -u > $d/blocklist.new
+rm $d/hosts.new
+# A short list means a bad download: keep the old list.
+[ "$(wc -l < $d/blocklist.new)" -gt 10000 ] || { echo "blocklist too short, not changed"; exit 1; }
+mv $d/blocklist.new $d/blocklist.conf
+unbound-control -q reload

@@ -1,0 +1,8 @@
+# teoyujie.org jobs. install.sh adds these lines to the crontab of root. Times are UTC.
+# cron mails any output to root, and root goes to contact@teoyujie.org.
+# 20:30 UTC is 04:30 in Singapore. syspatch exits 0 only when it installed a patch.
+30	20	*	*	*	syspatch >/dev/null; [ $? -eq 0 ] && shutdown -r +1
+45	20	*	*	*	/usr/local/sbin/health-check
+~	*	*	*	*	acme-client teoyujie.org && rcctl reload httpd >/dev/null && rcctl restart smtpd >/dev/null
+0	3	*	*	0	/usr/local/sbin/blocklist-update
+0	4	*	*	*	find /var/www/files/f -mindepth 1 -maxdepth 1 -mtime +30 -exec rm -rf {} +

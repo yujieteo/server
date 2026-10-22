@@ -1,0 +1,16 @@
+# gitleaks: the default rules, plus the 2 secrets that install.sh makes on the server.
+# They must never be in Git. If one is, make a new one on the server.
+[extend]
+useDefault = true
+
+[[rules]]
+id = "wireguard-private-key"
+description = "WireGuard private key (hostname.wg0 or a client config)"
+regex = '''(?i)(?:wgkey|privatekey)\s*=?\s*([A-Za-z0-9+/]{43}=)'''
+secretGroup = 1
+
+[[rules]]
+id = "smtpd-srs-key"
+description = "OpenSMTPD SRS key (/etc/mail/srs.conf)"
+regex = '''srs\s+key\s+(\S{16,})'''
+secretGroup = 1

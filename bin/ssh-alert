@@ -1,0 +1,10 @@
+#!/bin/sh
+# syslogd sends each auth message here (see /etc/syslog.conf).
+# For each SSH login from an address that is not known, mail root at once.
+while read -r line; do
+	case $line in *sshd*": Accepted "*" from "*) ;; *) continue ;; esac
+	ip=${line##* from }
+	ip=${ip%% *}
+	case $ip in @KNOWN_IPS@) continue ;; esac
+	echo "$line" | mail -s "SSH login from $ip" root
+done

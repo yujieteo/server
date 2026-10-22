@@ -1,0 +1,14 @@
+#!/bin/sh
+# Run on the Mac. Add or delete 1 mail alias in local.conf, then update the server:
+#   ./mail-alias add shop        ./mail-alias del shop
+set -eu
+cd "$(dirname "$0")"
+. ./local.conf
+case ${1:-}-${2:-} in
+add-?*) ALIASES="$ALIASES $2" ;;
+del-?*) ALIASES=$(echo " $ALIASES " | sed "s/ $2 / /") ;;
+*) echo "usage: ./mail-alias add|del NAME" >&2; exit 1 ;;
+esac
+ALIASES=$(echo $ALIASES)
+sed -i '' "s/^ALIASES=.*/ALIASES='$ALIASES'/" local.conf
+./apply "$ADMIN_USER"@10.8.0.1

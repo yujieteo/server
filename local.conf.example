@@ -1,0 +1,22 @@
+# Private values for install.sh. Copy this file to local.conf (Git ignores it) and fill it in.
+# No value here protects the server. Each value helps an attacker a little or shows private data.
+# The values below are test values: CI uses them.
+
+# Admin login: the SSH public key of the Mac.
+ADMIN_USER=admin
+ADMIN_KEY='ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIC9ZbYqMCeOXp2iU4GQvDMNw3d8V6t1sHk2Jj1sYqXvH test-admin'
+
+# Deploy login for the site and app repos. It can only replace a web folder with a tar archive.
+DEPLOY_KEY='ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFq7Jd2u0rWm0oGg0cY9lq3Q1n9d3x8vR0aYb7cS2kLm test-deploy'
+
+# contact@teoyujie.org and every alias go to this mailbox.
+FORWARD_TO=you@example.com
+
+# One mail alias for each website, separated by spaces. Each one is NAME@teoyujie.org.
+ALIASES='shop forum'
+
+# WireGuard devices: name:address:public key, separated by spaces.
+WG_PEERS='mac:10.8.0.2:LhKtpXWoWMpryX+dR8AiL21BsFczQXP0WAqAqjIBNRY= phone:10.8.0.3:MK3g2jdrlmHM+HbLiO/ZWudGiWXb41XDSrQt7YNZZSw='
+
+# SSH logins from these addresses send no alert. Shell patterns, with | between them.
+KNOWN_IPS='10.8.0.*'
