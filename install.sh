@@ -117,8 +117,9 @@ rcctl restart sshd syslogd httpd smtpd unbound >/dev/null
 
 echo "Done. WireGuard public key of the server: $(ifconfig wg0 | awk '$1 == "wgpubkey" { print $2 }')"
 # The key does not change on a restart. The restart runs detached, so it survives the SSH hangup.
+# trap '' HUP protects the job before nohup starts. The mv is in the job, so a killed job gives a restart on the next run.
 if [ -e /etc/hostname.wg0.new ]; then
-	mv /etc/hostname.wg0.new /etc/hostname.wg0
 	echo "wg0 restarts in 2 seconds. The VPN stops for some seconds."
-	nohup sh -c 'sleep 2; ifconfig wg0 destroy; sh /etc/netstart wg0' >/dev/null 2>&1 &
+	trap '' HUP
+	nohup sh -c 'sleep 2; mv /etc/hostname.wg0.new /etc/hostname.wg0; ifconfig wg0 destroy; sh /etc/netstart wg0' >/dev/null 2>&1 &
 fi
