@@ -27,7 +27,9 @@ private values. No value in it gives access to the server.
 
 1. At Vultr, deploy "OpenBSD 8.0" (plan vc2-1c-1gb, Singapore) with the SSH key of the Mac and the
    hostname `teoyujie.org`. Set the reverse DNS of the IPv4 and the IPv6 address to `teoyujie.org`.
-2. On the Mac: `cp local.conf.example local.conf`, then put in the real values.
+2. On the Mac: `cp local.conf.example local.conf`, then put in the real values. Before the first
+   apply, make the tunnels of the Mac and the iPhone in the WireGuard app (below) and put their
+   public keys in `WG_PEERS`. After the first apply, SSH works only through the VPN.
 3. `./apply root@NEW_IPV4`. It asks for the doas password of the admin and prints the WireGuard
    public key of the server. After this run, root cannot log in with SSH.
 4. Put that key in the WireGuard configs of the Mac and the iPhone (below). Turn on the tunnel,
@@ -67,7 +69,10 @@ If you change `www/.well-known/mta-sts.txt`, also change the `id` of `_mta-sts`.
 ## WireGuard clients
 
 In the WireGuard app, add an empty tunnel. The app makes the private key and shows the public
-key. Put the public key in `WG_PEERS` in `local.conf`, then run `./apply ADMIN_USER@10.8.0.1`.
+key. Put the public key in `WG_PEERS` in `local.conf`. For the first apply, that is all (step 2
+above). To add a new device later, run `./apply ADMIN_USER@10.8.0.1` from a device that is already
+on the VPN. If no device is on the VPN, log in to the Vultr web console.
+Add the key to `local.conf` in the `server` folder of the last apply, then run its `install.sh` as root.
 
 ```
 [Interface]
