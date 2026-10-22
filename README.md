@@ -33,7 +33,7 @@ private values. No value in it gives access to the server.
 3. `./apply root@NEW_IPV4`. It asks for the doas password of the admin and prints the WireGuard
    public key of the server. After this run, root cannot log in with SSH.
 4. Put that key in the WireGuard configs of the Mac and the iPhone (below). Turn on the tunnel,
-   then test: `ssh ADMIN_USER@10.8.0.1`. ADMIN_USER is the value in `local.conf`. The admin key and
+   then test: `ssh ADMIN_USER@10.8.0.1`. ADMIN_USER is the value in `local.conf`. The admin keys and
    the deploy key work only through the VPN. If the VPN breaks, log in as ADMIN_USER with the
    doas password in the Vultr web console.
 5. In Gandi LiveDNS, set the records of the next section.
