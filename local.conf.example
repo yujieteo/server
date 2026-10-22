@@ -3,7 +3,7 @@
 # The values below are test values: CI uses them.
 
 # Admin login: the SSH public key of the Mac.
-ADMIN_USER=yujie
+ADMIN_USER=admin
 ADMIN_KEY='ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIC9ZbYqMCeOXp2iU4GQvDMNw3d8V6t1sHk2Jj1sYqXvH test-admin'
 
 # Deploy login for the site and app repos. It can only replace a web folder with a tar archive.

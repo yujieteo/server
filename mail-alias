@@ -11,4 +11,4 @@ del-?*) ALIASES=$(echo " $ALIASES " | sed "s/ $2 / /") ;;
 esac
 ALIASES=$(echo $ALIASES)
 sed -i '' "s/^ALIASES=.*/ALIASES='$ALIASES'/" local.conf
-./apply yujie@10.8.0.1
+./apply "$ADMIN_USER"@10.8.0.1

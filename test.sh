@@ -56,15 +56,18 @@ t "web: file link" "[ \"\$(web 443 teoyujie.org /f/$d/a.txt)\" = '200 ' ]"
 t "web: no file list" "[ \"\$(web 443 teoyujie.org /f/)\" != '200 ' ]"
 rm -r /var/www/files/f/$d
 
-# Mail. With the values of local.conf.example, no test mail leaves the server: example.org and
-# example.com have no mail server. With the real local.conf, the mailbox gets 1 mail for each alias.
+# Mail, sent to the egress address as from the internet. With the values of local.conf.example, no
+# test mail leaves the server: example.org and example.com have no mail server. With the real
+# local.conf, the mailbox gets 1 mail for each alias.
 # The open relay test must come from outside the server: see README.md.
-m="smtp -C -s smtp://127.0.0.1 -F test@example.org"
+m="smtp -C -s smtp://$(ifconfig egress | awk '$1 == "inet" { print $2; exit }') -F test@example.org"
 msg='From: test@example.org\nSubject: test.sh\n\ntest\n'
 for a in contact postmaster $ALIASES; do
 	t "mail: $a@ is accepted" "printf '$msg' | $m $a@teoyujie.org 2>&1 | grep -q ' 250 '"
 done
-t "mail: unknown address refused" "printf '$msg' | $m nobody-$d@teoyujie.org 2>&1 | grep -q 'RCPT: 550'"
+for a in root nobody-$d; do
+	t "mail: $a@ is refused" "printf '$msg' | $m $a@teoyujie.org 2>&1 | grep -q 'RCPT: 550'"
+done
 sleep 2
 t "mail: forwarded to the mailbox" "grep -q 'to=<$FORWARD_TO> rcpt=<contact@teoyujie.org>' /var/log/maillog"
 

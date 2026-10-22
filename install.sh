@@ -16,18 +16,18 @@ put() {
 echo $d > /etc/myname
 hostname $d
 
-# Users. The admin logs in with a key and uses doas with a password. The deploy user can only
-# run deploy-only, which replaces 1 web folder with a tar archive.
+# Users. The admin logs in with a key, only through the VPN, and uses doas with a password.
+# The deploy user can only run deploy-only, which replaces 1 web folder with a tar archive.
 id "$ADMIN_USER" >/dev/null 2>&1 || useradd -m -G wheel -s /bin/ksh "$ADMIN_USER"
 id deploy >/dev/null 2>&1 || useradd -m -s /bin/sh deploy
 if grep -q "^$ADMIN_USER:\*:" /etc/master.passwd; then
 	if [ -t 0 ]; then passwd "$ADMIN_USER"; else echo "Set the doas password: passwd $ADMIN_USER"; fi
 fi
 install -d -o "$ADMIN_USER" -m 700 /home/"$ADMIN_USER"/.ssh
-echo "$ADMIN_KEY" > /home/"$ADMIN_USER"/.ssh/authorized_keys
+echo "from=\"10.8.0.0/24,127.0.0.1\" $ADMIN_KEY" > /home/"$ADMIN_USER"/.ssh/authorized_keys
 chown "$ADMIN_USER" /home/"$ADMIN_USER"/.ssh/authorized_keys
 install -d -m 755 /home/deploy/.ssh
-echo "restrict,command=\"/usr/local/sbin/deploy-only\" $DEPLOY_KEY" > /home/deploy/.ssh/authorized_keys
+echo "from=\"10.8.0.0/24,127.0.0.1\",restrict,command=\"/usr/local/sbin/deploy-only\" $DEPLOY_KEY" > /home/deploy/.ssh/authorized_keys
 
 for f in bin/*; do put "$f" /usr/local/sbin/"${f#bin/}" 755; done
 put etc/doas.conf /etc/doas.conf
@@ -52,8 +52,10 @@ if [ ! -e /etc/ssl/$d.fullchain.pem ]; then
 	openssl req -x509 -new -key /etc/ssl/private/$d.key -days 1 -subj /CN=$d -out /etc/ssl/$d.fullchain.pem
 fi
 
-# Mail. The aliases block maps root and each website alias to contact, and contact to the mailbox.
+# Mail. From the internet, only contact, postmaster and the website aliases go to the mailbox.
+# The aliases block sends the mail of this server (root) to contact, and contact to the mailbox.
 [ -e /etc/mail/srs.conf ] || (umask 077 && echo "srs key $(openssl rand -hex 32)" > /etc/mail/srs.conf)
+for a in contact postmaster $ALIASES; do echo "$a@$d $FORWARD_TO"; done > /etc/mail/virtual
 {
 	sed '/^# BEGIN teoyujie.org/,/^# END teoyujie.org/d' /etc/mail/aliases
 	echo "# BEGIN teoyujie.org (install.sh writes this block)"
@@ -101,8 +103,8 @@ touch /var/unbound/etc/blocklist.conf
 
 # Check every config, then start everything.
 sshd -t
-httpd -n 2>/dev/null
-smtpd -n 2>/dev/null
+httpd -n
+smtpd -n
 unbound-anchor || true
 unbound-checkconf >/dev/null
 acme-client -n >/dev/null

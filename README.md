@@ -31,16 +31,18 @@ private values. No value in it gives access to the server.
 3. `./apply root@NEW_IPV4`. It asks for the doas password of the admin and prints the WireGuard
    public key of the server. After this run, root cannot log in with SSH.
 4. Put that key in the WireGuard configs of the Mac and the iPhone (below). Turn on the tunnel,
-   then test: `ssh yujie@10.8.0.1`.
+   then test: `ssh ADMIN_USER@10.8.0.1`. ADMIN_USER is the value in `local.conf`. The admin key and
+   the deploy key work only through the VPN. If the VPN breaks, log in as ADMIN_USER with the
+   doas password in the Vultr web console.
 5. In Gandi LiveDNS, set the records of the next section.
 6. When `dig +short teoyujie.org` shows the new address:
-   `ssh -t yujie@10.8.0.1 'doas acme-client -v teoyujie.org && doas rcctl reload httpd && doas rcctl restart smtpd'`
+   `ssh -t ADMIN_USER@10.8.0.1 'doas acme-client -v teoyujie.org && doas rcctl reload httpd && doas rcctl restart smtpd'`
 7. Deploy the site and the app pages from their repos.
-8. Test on the server: `ssh -t yujie@10.8.0.1 doas sh server/test.sh`.
+8. Test on the server: `ssh -t ADMIN_USER@10.8.0.1 doas sh server/test.sh`.
    Test from outside that the server is not an open relay. Expect 550:
    `python3 -c 'import smtplib; s=smtplib.SMTP("teoyujie.org"); s.ehlo(); s.mail("a@example.org"); print(s.rcpt("a@example.net"))'`
 
-After a change to this repo: `./apply yujie@10.8.0.1`.
+After a change to this repo: `./apply ADMIN_USER@10.8.0.1`.
 
 ## DNS records
 
@@ -65,7 +67,7 @@ If you change `www/.well-known/mta-sts.txt`, also change the `id` of `_mta-sts`.
 ## WireGuard clients
 
 In the WireGuard app, add an empty tunnel. The app makes the private key and shows the public
-key. Put the public key in `WG_PEERS` in `local.conf`, then run `./apply yujie@10.8.0.1`.
+key. Put the public key in `WG_PEERS` in `local.conf`, then run `./apply ADMIN_USER@10.8.0.1`.
 
 ```
 [Interface]
@@ -87,9 +89,9 @@ The iPhone reaches the Mac at 10.8.0.2 (Remote Login or Screen Sharing in macOS 
 ## Upgrade to the next OpenBSD release (each 6 months)
 
 ```
-ssh -t yujie@10.8.0.1 doas sysupgrade      # downloads, reboots, upgrades: about 10 minutes
-./apply yujie@10.8.0.1                     # writes the configs of this repo again
-ssh -t yujie@10.8.0.1 doas sh server/test.sh
+ssh -t ADMIN_USER@10.8.0.1 doas sysupgrade      # downloads, reboots, upgrades: about 10 minutes
+./apply ADMIN_USER@10.8.0.1                     # writes the configs of this repo again
+ssh -t ADMIN_USER@10.8.0.1 doas sh server/test.sh
 ```
 
 After the upgrade, sysmerge mails root a list of the configs that it did not change. `apply`

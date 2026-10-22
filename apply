@@ -1,7 +1,7 @@
 #!/bin/sh
 # Run on the Mac. Copy this repo and local.conf to the server, then run install.sh there.
 #   First time:  ./apply root@NEW_IP
-#   After that:  ./apply yujie@10.8.0.1
+#   After that:  ./apply ADMIN_USER@10.8.0.1
 set -eu
 cd "$(dirname "$0")"
 host=${1:?usage: ./apply user@host}
