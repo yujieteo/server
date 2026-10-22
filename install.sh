@@ -83,11 +83,12 @@ key=$(awk '$1 == "wgkey" { print $2 }' /etc/hostname.wg0 2>/dev/null || true)
 } > /etc/hostname.wg0.new
 chmod 640 /etc/hostname.wg0.new
 # Restart wg0 only for a change, because a restart stops the VPN for some seconds.
+# The SSH session of the admin can go through wg0, so a restart of a running wg0 is the last step.
+# Until then /etc/hostname.wg0.new stays, so a failed run gives a restart on the next run.
 if cmp -s /etc/hostname.wg0.new /etc/hostname.wg0 && ifconfig wg0 >/dev/null 2>&1; then
 	rm /etc/hostname.wg0.new
-else
+elif ! ifconfig wg0 >/dev/null 2>&1; then
 	mv /etc/hostname.wg0.new /etc/hostname.wg0
-	ifconfig wg0 destroy 2>/dev/null || true
 	sh /etc/netstart wg0
 fi
 
@@ -115,3 +116,10 @@ rcctl restart sshd syslogd httpd smtpd unbound >/dev/null
 [ -s /var/unbound/etc/blocklist.conf ] || /usr/local/sbin/blocklist-update
 
 echo "Done. WireGuard public key of the server: $(ifconfig wg0 | awk '$1 == "wgpubkey" { print $2 }')"
+# The key does not change on a restart. The restart runs detached, so it survives the SSH hangup.
+# trap '' HUP protects the job before nohup starts. The mv is in the job, so a killed job gives a restart on the next run.
+if [ -e /etc/hostname.wg0.new ]; then
+	echo "wg0 restarts in 2 seconds. The VPN stops for some seconds."
+	trap '' HUP
+	nohup sh -c 'sleep 2; mv /etc/hostname.wg0.new /etc/hostname.wg0; ifconfig wg0 destroy; sh /etc/netstart wg0' >/dev/null 2>&1 &
+fi
