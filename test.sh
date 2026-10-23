@@ -69,6 +69,10 @@ done
 for a in root nobody-$d; do
 	t "mail: $a@ is refused" "printf '$msg' | $m $a@teoyujie.org 2>&1 | grep -q 'RCPT: 550'"
 done
+# Mail from the VPN, sent to 10.8.0.1. The source address is 10.8.0.1, in the VPN range.
+v="smtp -C -s smtp://10.8.0.1 -F test@example.org"
+t "mail: VPN to contact@ is accepted" "printf '$msg' | $v contact@teoyujie.org 2>&1 | grep -q ' 250 '"
+t "mail: VPN to another domain is refused" "printf '$msg' | $v test@example.net 2>&1 | grep -q 'RCPT: 550'"
 sleep 2
 t "mail: forwarded to the mailbox" "grep -q 'to=<$FORWARD_TO> rcpt=<contact@teoyujie.org>' /var/log/maillog"
 
