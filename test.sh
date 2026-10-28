@@ -223,8 +223,8 @@ cp $p/new1 $p/room1 && sed -i 's/"create"/"view"/; s/}$/,"view":"{}"}/' $p/room1
 s=; for i in $(jot 121); do s=$(fcgi 8791 $p/room1); [ $s = 200 ] || break; done
 t "rooms: 120 views and notes in a minute in a room" "[ $i = 121 ] && [ $s = 429 ]"
 sed 's/"view","/"poll","/; s/,"view":"{}"//' $p/room1 > $p/poll1
-s=; for i in $(jot 120); do s=$(fcgi 8791 $p/poll1); [ $s = 200 ] || break; done
-t "rooms: 240 requests in a minute from 1 address" "[ $i = 113 ] && [ $s = 429 ]"
+s=; for i in $(jot 480); do s=$(fcgi 8791 $p/poll1); [ $s = 200 ] || break; done
+t "rooms: 600 requests in a minute from 1 address" "[ $i = 473 ] && [ $s = 429 ]"
 kill $q1 $q2
 rm -r $p
 

@@ -6287,7 +6287,7 @@ static void handle_g(Request_g * r_g, int64_t now_g, gs_rhdr *out_g_hdr, gs_stac
         goto L93;
     }
     L93:;
-    if (!((uint8_t)((int64_t)((int64_t)(t92)) <= (int64_t)(240)))) {
+    if (!((uint8_t)((int64_t)((int64_t)(t92)) <= (int64_t)(600)))) {
         t94 = out_g;
         t95.data = ((uint8_t *)gs_str22); t95.len = 21;
         t96 = t95;
@@ -14088,7 +14088,7 @@ static void gs_init_globals(void) {
     GS_GL->WINDOW_S_g = 60;
     GS_GL->ROOM_REQUESTS_g = 600;
     GS_GL->ROOM_WRITES_g = 120;
-    GS_GL->IP_REQUESTS_g = 240;
+    GS_GL->IP_REQUESTS_g = 600;
     GS_GL->IP_CREATES_g = 6;
     GS_GL->MAX_IPS_g = 4096;
     l100_Room_g *t5 = (l100_Room_g *)GS(0 + 0)->top;

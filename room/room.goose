@@ -37,7 +37,7 @@ let AWAY_S = 15;
 let WINDOW_S = 60;
 let ROOM_REQUESTS = 600;
 let ROOM_WRITES = 120;
-let IP_REQUESTS = 240;
+let IP_REQUESTS = 600;
 let IP_CREATES = 6;
 let MAX_IPS = 4096;
 

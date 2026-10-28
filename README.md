@@ -132,7 +132,7 @@ httpd sends the requests to `neurons_room`, a Goose daemon on 127.0.0.1 port 879
   the daemon serves one request at a time, with no thread and no lock.
 - The daemon keeps the rooms in memory only. It writes no file and logs no room and no address. A room ends 3 days
   after it was made, and a restart of the daemon ends all rooms.
-- The limits: 100 rooms, 5 members and 64 notes in a room, 8,192 bytes in a request. In each minute, 240 requests
+- The limits: 100 rooms, 5 members and 64 notes in a room, 8,192 bytes in a request. In each minute, 600 requests
   from 1 address, and 600 requests or 120 views and notes in 1 room. In each hour, 6 new rooms from 1 address.
 - The daemon refuses a request that holds `sk-or-`, so an OpenRouter key cannot go into a room.
 
