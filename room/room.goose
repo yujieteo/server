@@ -19,6 +19,7 @@ extern fn room_no_sigpipe();
 extern fn room_listen(port: i32) -> i32;
 extern fn room_accept(fd: i32) -> i32;
 extern fn room_recv(fd: i32, max: i64, out: u8[>..]&) -> i64;
+extern fn room_client_key(ip: const u8[:], out: u8[>..]&);
 extern fn room_send(fd: i32, data: const u8[:]) -> bool;
 extern fn room_close(fd: i32);
 extern fn room_sandbox() -> bool;
@@ -56,7 +57,8 @@ struct Room {
     members: Member[..5],
     notes: Note[..64],
 }
-// The counts of one client address. They go away when both windows end.
+// The counts of one client address, or of one IPv6 /64. They go away when
+// the window of the requests ends, unless the client made a room in the hour.
 struct Client { ip: u8[..46], window: i64, requests: i64, hour: i64, creates: i64 }
 
 var rooms: Room[..MAX_ROOMS];
@@ -255,7 +257,41 @@ fn tick(window: i64&, n: i64&, now: i64, size: i64) -> i64 {
 fn sweep(now: i64) {
     retain(rooms) { now < it.created + ttl };
     for &room in rooms { retain(room.members) { now - it.seen < AWAY_S }; }
-    retain(clients) { now - it.window < WINDOW_S || now - it.hour < 3600 };
+    retain(clients) { now - it.window < WINDOW_S || (it.creates > 0 && now - it.hour < 3600) };
+}
+
+// The OpenRouter key of a visitor never goes into a room. The page does
+// not send it, and the relay refuses a request that holds one: sk-or-v1-
+// and 64 hex digits, as a word, in a key or a string of the JSON after its
+// escapes are decoded. A view is JSON in a string, so its JSON is checked too.
+fn is_word(c: u8) -> bool { (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_' }
+
+fn is_key(s: u8[:]) -> bool {
+    var low: u8[>..] = [];
+    low.append(s);
+    to_lower(low);
+    var at = 0;
+    loop {
+        let k = find(low[at..], "sk-or-v1-");
+        guard k >= 0 else { return false; }
+        let start = at + k;
+        let end = start + 9 + 64;
+        let hex = end <= low.len && all(low[start + 9..end]) { (it >= '0' && it <= '9') || (it >= 'a' && it <= 'f') };
+        if hex && (start == 0 || !is_word(low[start - 1])) && (end == low.len || !is_word(low[end])) { return true; }
+        at = start + 1;
+    }
+}
+
+fn holds_key(doc: json::Node[:]) -> bool {
+    for &n in doc {
+        let text, ok = json::as_string(n);
+        if is_key(n.key) || is_key(text) { return true; }
+    }
+    return false;
+}
+
+fn refuse_key(out: u8[>..]&) {
+    fail(out, "400 Bad Request", "key", "This looks like an OpenRouter key. A room does not take keys.");
 }
 
 fn handle(r: Request&, now: i64, out: u8[>..]&) {
@@ -263,11 +299,13 @@ fn handle(r: Request&, now: i64, out: u8[>..]&) {
     guard !r.big else { fail(out, "413 Payload Too Large", "big", "The request is too large."); return; }
     sweep(now);
 
-    var client = clients.find() { it.ip == r.ip[..] };
+    var key: u8[>..] = [];
+    room_client_key(r.ip, key);
+    var client = clients.find() { it.ip == key[..] };
     if !client {
         guard clients.len < MAX_IPS else { fail(out, "503 Service Unavailable", "busy", "The server is busy. Try again later."); return; }
         let c .= clients.push(Client { ip: [], window: now, requests: 0, hour: now, creates: 0 });
-        c.ip.append(r.ip);
+        c.ip.append(key);
         client .= c;
     }
     guard client else { return; }
@@ -275,18 +313,10 @@ fn handle(r: Request&, now: i64, out: u8[>..]&) {
         { fail(out, "429 Too Many Requests", "slow", "Too many requests from your address. Wait a minute."); return; }
     }
 
-    // The OpenRouter key of a visitor never goes into a room. The page does
-    // not send it, and the relay refuses a request that holds one.
-    var low: u8[>..] = [];
-    low.append(r.body);
-    to_lower(low);
-    guard find(low, "sk-or-") < 0 else {
-        { fail(out, "400 Bad Request", "key", "This looks like an OpenRouter key. A room does not take keys."); return; }
-    }
-
     var doc: json::Node[>..] = [];
     var decoded: u8[>..] = [];
     let root, err = json::parse(r.body, doc, decoded);
+    guard !holds_key(doc) else { refuse_key(out); return; }
     let op, op_ok = json::as_string(json::member(root, "op"));
     let id, id_ok = json::as_string(json::member(root, "room"));
     let member, member_ok = json::as_string(json::member(root, "member"));
@@ -349,6 +379,7 @@ fn handle(r: Request&, now: i64, out: u8[>..]&) {
         var vdecoded: u8[>..] = [];
         let vroot, verr = json::parse(view, vdoc, vdecoded);
         guard vroot && is_object(vroot) else { fail(out, "400 Bad Request", "bad", "The view is not valid."); return; }
+        guard !holds_key(vdoc) else { refuse_key(out); return; }
         room.seq += 1;
         room.view.clear();
         room.view.append(view);

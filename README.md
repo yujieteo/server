@@ -132,9 +132,13 @@ httpd sends the requests to `neurons_room`, a Goose daemon on 127.0.0.1 port 879
   the daemon serves one request at a time, with no thread and no lock.
 - The daemon keeps the rooms in memory only. It writes no file and logs no room and no address. A room ends 3 days
   after it was made, and a restart of the daemon ends all rooms.
-- The limits: 100 rooms, 5 members and 64 notes in a room, 8,192 bytes in a request. In each minute, 600 requests
-  from 1 address, and 600 requests or 120 views and notes in 1 room. In each hour, 6 new rooms from 1 address.
-- The daemon refuses a request that holds `sk-or-`, so an OpenRouter key cannot go into a room.
+- The limits: 100 rooms, 5 members and 64 notes in a room, 8,192 bytes in a request, 2 s to send a request. In
+  each minute, 600 requests from 1 address, and 600 requests or 120 views and notes in 1 room. In each hour, 6 new
+  rooms from 1 address. For these limits, all of an IPv6 /64 is 1 address.
+- Known limit: a room stays for 3 days, also with no members. Thus about 17 addresses can make all 100 rooms in
+  1 hour, and then nobody can make a room for up to 3 days.
+- The daemon refuses a request that holds an OpenRouter key (`sk-or-v1-` and 64 hex digits) in a string of its
+  JSON, so a key cannot go into a room.
 
 To change the relay, change `room.goose`, then make `room.c` again with Goose at commit
 `a108677d300cb0e8bbb842c35a353abe67a20c6c` (its build is in the README of the neurons repo):
