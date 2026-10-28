@@ -58,10 +58,10 @@ t "web: no file list" "[ \"\$(web 443 teoyujie.org /f/)\" != '200 ' ]"
 rm -r /var/www/files/f/$d
 
 # The pond save service, with a test key and a test entry. Both go away after the tests.
-# post FILE SIGNATURE: POST FILE to /pond/entry and print the status code.
+# post FILE SIGNATURE [PATH]: POST FILE to PATH (default /pond/entry) and print the status code.
 post() {
-	{ printf 'POST /pond/entry HTTP/1.0\r\nHost: teoyujie.org\r\nContent-Length: %s\r\nSignature: %s\r\n\r\n' \
-		"$(wc -c < "$1" | tr -d ' ')" "$2"; cat "$1"; } |
+	{ printf 'POST %s HTTP/1.0\r\nHost: teoyujie.org\r\nContent-Length: %s\r\nSignature: %s\r\n\r\n' \
+		"${3:-/pond/entry}" "$(wc -c < "$1" | tr -d ' ')" "$2"; cat "$1"; } |
 	openssl s_client -quiet -connect 127.0.0.1:443 -servername teoyujie.org 2>/dev/null | tr -d '\r' | awk 'NR == 1 { print $2 }'
 }
 p=$(mktemp -d)
@@ -79,6 +79,49 @@ t "pond: bad signature is refused" "[ \"\$(post $p/3 \$(cat $p/2.sig))\" = 403 ]
 t "pond: body over 8192 bytes is refused" "[ \"\$(post $p/big '')\" = 413 ]"
 t "pond: refused requests change nothing" "cmp $p/2 /var/www/pond/entries/test-$d.json"
 rm -r $p /var/www/pond/keys/test-$d.pub /var/www/pond/entries/test-$d.json
+
+# The pond read service, with test entries as pond_save keeps them. They go away after the tests.
+# The tests look only at the test entries, so they also pass on a server with real entries.
+# If the site has no log template, a test template goes in and away again.
+# entry NAME MTIME ENTRY: write the entry test-$d-NAME, with its time of change.
+entry() {
+	printf '{"entry":%s,"id":"test-%s-%s","key":"phone","op":"put","rev":1,"v":1}' "$3" $d $1 > /var/www/pond/entries/test-$d-$1.json
+	touch -t $2 /var/www/pond/entries/test-$d-$1.json
+}
+# get PATH: print the reply (head and body) of 1 GET.
+get() {
+	printf 'GET %s HTTP/1.0\r\nHost: teoyujie.org\r\n\r\n' "$1" |
+	openssl s_client -quiet -connect 127.0.0.1:443 -servername teoyujie.org 2>/dev/null | tr -d '\r'
+}
+p=$(mktemp -d)
+tp=/var/www/web/site/log/template.html
+tl=; [ -e $tp ] || { tl=$tp; [ -d ${tp%/*} ] || tl="$tp ${tp%/*}"; }
+[ -z "$tl" ] || { mkdir -p ${tp%/*}; printf '<html>\n<main>\n  <!-- pond:entries -->\n</main>\n<footer>end</footer>\n</html>\n' > $tp; }
+entry old 202610270900 "{\"date\":\"2026-10-27\",\"title\":\"test-$d-old\"}"
+entry morning 202610280800 "{\"date\":\"2026-10-28\",\"title\":\"test-$d-morning\"}"
+entry evening 202610282000 "{\"date\":\"2026-10-28\",\"title\":\"test-$d-evening\"}"
+entry esc 202610281000 "{\"date\":\"2026-10-28\",\"title\":\"<script>test-$d</script> & co\"}"
+entry private 202610281100 "{\"date\":\"2026-10-28\",\"fun\":\"test-$d-fun\",\"notice\":\"test-$d-notice\",\"title\":\"test-$d-private\"}"
+printf '{"id":"test-%s-gone","key":"phone","op":"remove","rev":2,"v":1}' $d > /var/www/pond/entries/test-$d-gone.json
+get /pond/entries.json > $p/json
+get /log/ > $p/log
+get /log/feed.xml > $p/feed
+: > $p/empty
+# order FILE: print the test entries of FILE in their sequence.
+order() { grep -oE "test-$d-(old|morning|evening)" $1 | uniq | tr '\n' ' '; }
+o="test-$d-evening test-$d-morning test-$d-old "
+t "pond: entries.json is JSON" "head -n 1 $p/json | grep -q ' 200 ' && grep -qi '^Content-Type: application/json' $p/json"
+t "pond: /log/ is HTML" "head -n 1 $p/log | grep -q ' 200 ' && grep -qi '^Content-Type: text/html' $p/log"
+t "pond: the feed is RSS" "head -n 1 $p/feed | grep -q ' 200 ' && grep -qi '^Content-Type: application/rss+xml' $p/feed"
+t "pond: entries.json is newest first" "[ \"\$(order $p/json)\" = '$o' ]"
+t "pond: /log/ is newest first" "[ \"\$(order $p/log)\" = '$o' ]"
+t "pond: the feed is newest first" "[ \"\$(order $p/feed)\" = '$o' ]"
+t "pond: a removed entry is not served" "! grep -q test-$d-gone $p/json $p/log $p/feed"
+t "pond: no private field is served" "! grep -qE 'test-$d-(fun|notice)' $p/json $p/log $p/feed"
+t "pond: a title is escaped for HTML" "grep -qF '&lt;script&gt;test-$d&lt;/script&gt; &amp; co' $p/log && ! grep -qF '<script>test-' $p/log"
+t "pond: /log/ uses the template" "! grep -q pond:entries $p/log && [ -z \"\$(grep -v pond:entries $tp | grep -vxFf $p/log)\" ]"
+t "pond: a POST to the read service is refused" "[ \"\$(post $p/empty '' /log/)\" = 405 ]"
+rm -r $p /var/www/pond/entries/test-$d-*.json $tl
 
 # Mail, sent to the egress address as from the internet. With the values of local.conf.example, no
 # test mail leaves the server: example.org and example.com have no mail server. With the real

@@ -46,12 +46,14 @@ install -d -o "$ADMIN_USER" -m 755 /var/www/files/f
 rm -rf /var/www/htdocs/server
 cp -R www /var/www/htdocs/server
 
-# The pond save service: a static program in the httpd chroot, under slowcgi (user www).
-# Its data is outside /var/www/web, so a deploy does not touch it. Root adds the keys by hand.
+# The pond save and read services: static programs in the httpd chroot, under slowcgi (user www).
+# Their data is outside /var/www/web, so a deploy does not touch it. Root adds the keys by hand.
 install -d -m 755 /var/www/pond /var/www/pond/keys
 install -d -o www -m 755 /var/www/pond/entries
 cc -O2 -static -DGS_STACK_RESERVE='(16ull<<20)' -o /var/www/cgi-bin/pond_save.new pond/main.c -lcrypto -lm -pthread
 mv /var/www/cgi-bin/pond_save.new /var/www/cgi-bin/pond_save
+cc -O2 -static -DGS_STACK_RESERVE='(16ull<<20)' -o /var/www/cgi-bin/pond_read.new pond/pond_read.c -lm -pthread
+mv /var/www/cgi-bin/pond_read.new /var/www/cgi-bin/pond_read
 
 # Until acme-client gets the Let's Encrypt certificate, httpd and smtpd use a 1-day self-signed one.
 if [ ! -e /etc/ssl/$d.fullchain.pem ]; then
