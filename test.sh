@@ -96,17 +96,36 @@ get() {
 p=$(mktemp -d)
 tp=/var/www/web/site/log/template.html
 tl=; [ -e $tp ] || { tl=$tp; [ -d ${tp%/*} ] || tl="$tp ${tp%/*}"; }
+# A fresh server (the CI VM) has no entries and no log template.
+if ! ls /var/www/pond/entries | grep -q '\.json$'; then
+	get /pond/entries.json > $p/json
+	get /log/ > $p/log
+	get /log/feed.xml > $p/feed
+	t "pond: an empty store gives no entries" "[ \"\$(tail -n 1 $p/json)\" = '{\"entries\":[]}' ]"
+	t "pond: an empty store gives a page" "head -n 1 $p/log | grep -q ' 200 '"
+	t "pond: an empty store gives a feed" "grep -q '</channel>' $p/feed"
+fi
+[ -z "$tl" ] || t "pond: a missing template gives a plain page" "get /log/ | grep -qF '<h1>Log</h1>'"
 [ -z "$tl" ] || { mkdir -p ${tp%/*}; printf '<html>\n<main>\n  <!-- pond:entries -->\n</main>\n<footer>end</footer>\n</html>\n' > $tp; }
 entry old 202610270900 "{\"date\":\"2026-10-27\",\"title\":\"test-$d-old\"}"
 entry morning 202610280800 "{\"date\":\"2026-10-28\",\"title\":\"test-$d-morning\"}"
 entry evening 202610282000 "{\"date\":\"2026-10-28\",\"title\":\"test-$d-evening\"}"
-entry esc 202610281000 "{\"date\":\"2026-10-28\",\"title\":\"<script>test-$d</script> & co\"}"
+entry esc 202610281000 "{\"date\":\"2026-10-28\",\"link\":\"https://example.org/?a=1&b=\\\"2\\\"\",\"made\":\"it's <i>\",\"title\":\"<script>test-$d</script> & co\"}"
+entry js 202610280900 "{\"date\":\"2026-10-28\",\"link\":\"javascript:alert(1)\",\"title\":\"test-$d-js\"}"
+entry neg 202610280600 "{\"date\":\"-999-10-28\",\"title\":\"test-$d-neg\\u0001ctl\"}"
 entry private 202610281100 "{\"date\":\"2026-10-28\",\"fun\":\"test-$d-fun\",\"notice\":\"test-$d-notice\",\"title\":\"test-$d-private\"}"
 printf '{"id":"test-%s-gone","key":"phone","op":"remove","rev":2,"v":1}' $d > /var/www/pond/entries/test-$d-gone.json
 get /pond/entries.json > $p/json
 get /log/ > $p/log
 get /log/feed.xml > $p/feed
+# httpd decodes the path before it chooses the location, but gives pond_read the path as it came.
+get /log/%66eed.xml > $p/other
 : > $p/empty
+printf '%s\n' "<h2><a href=\"https://example.org/?a=1&amp;b=&quot;2&quot;\">&lt;script&gt;test-$d&lt;/script&gt; &amp; co</a></h2>" > $p/html-link
+printf '%s\n' '<p>it&#39;s &lt;i&gt;</p>' > $p/html-made
+printf '%s\n' '<link>https://example.org/?a=1&amp;b=&quot;2&quot;</link>' > $p/xml-link
+# item NAME: print the feed item of the test entry NAME.
+item() { sed -n "/<title>test-$d-$1</,/<\/item>/p" $p/feed; }
 # order FILE: print the test entries of FILE in their sequence.
 order() { grep -oE "test-$d-(old|morning|evening)" $1 | uniq | tr '\n' ' '; }
 o="test-$d-evening test-$d-morning test-$d-old "
@@ -116,10 +135,21 @@ t "pond: the feed is RSS" "head -n 1 $p/feed | grep -q ' 200 ' && grep -qi '^Con
 t "pond: entries.json is newest first" "[ \"\$(order $p/json)\" = '$o' ]"
 t "pond: /log/ is newest first" "[ \"\$(order $p/log)\" = '$o' ]"
 t "pond: the feed is newest first" "[ \"\$(order $p/feed)\" = '$o' ]"
+t "pond: an item has an RFC 822 date" "item morning | grep -qF '<pubDate>Wed, 28 Oct 2026 00:00:00 +0000</pubDate>'"
 t "pond: a removed entry is not served" "! grep -q test-$d-gone $p/json $p/log $p/feed"
 t "pond: no private field is served" "! grep -qE 'test-$d-(fun|notice)' $p/json $p/log $p/feed"
 t "pond: a title is escaped for HTML" "grep -qF '&lt;script&gt;test-$d&lt;/script&gt; &amp; co' $p/log && ! grep -qF '<script>test-' $p/log"
+t "pond: a link is escaped for HTML" "grep -qFf $p/html-link $p/log"
+t "pond: made is escaped for HTML" "grep -qFf $p/html-made $p/log"
+t "pond: a title is escaped for XML" "grep -qF '<title>&lt;script&gt;test-$d&lt;/script&gt; &amp; co</title>' $p/feed"
+t "pond: a link is escaped for XML" "grep -qFf $p/xml-link $p/feed"
+t "pond: a link that is not a web link is not a link" "grep -q test-$d-js $p/log && ! grep -q 'javascript:' $p/log"
+t "pond: a feed with a bad date is served" "item negctl | grep -q ."
+t "pond: a bad date gives no pubDate" "! item negctl | grep -q pubDate"
+t "pond: a control character is not in the feed" "! tr -d '\t\n\r' < $p/feed | LC_ALL=C grep -q '[[:cntrl:]]'"
 t "pond: /log/ uses the template" "! grep -q pond:entries $p/log && [ -z \"\$(grep -v pond:entries $tp | grep -vxFf $p/log)\" ]"
+[ -z "$tl" ] || t "pond: the entries are in place of the marker" "[ \"\$(grep -A1 -x '<main>' $p/log | sed -n 2p)\" = '<article>' ]"
+t "pond: an unknown path is not found" "head -n 1 $p/other | grep -q ' 404 ' && grep -qx 'not found' $p/other"
 t "pond: a POST to the read service is refused" "[ \"\$(post $p/empty '' /log/)\" = 405 ]"
 rm -r $p /var/www/pond/entries/test-$d-*.json $tl
 
