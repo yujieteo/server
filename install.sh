@@ -46,6 +46,13 @@ install -d -o "$ADMIN_USER" -m 755 /var/www/files/f
 rm -rf /var/www/htdocs/server
 cp -R www /var/www/htdocs/server
 
+# The pond save service: a static program in the httpd chroot, under slowcgi (user www).
+# Its data is outside /var/www/web, so a deploy does not touch it. Root adds the keys by hand.
+install -d -m 755 /var/www/pond /var/www/pond/keys
+install -d -o www -m 755 /var/www/pond/entries
+cc -O2 -static -DGS_STACK_RESERVE='(16ull<<20)' -o /var/www/cgi-bin/pond_save.new pond/main.c -lcrypto -lm -pthread
+mv /var/www/cgi-bin/pond_save.new /var/www/cgi-bin/pond_save
+
 # Until acme-client gets the Let's Encrypt certificate, httpd and smtpd use a 1-day self-signed one.
 if [ ! -e /etc/ssl/$d.fullchain.pem ]; then
 	(umask 077 && openssl ecparam -genkey -name prime256v1 -out /etc/ssl/private/$d.key 2>/dev/null)
@@ -111,8 +118,8 @@ unbound-checkconf >/dev/null
 acme-client -n >/dev/null
 pfctl -nf /etc/pf.conf
 pfctl -f /etc/pf.conf
-rcctl enable httpd smtpd unbound >/dev/null
-rcctl restart sshd syslogd httpd smtpd unbound >/dev/null
+rcctl enable slowcgi httpd smtpd unbound >/dev/null
+rcctl restart sshd syslogd slowcgi httpd smtpd unbound >/dev/null
 [ -s /var/unbound/etc/blocklist.conf ] || /usr/local/sbin/blocklist-update
 
 echo "Done. WireGuard public key of the server: $(ifconfig wg0 | awk '$1 == "wgpubkey" { print $2 }')"
