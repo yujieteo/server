@@ -38,6 +38,7 @@ put etc/acme-client.conf /etc/acme-client.conf
 put etc/smtpd.conf /etc/mail/smtpd.conf
 put etc/unbound.conf /var/unbound/etc/unbound.conf
 put etc/pf.conf /etc/pf.conf 600
+put etc/rc.d/neurons_room /etc/rc.d/neurons_room 555
 sysctl -q net.inet.ip.forwarding=1
 
 # Web folders. The deploy user owns /var/www/web: site, and apps/NAME for each app.
@@ -54,6 +55,12 @@ cc -O2 -static -DGS_STACK_RESERVE='(16ull<<20)' -o /var/www/cgi-bin/pond_save.ne
 mv /var/www/cgi-bin/pond_save.new /var/www/cgi-bin/pond_save
 cc -O2 -static -DGS_STACK_RESERVE='(16ull<<20)' -o /var/www/cgi-bin/pond_read.new pond/pond_read.c -lm -pthread
 mv /var/www/cgi-bin/pond_read.new /var/www/cgi-bin/pond_read
+
+# The room relay of the neuron explorer: a daemon on 127.0.0.1 port 8790, with its own user.
+# It keeps the rooms in memory only, so a restart ends all rooms.
+id _neuronsroom >/dev/null 2>&1 || useradd -L daemon -c 'neurons room relay' -d /var/empty -s /sbin/nologin _neuronsroom
+cc -O2 -DGS_STACK_RESERVE='(16ull<<20)' -o /usr/local/sbin/neurons_room.new room/room.c -lm -pthread
+mv /usr/local/sbin/neurons_room.new /usr/local/sbin/neurons_room
 
 # Until acme-client gets the Let's Encrypt certificate, httpd and smtpd use a 1-day self-signed one.
 if [ ! -e /etc/ssl/$d.fullchain.pem ]; then
@@ -120,8 +127,8 @@ unbound-checkconf >/dev/null
 acme-client -n >/dev/null
 pfctl -nf /etc/pf.conf
 pfctl -f /etc/pf.conf
-rcctl enable slowcgi httpd smtpd unbound >/dev/null
-rcctl restart sshd syslogd slowcgi httpd smtpd unbound >/dev/null
+rcctl enable slowcgi neurons_room httpd smtpd unbound >/dev/null
+rcctl restart sshd syslogd slowcgi neurons_room httpd smtpd unbound >/dev/null
 [ -s /var/unbound/etc/blocklist.conf ] || /usr/local/sbin/blocklist-update
 
 echo "Done. WireGuard public key of the server: $(ifconfig wg0 | awk '$1 == "wgpubkey" { print $2 }')"

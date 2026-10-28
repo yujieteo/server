@@ -1,0 +1,15 @@
+#!/bin/ksh
+# The relay of the rooms of the neuron explorer (room/ in the server repo).
+# It listens on 127.0.0.1 port 8790, and httpd sends POST /play/neurons/room to it.
+
+daemon="/usr/local/sbin/neurons_room"
+daemon_flags="--port 8790"
+daemon_user="_neuronsroom"
+daemon_logger="daemon.info"
+
+. /etc/rc.d/rc.subr
+
+rc_bg=YES
+rc_reload=NO
+
+rc_cmd $1
