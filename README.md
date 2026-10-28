@@ -1,7 +1,7 @@
 # teoyujie.org server
 
 The config of the teoyujie.org server: OpenBSD 8.0 base system only, no packages.
-It serves the site and the app pages, runs the pond save service, forwards mail, and is a VPN
+It serves the site and the app pages, runs the pond save and read services, forwards mail, and is a VPN
 with an ad blocker.
 
 This repo is public and has no secret. The server makes its own secrets (TLS key, ACME account
@@ -21,7 +21,7 @@ private values. No value in it gives access to the server.
 | `etc/` | The configs: httpd, acme-client, smtpd, pf, sshd, unbound, doas, sysctl, crontab. |
 | `bin/` | The jobs: health-check, ssh-alert, blocklist-update, and deploy-only (the forced command of the deploy user). |
 | `www/` | Files on the web: security.txt, the GPG key with WKD, the MTA-STS policy. |
-| `pond/` | The pond save service (below). `pond_save.c`, `pond_verify.h` and `pond_lock.h` are copies of `server/` in the [pond repo](https://github.com/yujieteo/pond) at commit `bf226faeea7f6cdc79268d6fe3f172086b99a919`. Do not change them here. `main.c` adds pledge and unveil. |
+| `pond/` | The pond save and read services (below). `pond_save.c`, `pond_verify.h`, `pond_lock.h`, `pond_read.c` and `pond_read.h` are copies of `server/` in the [pond repo](https://github.com/yujieteo/pond) at commit `cb6bbac6ffcb050347d1fab6852e4302184d1362`. Do not change them here. `main.c` adds pledge and unveil to `pond_save`. `pond_read` does its own unveil (read only) and pledge (`stdio rpath`). |
 | `.githooks/pre-commit`, `.gitleaks.toml` | gitleaks stops a commit that has a secret in it. Turn on the hook once in each clone: `git config core.hooksPath .githooks`. |
 | `.github/workflows/ci.yml` | gitleaks, and `install.sh` plus `test.sh` on a fresh OpenBSD 8.0 VM. |
 
@@ -93,10 +93,10 @@ The iPhone uses `Address = 10.8.0.3/32`. Only traffic to 10.8.0.0/24 goes throug
 goes to the server, which blocks ads and trackers. Turn on "On Demand" on both devices.
 The iPhone reaches the Mac at 10.8.0.2 (Remote Login or Screen Sharing in macOS Settings).
 
-## Pond save service
+## Pond save and read services
 
 `POST https://teoyujie.org/pond/entry` takes 1 signed change to 1 pond entry. The pond repo has the
-protocol in `docs/protocol.md`. httpd sends `/pond/*` to `/var/www/cgi-bin/pond_save` through slowcgi.
+protocol in `docs/protocol.md`. httpd sends `/pond/*` (but not `/pond/entries.json`) to `/var/www/cgi-bin/pond_save` through slowcgi.
 The data is in `/var/www/pond`: `keys/` has the public keys of the devices, and `entries/` has the
 entries. A deploy and `install.sh` do not change them. The server has no private key.
 
@@ -110,7 +110,12 @@ ssh -t ADMIN_USER@10.8.0.1 doas install -m 644 NAME.pub /var/www/pond/keys/
 
 To revoke the device, delete its file.
 
-To use a new pond version, copy the 3 files from `server/` of the pond repo to `pond/`, change the
+`GET /pond/entries.json`, `/log/` and `/log/feed.xml` show the entries, newest first. httpd sends
+them to `/var/www/cgi-bin/pond_read` through slowcgi. `/log/` is the site file `log/template.html`
+with the entries in place of its line `<!-- pond:entries -->`. Without that file, `/log/` is a plain
+page. pond_read can only read the entries and the template.
+
+To use a new pond version, copy the 5 files from `server/` of the pond repo to `pond/`, change the
 commit in the table above, then apply.
 
 ## Upgrade to the next OpenBSD release (each 6 months)
