@@ -1,8 +1,8 @@
 # teoyujie.org server
 
 The config of the teoyujie.org server: OpenBSD 8.0 base system only, no packages.
-It serves the site and the app pages, runs the pond save and read services, forwards mail, and is a VPN
-with an ad blocker.
+It serves the site and the app pages, runs the pond save and read services and the room relay of the
+neuron explorer, forwards mail, and is a VPN with an ad blocker.
 
 This repo is public and has no secret. The server makes its own secrets (TLS key, ACME account
 key, SRS key, WireGuard key), and they never leave it. `local.conf` (Git ignores it) has the
@@ -18,10 +18,11 @@ private values. No value in it gives access to the server.
 | `mail-alias` | Runs on the Mac. `./mail-alias add NAME` or `./mail-alias del NAME`. |
 | `share` | Runs on the Mac. `./share FILE` prints a link to FILE that works for 30 days. |
 | `local.conf.example` | The private values, with test values. CI uses it. |
-| `etc/` | The configs: httpd, acme-client, smtpd, pf, sshd, unbound, doas, sysctl, crontab. |
+| `etc/` | The configs: httpd, acme-client, smtpd, pf, sshd, unbound, doas, sysctl, crontab, and `rc.d/neurons_room`. |
 | `bin/` | The jobs: health-check, ssh-alert, blocklist-update, and deploy-only (the forced command of the deploy user). |
 | `www/` | Files on the web: security.txt, the GPG key with WKD, the MTA-STS policy. |
 | `pond/` | The pond save and read services (below). `pond_save.c`, `pond_verify.h`, `pond_lock.h`, `pond_read.c` and `pond_read.h` are copies of `server/` in the [pond repo](https://github.com/yujieteo/pond) at commit `cb6bbac6ffcb050347d1fab6852e4302184d1362`. Do not change them here. `main.c` adds pledge and unveil to `pond_save`. `pond_read` does its own unveil (read only) and pledge (`stdio rpath`). |
+| `room/` | The room relay of the neuron explorer (below). `room.c` is the C that Goose makes from `room.goose`. |
 | `.githooks/pre-commit`, `.gitleaks.toml` | gitleaks stops a commit that has a secret in it. Turn on the hook once in each clone: `git config core.hooksPath .githooks`. |
 | `.github/workflows/ci.yml` | gitleaks, and `install.sh` plus `test.sh` on a fresh OpenBSD 8.0 VM. |
 
@@ -117,6 +118,36 @@ page. pond_read can only read the entries and the template.
 
 To use a new pond version, copy the 5 files from `server/` of the pond repo to `pond/`, change the
 commit in the table above, then apply.
+
+## Room relay of the neuron explorer
+
+`POST https://teoyujie.org/play/neurons/room` is the relay of the rooms of the
+[neuron explorer](https://github.com/yujieteo/neurons). A share link opens a room, and 2 to 5 people see the same
+view and the same notes. The README of the neurons repo has the protocol (Rooms).
+httpd sends the requests to `neurons_room`, a Goose daemon on 127.0.0.1 port 8790, with FastCGI.
+`etc/rc.d/neurons_room` starts it as the user `_neuronsroom`. It pledges `stdio inet`, so it cannot open a file.
+
+- The page polls the relay once each second. httpd in the base system cannot pass a WebSocket to a daemon, and a
+  server-sent event stream or a long poll keeps one connection open for each member. A poll is a short request, so
+  the daemon serves one request at a time, with no thread and no lock.
+- The daemon keeps the rooms in memory only. It writes no file and logs no room and no address. A room ends 3 days
+  after it was made, and a restart of the daemon ends all rooms.
+- The limits: 100 rooms, 5 members and 64 notes in a room, 8,192 bytes in a request, 2 s to send a request. In
+  each minute, 600 requests from 1 address, and 600 requests or 120 views and notes in 1 room. In each hour, 6 new
+  rooms from 1 address. For these limits, all of an IPv6 /64 is 1 address.
+- Known limit: a room stays for 3 days, also with no members. Thus about 17 addresses can make all 100 rooms in
+  1 hour, and then nobody can make a room for up to 3 days.
+- The daemon refuses a request that holds an OpenRouter key (`sk-or-v1-` and 64 hex digits) in a string of its
+  JSON, so a key cannot go into a room.
+
+To change the relay, change `room.goose`, then make `room.c` again with Goose at commit
+`a108677d300cb0e8bbb842c35a353abe67a20c6c` (its build is in the README of the neurons repo):
+
+```
+cd room && GOOSE_STDLIB=../../goose/stdlib ../../goose/build/goose --standalone --include room_net.h -o room.c room.goose
+```
+
+`install.sh` builds the daemon from `room.c`. `test.sh` tests it through httpd, and the limits on 2 more daemons.
 
 ## Upgrade to the next OpenBSD release (each 6 months)
 

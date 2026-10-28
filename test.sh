@@ -22,7 +22,7 @@ t "configs: httpd" "httpd -n"
 t "configs: smtpd" "smtpd -n"
 t "configs: unbound" "unbound-checkconf"
 t "configs: pf" "pfctl -nf /etc/pf.conf"
-t "services run" "rcctl check slowcgi httpd smtpd unbound sshd cron"
+t "services run" "rcctl check slowcgi neurons_room httpd smtpd unbound sshd cron"
 t "sshd: no root login" "sshd -T | grep -qix 'permitrootlogin no'"
 t "sshd: keys only" "sshd -T | grep -qix 'authenticationmethods publickey'"
 t "admin keys: VPN only" "! grep -qv '^from=\"10.8.0.0/24,127.0.0.1\" ssh-' /home/$ADMIN_USER/.ssh/authorized_keys"
@@ -152,6 +152,97 @@ t "pond: /log/ uses the template" "! grep -q pond:entries $p/log && [ -z \"\$(gr
 t "pond: an unknown path is not found" "head -n 1 $p/other | grep -q ' 404 ' && grep -qx 'not found' $p/other"
 t "pond: a POST to the read service is refused" "[ \"\$(post $p/empty '' /log/)\" = 405 ]"
 rm -r $p /var/www/pond/entries/test-$d-*.json $tl
+
+# The room relay of the neuron explorer, through httpd. The test room ends after 3 days; the
+# test members leave it. README.md of the neurons repo has the protocol.
+# room FILE: POST FILE to /play/neurons/room and print the status code, then the body of the reply.
+room() {
+	{ printf 'POST /play/neurons/room HTTP/1.0\r\nHost: teoyujie.org\r\nContent-Type: application/json\r\nContent-Length: %s\r\n\r\n' \
+		"$(wc -c < "$1" | tr -d ' ')"; cat "$1"; } |
+	openssl s_client -quiet -connect 127.0.0.1:443 -servername teoyujie.org 2>/dev/null | tr -d '\r' |
+	awk 'NR == 1 { print $2 } b { print } /^$/ { b = 1 }'
+}
+# body NAME OP MEMBER [FIELDS]: write the request NAME for the test room.
+p=$(mktemp -d)
+r=$(openssl rand -hex 11)
+body() { printf '{"op":"%s","room":"%s","member":"%s","name":"test","since":-1%s}' "$2" "$r" "$3" "${4:-}" > $p/$1; }
+body create create member-a
+body poll-a poll member-a
+body poll-b poll member-b
+body view view member-a ',"view":"{\"layer\":16,\"index\":1275}"'
+body list view member-a ',"view":"[16]"'
+body note note member-a ',"neuron":"16.1275","text":"test note","base":0'
+body old note member-b ',"neuron":"16.1275","text":"old base","base":0'
+# An OpenRouter key has the shape sk-or-v1- and 64 hex digits. This file holds no full key.
+k=sk-or-v1-$(jot -b 0 -s '' 64)
+body key note member-a ',"neuron":"16.1275","text":"'$k'","base":0'
+body key-view view member-a ',"view":"{\"layer\":\"\\u0073'${k#s}'\"}"'
+body words note member-a ',"neuron":"3.7","text":"risk-or-reward","base":0'
+body gone poll member-a '' && sed -i "s/$r/0000000000000000000000/" $p/gone
+for m in c d e f; do body poll-$m poll member-$m; body leave-$m leave member-$m; done
+body leave-a leave member-a
+body leave-b leave member-b
+printf '{"op":"poll","room":"%s","member":"member-a","name":"%8193s"}' $r '' > $p/big
+t "rooms: a new room" "room $p/create | head -1 | grep -qx 200"
+t "rooms: a room is made once" "room $p/create | head -1 | grep -qx 409"
+t "rooms: a member comes in" "room $p/poll-b | grep -qF '{\"name\":\"test\"},{\"name\":\"test\",\"you\":true}'"
+t "rooms: a reply names no member id" "! room $p/poll-b | grep -q member-"
+t "rooms: a view goes to the others" "room $p/view | head -1 | grep -qx 200 && room $p/poll-b | grep -q '\"view\":\"{.\"layer.\":16'"
+t "rooms: a view that is not an object is refused" "room $p/list | head -1 | grep -qx 400"
+t "rooms: a note is saved" "room $p/note | head -1 | grep -qx 200"
+t "rooms: a note from an old version is a conflict" "room $p/old | head -1 | grep -qx 409 && room $p/poll-b | grep -qF '\"text\":\"test note\"'"
+t "rooms: an OpenRouter key is refused" "room $p/key | head -1 | grep -qx 400 && ! room $p/poll-b | grep -q sk-or-v1-"
+t "rooms: an escaped OpenRouter key in a view is refused" "room $p/key-view | head -1 | grep -qx 400"
+t "rooms: a note with risk-or-reward is saved" "room $p/words | head -1 | grep -qx 200"
+t "rooms: a body over 8192 bytes is refused" "room $p/big | head -1 | grep -qx 413"
+t "rooms: GET is refused" "[ \"\$(web 443 teoyujie.org /play/neurons/room)\" = '405 ' ]"
+t "rooms: an unknown room is not found" "room $p/gone | head -1 | grep -qx 404"
+for m in c d e; do room $p/poll-$m >/dev/null; done
+t "rooms: a sixth member is refused" "room $p/poll-f | head -1 | grep -qx 403"
+t "rooms: a member that leaves makes a place" "room $p/leave-e | head -1 | grep -qx 200 && room $p/poll-f | head -1 | grep -qx 200"
+room $p/poll-e >/dev/null
+sleep 16
+t "rooms: a member that is away for 15 s is not in the room" "room $p/poll-f | grep -qF '\"members\":[{\"name\":\"test\",\"you\":true}]'"
+for m in a b c d e f; do room $p/leave-$m >/dev/null; done
+
+# The limits of the relay, on 2 more relays: requests from 1 address, rooms from 1 address,
+# writes in 1 room, and the end of a room. Without httpd, a test speaks FastCGI with nc.
+# fcgi PORT FILE [ADDRESS]: POST FILE to the relay on PORT from ADDRESS (default 127.0.0.1), and
+# print the status code.
+fcgi() {
+	n=$(wc -c < "$2" | tr -d ' ')
+	ip=${3:-127.0.0.1}
+	{ printf '\001\001\000\001\000\010\000\000\000\001\000\000\000\000\000\000'
+		printf "\\001\\004\\000\\001\\000\\$(printf %03o $((33 + ${#ip})))\\000\\000\\016\\004REQUEST_METHODPOST\\013\\$(printf %03o ${#ip})REMOTE_ADDR%s" "$ip"
+		printf '\001\004\000\001\000\000\000\000\001\005\000\001'
+		printf "\\$(printf %03o $((n / 256)))\\$(printf %03o $((n % 256)))\\000\\000"
+		cat "$2"
+		printf '\001\005\000\001\000\000\000\000'
+	} | nc -N 127.0.0.1 $1 | tr -c '[:print:]' '\n' | sed -n 's/^Status: \([0-9]*\).*/\1/p'
+}
+/usr/local/sbin/neurons_room --port 8791 & q1=$!
+/usr/local/sbin/neurons_room --port 8792 --ttl 2 & q2=$!
+sleep 1
+t "rooms: a room ends after its time" "[ \$(fcgi 8792 $p/create) = 200 ] && sleep 3 && [ \$(fcgi 8792 $p/poll-a) = 404 ]"
+s=
+for i in 1 2 3 4 5 6 7; do body new$i create member-a; sed -i "s/$r/$(openssl rand -hex 11)/" $p/new$i; s="$s $(fcgi 8791 $p/new$i)"; done
+t "rooms: 6 new rooms in an hour from 1 address" "[ '$s' = ' 200 200 200 200 200 200 429' ]"
+s=
+for i in 1 2 3 4 5 6 7; do sed "s/$r/$(openssl rand -hex 11)/" $p/create > $p/v6; s="$s $(fcgi 8791 $p/v6 2001:db8:1:2::$i)"; done
+t "rooms: 6 new rooms in an hour from 1 IPv6 /64" "[ '$s' = ' 200 200 200 200 200 200 429' ]"
+cp $p/new1 $p/room1 && sed -i 's/"create"/"view"/; s/}$/,"view":"{}"}/' $p/room1
+s=; for i in $(jot 121); do s=$(fcgi 8791 $p/room1); [ $s = 200 ] || break; done
+t "rooms: 120 views and notes in a minute in a room" "[ $i = 121 ] && [ $s = 429 ]"
+sed 's/"view","/"poll","/; s/,"view":"{}"//' $p/room1 > $p/poll1
+s=; for i in $(jot 480); do s=$(fcgi 8791 $p/poll1); [ $s = 200 ] || break; done
+t "rooms: 600 requests in a minute from 1 address" "[ $i = 473 ] && [ $s = 429 ]"
+# A request that is not all in after 2 s does not hold the relay longer.
+{ printf '\001\001\000\001\000\010\000\000'; sleep 5; } | nc -N 127.0.0.1 8792 >/dev/null & q3=$!
+sleep 1
+a=$(date +%s); fcgi 8792 $p/poll-a >/dev/null; b=$(date +%s)
+t "rooms: a slow request holds the relay for 2 s at most" "[ $((b - a)) -le 2 ]"
+kill $q1 $q2 $q3 2>/dev/null
+rm -r $p
 
 # Mail, sent to the egress address as from the internet. With the values of local.conf.example, no
 # test mail leaves the server: example.org and example.com have no mail server. With the real
