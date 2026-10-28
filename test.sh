@@ -22,7 +22,7 @@ t "configs: httpd" "httpd -n"
 t "configs: smtpd" "smtpd -n"
 t "configs: unbound" "unbound-checkconf"
 t "configs: pf" "pfctl -nf /etc/pf.conf"
-t "services run" "rcctl check httpd smtpd unbound sshd cron"
+t "services run" "rcctl check slowcgi httpd smtpd unbound sshd cron"
 t "sshd: no root login" "sshd -T | grep -qix 'permitrootlogin no'"
 t "sshd: keys only" "sshd -T | grep -qix 'authenticationmethods publickey'"
 t "admin keys: VPN only" "! grep -qv '^from=\"10.8.0.0/24,127.0.0.1\" ssh-' /home/$ADMIN_USER/.ssh/authorized_keys"
@@ -56,6 +56,29 @@ mkdir /var/www/files/f/$d && echo test > /var/www/files/f/$d/a.txt
 t "web: file link" "[ \"\$(web 443 teoyujie.org /f/$d/a.txt)\" = '200 ' ]"
 t "web: no file list" "[ \"\$(web 443 teoyujie.org /f/)\" != '200 ' ]"
 rm -r /var/www/files/f/$d
+
+# The pond save service, with a test key and a test entry. Both go away after the tests.
+# post FILE SIGNATURE: POST FILE to /pond/entry and print the status code.
+post() {
+	{ printf 'POST /pond/entry HTTP/1.0\r\nHost: teoyujie.org\r\nContent-Length: %s\r\nSignature: %s\r\n\r\n' \
+		"$(wc -c < "$1" | tr -d ' ')" "$2"; cat "$1"; } |
+	openssl s_client -quiet -connect 127.0.0.1:443 -servername teoyujie.org 2>/dev/null | tr -d '\r' | awk 'NR == 1 { print $2 }'
+}
+p=$(mktemp -d)
+openssl ecparam -name prime256v1 -genkey -noout -out $p/key.pem
+openssl pkey -in $p/key.pem -pubout -outform DER | openssl base64 -A > /var/www/pond/keys/test-$d.pub
+for r in 1 2 3; do
+	printf '{"entry":{"date":"2026-10-28","title":"test.sh"},"id":"test-%s","key":"test-%s","op":"put","rev":%s,"v":1}' $d $d $r > $p/$r
+	openssl dgst -sha256 -sign $p/key.pem < $p/$r | openssl base64 -A > $p/$r.sig
+done
+printf '%8193s' '' > $p/big
+t "pond: new entry is saved" "[ \"\$(post $p/2 \$(cat $p/2.sig))\" = 201 ] && cmp $p/2 /var/www/pond/entries/test-$d.json"
+t "pond: replay changes nothing" "[ \"\$(post $p/2 \$(cat $p/2.sig))\" = 200 ]"
+t "pond: lower rev is refused" "[ \"\$(post $p/1 \$(cat $p/1.sig))\" = 409 ]"
+t "pond: bad signature is refused" "[ \"\$(post $p/3 \$(cat $p/2.sig))\" = 403 ]"
+t "pond: body over 8192 bytes is refused" "[ \"\$(post $p/big '')\" = 413 ]"
+t "pond: refused requests change nothing" "cmp $p/2 /var/www/pond/entries/test-$d.json"
+rm -r $p /var/www/pond/keys/test-$d.pub /var/www/pond/entries/test-$d.json
 
 # Mail, sent to the egress address as from the internet. With the values of local.conf.example, no
 # test mail leaves the server: example.org and example.com have no mail server. With the real
