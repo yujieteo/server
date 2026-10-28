@@ -1,8 +1,11 @@
 #!/bin/sh
 # syslogd sends each auth message here (see /etc/syslog.conf).
 # For each SSH login from an address that is not known, mail root at once.
+# The text before the first ": " is the program name, which a client cannot change. A client can
+# put any text in a user name after it, so the message must start with "Accepted ".
 while read -r line; do
-	case $line in *sshd*": Accepted "*" from "*) ;; *) continue ;; esac
+	case ${line%%": "*} in *sshd*) ;; *) continue ;; esac
+	case ${line#*": "} in "Accepted "*" from "*) ;; *) continue ;; esac
 	ip=${line##* from }
 	ip=${ip%% *}
 	case $ip in @KNOWN_IPS@) continue ;; esac

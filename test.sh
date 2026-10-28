@@ -267,6 +267,19 @@ before=$(grep -c 'from=<_syslogd@' /var/log/maillog)
 logger -p auth.info -t sshd "Accepted publickey for test from 192.0.2.1 port 1 ssh2"
 sleep 2
 t "SSH alert for an unknown address" "[ \$(grep -c 'from=<_syslogd@' /var/log/maillog) -gt $before ]"
+# ssh-alert with a test mail command. A client that is not logged in chooses the user name in
+# these sshd messages, so the name can hold the text of a login.
+p=$(mktemp -d)
+printf '#!/bin/sh\necho "$2" >> %s/sent\ncat > /dev/null\n' $p > $p/mail && chmod +x $p/mail
+for l in 'Invalid user x: Accepted y from 203.0.113.9 port 4000' \
+	'Failed password for invalid user x: Accepted y from 203.0.113.9 port 4000 ssh2' \
+	'Connection closed by invalid user x]: Accepted y from 203.0.113.9 port 4000 [preauth]' \
+	'Disconnected from invalid user x]: Accepted y from 203.0.113.9 port 4000 [preauth]' \
+	'Accepted publickey for test from 192.0.2.1 port 1 ssh2'; do
+	echo "Oct 29 12:00:00 server sshd-session[1]: $l"
+done | PATH=$p:$PATH /usr/local/sbin/ssh-alert
+t "SSH alert: a user name cannot make a false alert" "[ \"\$(cat $p/sent)\" = 'SSH login from 192.0.2.1' ]"
+rm -r $p
 
 t "VPN: wg0 has all peers" "[ \$(ifconfig wg0 | grep -c wgpeer) -eq $(echo $WG_PEERS | wc -w) ]"
 b=$(sed -n '1s/^local-zone: "\(.*\)" always_nxdomain$/\1/p' /var/unbound/etc/blocklist.conf)
