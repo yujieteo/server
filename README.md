@@ -96,7 +96,7 @@ The iPhone reaches the Mac at 10.8.0.2 (Remote Login or Screen Sharing in macOS 
 ## Pond save and read services
 
 `POST https://teoyujie.org/pond/entry` takes 1 signed change to 1 pond entry. The pond repo has the
-protocol in `docs/protocol.md`. httpd sends `/pond/*` to `/var/www/cgi-bin/pond_save` through slowcgi.
+protocol in `docs/protocol.md`. httpd sends `/pond/*` (but not `/pond/entries.json`) to `/var/www/cgi-bin/pond_save` through slowcgi.
 The data is in `/var/www/pond`: `keys/` has the public keys of the devices, and `entries/` has the
 entries. A deploy and `install.sh` do not change them. The server has no private key.
 
