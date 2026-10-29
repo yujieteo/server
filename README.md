@@ -20,7 +20,7 @@ private values. No value in it gives access to the server.
 | `local.conf.example` | The private values, with test values. CI uses it. |
 | `etc/` | The configs: httpd, acme-client, smtpd, pf, sshd, unbound, doas, sysctl, crontab, and `rc.d/neurons_room`. |
 | `bin/` | The jobs: health-check, ssh-alert, blocklist-update, and deploy-only (the forced command of the deploy user). |
-| `www/` | Files on the web: security.txt, the GPG key with WKD, the MTA-STS policy. |
+| `www/` | Files on the web: security.txt, the GPG key with WKD, the MTA-STS policy, and `errdocs/err.html`, the error page (403, 404 and the others) in the look of the site. |
 | `pond/` | The pond save and read services (below). `pond_save.c`, `pond_verify.h`, `pond_lock.h`, `pond_read.c` and `pond_read.h` are copies of `server/` in the [pond repo](https://github.com/yujieteo/pond) at commit `cb6bbac6ffcb050347d1fab6852e4302184d1362`. Do not change them here. `main.c` adds pledge and unveil to `pond_save`. `pond_read` does its own unveil (read only) and pledge (`stdio rpath`). |
 | `room/` | The room relay of the neuron explorer (below). `room.c` is the C that Goose makes from `room.goose`. |
 | `.githooks/pre-commit`, `.gitleaks.toml` | gitleaks stops a commit that has a secret in it. Turn on the hook once in each clone: `git config core.hooksPath .githooks`. |

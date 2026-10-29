@@ -16,6 +16,11 @@ web() {
 	if [ "$1" = 80 ]; then nc 127.0.0.1 80; else openssl s_client -quiet -connect 127.0.0.1:443 -servername "$2"; fi 2>/dev/null |
 	tr -d '\r' | awk 'NR == 1 { s = $2 } /^Location:/ { l = $2 } END { print s, l }'
 }
+# get PATH: print the reply (head and body) of 1 GET.
+get() {
+	printf 'GET %s HTTP/1.0\r\nHost: teoyujie.org\r\n\r\n' "$1" |
+	openssl s_client -quiet -connect 127.0.0.1:443 -servername teoyujie.org 2>/dev/null | tr -d '\r'
+}
 
 t "configs: sshd" "sshd -t"
 t "configs: httpd" "httpd -n"
@@ -47,6 +52,9 @@ for u in / /lullapixie/privacy.html /lullapixie/support.html /marklove/privacy.h
 	t "web: $u" "[ \"\$(web 443 teoyujie.org $u)\" = '200 ' ]"
 done
 t "web: old URL is 404" "[ \"\$(web 443 teoyujie.org /old.html)\" = '404 ' ]"
+# errpage PATH: print the title of the error page of PATH, if it is the site error page (www/errdocs).
+errpage() { get "$1" | grep -q '^<link rel="stylesheet" href="/style.css">$' && get "$1" | grep '^<h1>'; }
+t "web: a 404 is the site error page" "[ \"\$(errpage /old.html)\" = '<h1>404 Not Found</h1>' ]"
 t "web: www to bare" "[ \"\$(web 443 www.teoyujie.org /a)\" = '301 https://teoyujie.org/a' ]"
 t "web: HTTP to HTTPS" "[ \"\$(web 80 teoyujie.org /a)\" = '301 https://teoyujie.org/a' ]"
 t "web: ACME on HTTP" "[ \"\$(web 80 teoyujie.org /.well-known/acme-challenge/x)\" = '404 ' ]"
@@ -55,6 +63,7 @@ d=$(openssl rand -hex 16)
 mkdir /var/www/files/f/$d && echo test > /var/www/files/f/$d/a.txt
 t "web: file link" "[ \"\$(web 443 teoyujie.org /f/$d/a.txt)\" = '200 ' ]"
 t "web: no file list" "[ \"\$(web 443 teoyujie.org /f/)\" != '200 ' ]"
+t "web: a 403 is the site error page" "[ \"\$(errpage /f/)\" = '<h1>403 Forbidden</h1>' ]"
 rm -r /var/www/files/f/$d
 
 # The pond save service, with a test key and a test entry. Both go away after the tests.
@@ -87,11 +96,6 @@ rm -r $p /var/www/pond/keys/test-$d.pub /var/www/pond/entries/test-$d.json
 entry() {
 	printf '{"entry":%s,"id":"test-%s-%s","key":"phone","op":"put","rev":1,"v":1}' "$3" $d $1 > /var/www/pond/entries/test-$d-$1.json
 	touch -t $2 /var/www/pond/entries/test-$d-$1.json
-}
-# get PATH: print the reply (head and body) of 1 GET.
-get() {
-	printf 'GET %s HTTP/1.0\r\nHost: teoyujie.org\r\n\r\n' "$1" |
-	openssl s_client -quiet -connect 127.0.0.1:443 -servername teoyujie.org 2>/dev/null | tr -d '\r'
 }
 p=$(mktemp -d)
 tp=/var/www/web/site/log/template.html
