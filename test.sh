@@ -55,6 +55,7 @@ t "web: old URL is 404" "[ \"\$(web 443 teoyujie.org /old.html)\" = '404 ' ]"
 # errpage PATH: print the title of the error page of PATH, if it is the site error page (www/errdocs).
 errpage() { get "$1" | grep -q '^<link rel="stylesheet" href="/style.css">$' && get "$1" | grep '^<h1>'; }
 t "web: a 404 is the site error page" "[ \"\$(errpage /old.html)\" = '<h1>404 Not Found</h1>' ]"
+t "web: the error page has the header and footer of the home page" "get /old.html | grep -qx '<span class=\"tagline\">Mechanical Engineer</span>' && get /old.html | grep -qx '<footer class=\"wrap\">'"
 t "web: www to bare" "[ \"\$(web 443 www.teoyujie.org /a)\" = '301 https://teoyujie.org/a' ]"
 t "web: HTTP to HTTPS" "[ \"\$(web 80 teoyujie.org /a)\" = '301 https://teoyujie.org/a' ]"
 t "web: ACME on HTTP" "[ \"\$(web 80 teoyujie.org /.well-known/acme-challenge/x)\" = '404 ' ]"
