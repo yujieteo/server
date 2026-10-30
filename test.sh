@@ -140,6 +140,7 @@ t "pond: the feed is RSS" "head -n 1 $p/feed | grep -q ' 200 ' && grep -qi '^Con
 t "pond: entries.json is newest first" "[ \"\$(order $p/json)\" = '$o' ]"
 t "pond: /log/ is newest first" "[ \"\$(order $p/log)\" = '$o' ]"
 t "pond: the feed is newest first" "[ \"\$(order $p/feed)\" = '$o' ]"
+t "pond: an entry date is in a time element" "[ \"\$(grep -B1 -xF '<h2>test-$d-old</h2>' $p/log | head -n 1)\" = '<time datetime=\"2026-10-27\">2026-10-27</time>' ]"
 t "pond: an item has an RFC 822 date" "item morning | grep -qF '<pubDate>Wed, 28 Oct 2026 00:00:00 +0000</pubDate>'"
 t "pond: a removed entry is not served" "! grep -q test-$d-gone $p/json $p/log $p/feed"
 t "pond: no private field is served" "! grep -qE 'test-$d-(fun|notice)' $p/json $p/log $p/feed"
