@@ -1,0 +1,5 @@
+#!/bin/sh
+# Login shell of the user tunnel. It runs no command: it only waits until the SSH connection ends.
+# Thus a client that does not use ssh -N keeps its tunnels open too.
+# When the connection ends, sshd-session exits and init (process 1) becomes the parent.
+while [ "$(ps -o ppid= -p $$)" -gt 1 ]; do sleep 30; done

@@ -3,3 +3,15 @@ PermitRootLogin no
 AuthenticationMethods publickey
 AuthorizedKeysFile .ssh/authorized_keys
 Subsystem sftp /usr/libexec/sftp-server
+
+# The user tunnel: reverse tunnels for Lavish on the Mac (4387), Lavish on the desktop (4388) and
+# femahoy on the desktop (8790).
+# The ports listen only on the VPN address 10.8.0.1. The login shell (tunnel-wait) runs no command.
+Match User tunnel
+	AllowTcpForwarding remote
+	AllowStreamLocalForwarding no
+	GatewayPorts clientspecified
+	PermitListen 10.8.0.1:4387 10.8.0.1:4388 10.8.0.1:8790
+	PermitTTY no
+	AllowAgentForwarding no
+	X11Forwarding no

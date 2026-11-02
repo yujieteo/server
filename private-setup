@@ -1,0 +1,46 @@
+#!/bin/sh
+# Run on the Mac, also from Termius over SSH. The one-time setup of mac.lavish.teoyujie.org,
+# desk.lavish.teoyujie.org and fh.teoyujie.org (README.md). It is safe to run again.
+#   ./private-setup ADMIN_USER@10.8.0.1
+# 1. Make the tunnel key on the Mac and on the desktop, if it is not there. Each private key
+#    stays on its own machine.
+# 2. Put the 2 public keys and the token of fh serve (from the desktop) in local.conf.
+# 3. ./apply. It asks for the doas password.
+# 4. Switch the dotfiles on the Mac and on the desktop (rebuild), which start the tunnels.
+set -eu
+cd "$(dirname "$0")"
+host=${1:?usage: ./private-setup ADMIN_USER@10.8.0.1}
+k=.ssh/tunnel_ed25519
+# fail STEP: say which step failed and how to try again, then stop.
+fail() { echo "FAILED: $1. Correct it, then run ./private-setup $host again." >&2; exit 1; }
+
+echo "1. Tunnel keys"
+[ -e ~/$k ] || ssh-keygen -q -t ed25519 -N '' -C mac-tunnel -f ~/$k || fail "ssh-keygen on the Mac"
+ssh desktop "[ -e ~/$k ] || ssh-keygen -q -t ed25519 -N '' -C desktop-tunnel -f ~/$k" ||
+	fail "ssh desktop (the desktop must be on and on Tailscale)"
+
+echo "2. local.conf"
+[ -e local.conf ] || fail "no local.conf (README.md, Rebuild from zero, step 2)"
+mac=$(cat ~/$k.pub)
+desktop=$(ssh desktop "cat ~/$k.pub") || fail "read the tunnel key of the desktop"
+token=$(ssh desktop 'cat "${XDG_STATE_HOME:-$HOME/.local/state}/femahoy/token"') ||
+	fail "read the femahoy token on the desktop (run fh serve on the desktop 1 time)"
+case $token in "" | *[!A-Za-z0-9_-]*) fail "the femahoy token on the desktop is empty or has a bad character" ;; esac
+# Remove the old TUNNEL_KEY (1 line or more) and FH_TOKEN, then add the new values.
+awk -v q="'" '
+	s { if (substr($0, length($0)) == q) s = 0; next }
+	index($0, "TUNNEL_KEY=" q) == 1 { s = index(substr($0, 13), q) == 0; next }
+	index($0, "FH_TOKEN=") == 1 { next }
+	{ print }' local.conf > local.conf.new
+printf "TUNNEL_KEY='%s\n%s'\nFH_TOKEN=%s\n" "$mac" "$desktop" "$token" >> local.conf.new
+chmod 600 local.conf.new
+mv local.conf.new local.conf
+
+echo "3. Apply to the server"
+./apply "$host" || fail "./apply $host"
+
+echo "4. Dotfiles"
+zsh -ic rebuild || fail "rebuild on the Mac"
+ssh -t desktop 'zsh -ic rebuild' || fail "rebuild on the desktop"
+echo "Done. On the VPN, open https://mac.lavish.teoyujie.org,
+https://desk.lavish.teoyujie.org and https://fh.teoyujie.org."

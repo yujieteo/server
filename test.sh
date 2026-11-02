@@ -26,8 +26,9 @@ t "configs: sshd" "sshd -t"
 t "configs: httpd" "httpd -n"
 t "configs: smtpd" "smtpd -n"
 t "configs: unbound" "unbound-checkconf"
+t "configs: relayd" "relayd -n"
 t "configs: pf" "pfctl -nf /etc/pf.conf"
-t "services run" "rcctl check slowcgi neurons_room httpd smtpd unbound sshd cron"
+t "services run" "rcctl check slowcgi neurons_room httpd relayd smtpd unbound sshd cron"
 t "sshd: no root login" "sshd -T | grep -qix 'permitrootlogin no'"
 t "sshd: keys only" "sshd -T | grep -qix 'authenticationmethods publickey'"
 t "admin keys: VPN only" "! grep -qv '^from=\"10.8.0.0/24,127.0.0.1\" ssh-' /home/$ADMIN_USER/.ssh/authorized_keys"
@@ -314,6 +315,95 @@ done | PATH=$p:$PATH /usr/local/sbin/ssh-alert
 t "SSH alert: a user name cannot make a false alert" "[ \"\$(cat $p/sent)\" = 'SSH login from 192.0.2.1' ]"
 rm -r $p
 
+# The tunnels of Lavish (port 4387 from the Mac, 4388 from the desktop) and femahoy (port 8790), with a
+# test key. The key goes away after the tests. If the real tunnels are open, the tests also pass.
+# Then relayd (etc/relayd.conf) on 10.8.0.1 port 443, through the test tunnels.
+# tunnel ARGS: log in as tunnel for 3 s. It gives 137 if the login stays open, and 255 if sshd refuses it.
+p=$(mktemp -d)
+ssh-keygen -q -t ed25519 -N '' -f $p/key
+a=/home/tunnel/.ssh/authorized_keys
+cp $a $p/keys
+echo "from=\"10.8.0.0/24,127.0.0.1\" $(cat $p/key.pub)" >> $a
+s="ssh -i $p/key -o UserKnownHostsFile=$p/known -o StrictHostKeyChecking=accept-new -o BatchMode=yes -o ExitOnForwardFailure=yes tunnel@127.0.0.1"
+tunnel() { $s "$@" </dev/null >/dev/null 2>&1 & q=$!; sleep 3; kill -9 $q 2>/dev/null; wait $q; }
+t "tunnel: a login runs no command and only waits" "tunnel touch /tmp/tunnel-$d; [ \$? = 137 ] && [ ! -e /tmp/tunnel-$d ]"
+t "tunnel: no tunnel on a public address" "tunnel -N -R 0.0.0.0:4387:127.0.0.1:80; [ \$? = 255 ]"
+t "tunnel: no tunnel on 127.0.0.1" "tunnel -N -R 127.0.0.1:4387:127.0.0.1:80; [ \$? = 255 ]"
+t "tunnel: no tunnel on another port" "tunnel -N -R 10.8.0.1:4389:127.0.0.1:80; [ \$? = 255 ]"
+t "tunnel: no connection from the server" "! $s -W 127.0.0.1:22 </dev/null 2>/dev/null | grep -q SSH-"
+# With no real tunnel open, the test tunnels go to 2 test apps, which keep the requests that
+# relayd gives them. front NAME HEADERS: send GET /x to relayd on 10.8.0.1 for NAME.
+front() {
+	if [ $# -ge 4 ]; then o=$4; else o="Origin: https://$1\r\n"; fi
+	printf 'GET %s HTTP/1.1\r\nHost: %s\r\n%b%b\r\n' "${3:-/x}" $1 "$o" "$2" |
+	openssl s_client -quiet -connect 10.8.0.1:443 -servername $1 >/dev/null 2>&1 & f=$!
+	sleep 2; kill $f 2>/dev/null; wait $f
+}
+# listen: print the addresses that listen on port 4387, 4388 or 8790.
+listen() { netstat -an -p tcp | awk '$NF == "LISTEN" && $4 ~ /\.(4387|4388|8790)$/ { print $4 }' | sort | tr '\n' ' '; }
+if netstat -an -p tcp | awk '$NF == "LISTEN" { print $4 }' | grep -qE '^10\.8\.0\.1\.(4387|4388|8790)$'; then
+	echo "skip the test tunnels and the tests of relayd to the apps: a real tunnel is open"
+	l=$(listen)
+else
+	nc -dlk 127.0.0.1 9471 > $p/mac & n1=$!
+	nc -dlk 127.0.0.1 9472 > $p/fh & n2=$!
+	nc -dlk 127.0.0.1 9473 > $p/desk & n3=$!
+	$s -N -R 10.8.0.1:4387:127.0.0.1:9471 -R 10.8.0.1:4388:127.0.0.1:9473 -R 10.8.0.1:8790:127.0.0.1:9472 </dev/null >/dev/null 2>&1 & q=$!
+	sleep 3
+	l=$(listen)
+	front teoyujie.org ''
+	front mac.lavish.teoyujie.org ''
+	front desk.lavish.teoyujie.org '' /x ''
+	front fh.teoyujie.org 'Authorization: Bearer wrong\r\n' /x ''
+	front fh.teoyujie.org 'Origin: https://evil.example\r\n' /evil ''
+	front mac.lavish.teoyujie.org 'Origin: https://evil.example\r\n' /evil ''
+	front mac.lavish.teoyujie.org 'Origin: https://desk.lavish.teoyujie.org\r\n' /evil ''
+	front desk.lavish.teoyujie.org 'Origin: https://fh.teoyujie.org\r\n' /evil ''
+	front fh.teoyujie.org 'Sec-Fetch-Site: cross-site\r\n' /cross
+	front mac.lavish.teoyujie.org '' /plain ''
+	front desk.lavish.teoyujie.org '' /same
+	front fh.teoyujie.org '' /same
+	kill -9 $q; wait $q 2>/dev/null
+	kill $n1 $n2 $n3
+	tr -d '\r' < $p/mac > $p/m
+	tr -d '\r' < $p/desk > $p/k
+	tr -d '\r' < $p/fh > $p/f
+	t "relayd: mac.lavish.teoyujie.org goes to Lavish on the Mac with Host 127.0.0.1:4387" "[ \"\$(grep -ci '^Host:' $p/m)\" = \"\$(grep -c '^GET ' $p/m)\" ] && ! grep -i '^Host:' $p/m | grep -vqix 'Host: 127.0.0.1:4387'"
+	t "relayd: Lavish on the Mac gets Origin http://127.0.0.1:4387" "[ \"\$(grep -ci '^Origin:' $p/m)\" = \"\$(grep -c '^GET ' $p/m)\" ] && ! grep -i '^Origin:' $p/m | grep -vqix 'Origin: http://127.0.0.1:4387'"
+	t "relayd: desk.lavish.teoyujie.org goes to Lavish on the desktop with Host 127.0.0.1:4387" "[ \"\$(grep -ci '^Host:' $p/k)\" = \"\$(grep -c '^GET ' $p/k)\" ] && ! grep -i '^Host:' $p/k | grep -vqix 'Host: 127.0.0.1:4387' && grep -q '^GET /x' $p/k"
+	t "relayd: Lavish on the desktop gets Origin http://127.0.0.1:4387" "grep -qix 'Origin: http://127.0.0.1:4387' $p/k"
+	t "relayd: fh.teoyujie.org goes to femahoy with Host 127.0.0.1:8790" "[ \"\$(grep -ci '^Host:' $p/f)\" = \"\$(grep -c '^GET ' $p/f)\" ] && ! grep -i '^Host:' $p/f | grep -vqix 'Host: 127.0.0.1:8790'"
+	t "relayd: femahoy gets Origin http://127.0.0.1:8790" "[ \"\$(grep -ci '^Origin:' $p/f)\" = \"\$(grep -c '^GET ' $p/f)\" ] && ! grep -i '^Origin:' $p/f | grep -vqix 'Origin: http://127.0.0.1:8790'"
+	t "relayd: femahoy gets only the token of local.conf" "[ \"\$(grep -ci '^Authorization:' $p/f)\" = \"\$(grep -c '^GET ' $p/f)\" ] && ! grep -i '^Authorization:' $p/f | grep -vqix 'Authorization: Bearer $FH_TOKEN'"
+	t "relayd: a request with no Origin passes" "grep -q '^GET /x' $p/f"
+	t "relayd: another Origin or a cross-site request reaches no app" "! cat $p/m $p/k $p/f | grep -qE '^GET /(evil|cross)' && ! grep -q evil $p/m $p/k $p/f"
+	t "relayd: another Origin gets 403" "[ \"\$( (printf 'GET /x HTTP/1.1\r\nHost: fh.teoyujie.org\r\nOrigin: https://evil.example\r\n\r\n'; sleep 2) | openssl s_client -quiet -connect 10.8.0.1:443 -servername fh.teoyujie.org 2>/dev/null | head -n 1 | cut -d' ' -f2)\" = 403 ]"
+	t "relayd: Sec-Fetch-Site cross-site gets 403" "[ \"\$( (printf 'GET /x HTTP/1.1\r\nHost: fh.teoyujie.org\r\nSec-Fetch-Site: cross-site\r\n\r\n'; sleep 2) | openssl s_client -quiet -connect 10.8.0.1:443 -servername fh.teoyujie.org 2>/dev/null | head -n 1 | cut -d' ' -f2)\" = 403 ]"
+	t "relayd: Lavish on the Mac gets a request with no Origin" "grep -q '^GET /plain' $p/m"
+	t "relayd: desk.lavish.teoyujie.org passes its own Origin" "grep -q '^GET /same' $p/k"
+	t "relayd: fh.teoyujie.org passes its own Origin" "grep -q '^GET /same' $p/f"
+	t "relayd: another name goes to no app" "[ \"\$(cat $p/m $p/k $p/f | grep -c '^GET ')\" = 6 ]"
+fi
+t "tunnel: the ports listen only on 10.8.0.1 (127.0.0.1.8790 is the room relay)" "echo '$l' | grep -q 10.8.0.1 && [ -z \"\$(echo $l | tr ' ' '\n' | grep -vxE '10\.8\.0\.1\.(4387|4388|8790)|127\.0\.0\.1\.8790')\" ]"
+cp $p/keys $a
+rm -r $p
+# From the internet, pf passes only SSH, mail, web, WireGuard and ICMP, and only to the public
+# addresses. Thus the tunnel ports and relayd on 10.8.0.1 are closed.
+t "pf: the internet reaches only the public services on the public addresses" "! pfctl -sr | grep '^pass' | grep -v '^pass out' | grep -v '^pass on wg0 ' | grep -vE '^pass in on egress .*to \(egress\) port = (22|25|80|443|51820)( |\$)|^pass in on egress .*proto [a-z0-9-]*icmp'"
+# The private names: the VPN devices get 10.8.0.1. The public addresses answer only the ACME
+# challenge for them. pub PORT NAME PATH: print the first line of the answer of the public address.
+ip4=$(ifconfig egress | awk '$1 == "inet" { print $2; exit }')
+pub() {
+	printf 'GET %s HTTP/1.0\r\nHost: %s\r\n\r\n' "$3" "$2" |
+	if [ "$1" = 80 ]; then nc -w 3 $ip4 80; else openssl s_client -quiet -connect $ip4:443 -servername "$2"; fi 2>/dev/null | head -n 1
+}
+for n in mac.lavish desk.lavish fh; do
+	t "private names: $n.teoyujie.org is 10.8.0.1 on the VPN" "[ \"\$(dig +short @10.8.0.1 $n.teoyujie.org A)\" = 10.8.0.1 ] && [ -z \"\$(dig +short @10.8.0.1 $n.teoyujie.org AAAA)\" ]"
+	t "private names: https://$n.teoyujie.org gives nothing on the public address" "[ -z \"\$(pub 443 $n.teoyujie.org /)\" ]"
+	t "private names: http://$n.teoyujie.org gives nothing on the public address" "[ -z \"\$(pub 80 $n.teoyujie.org /)\" ]"
+	t "private names: http://$n.teoyujie.org on the VPN goes to HTTPS" "printf 'GET /a HTTP/1.0\r\nHost: $n.teoyujie.org\r\n\r\n' | nc -w 3 10.8.0.1 80 | tr -d '\r' | grep -qx 'Location: https://$n.teoyujie.org/a'"
+done
+t "private names: the public address answers the ACME challenge" "pub 80 fh.teoyujie.org /.well-known/acme-challenge/x | grep -q ' 404 '"
 t "VPN: wg0 has all peers" "[ \$(ifconfig wg0 | grep -c wgpeer) -eq $(echo $WG_PEERS | wc -w) ]"
 b=$(sed -n '1s/^local-zone: "\(.*\)" always_nxdomain$/\1/p' /var/unbound/etc/blocklist.conf)
 t "DNS: blocklist loaded" "[ -n '$b' ] && dig @10.8.0.1 '$b' | grep -q NXDOMAIN"
