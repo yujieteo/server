@@ -14,3 +14,9 @@ id = "smtpd-srs-key"
 description = "OpenSMTPD SRS key (/etc/mail/srs.conf)"
 regex = '''srs\s+key\s+(\S{16,})'''
 secretGroup = 1
+
+# Old commits of the branch fm/server-private-tunnels hold the public sample Sec-WebSocket-Key of
+# RFC 6455 in test.sh. It is not a secret. History is not rewritten, so allow this exact value.
+[[allowlists]]
+description = "RFC 6455 sample Sec-WebSocket-Key"
+regexes = ['''dGhlIHNhbXBsZSBub25jZQ==''']
