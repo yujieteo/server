@@ -380,6 +380,7 @@ else
 	t "relayd: another Origin or a cross-site request reaches no app" "! cat $p/m $p/k $p/f | grep -qE '^GET /(evil|cross)' && ! grep -q evil $p/m $p/k $p/f"
 	t "relayd: another Origin gets 403" "[ \"\$( (printf 'GET /x HTTP/1.1\r\nHost: fh.teoyujie.org\r\nOrigin: https://evil.example\r\n\r\n'; sleep 2) | openssl s_client -quiet -connect 10.8.0.1:443 -servername fh.teoyujie.org 2>/dev/null | head -n 1 | cut -d' ' -f2)\" = 403 ]"
 	t "relayd: Sec-Fetch-Site cross-site gets 403" "[ \"\$( (printf 'GET /x HTTP/1.1\r\nHost: fh.teoyujie.org\r\nSec-Fetch-Site: cross-site\r\n\r\n'; sleep 2) | openssl s_client -quiet -connect 10.8.0.1:443 -servername fh.teoyujie.org 2>/dev/null | head -n 1 | cut -d' ' -f2)\" = 403 ]"
+	t "relayd: the 403 has the style of the site error page" "(printf 'GET /x HTTP/1.1\r\nHost: fh.teoyujie.org\r\nOrigin: https://evil.example\r\n\r\n'; sleep 2) | openssl s_client -quiet -connect 10.8.0.1:443 -servername fh.teoyujie.org 2>/dev/null > $p/blk; head -n 1 $p/blk | grep -q ' 403 ' && grep -q 'Mechanical Engineer' $p/blk"
 	t "relayd: Lavish on the Mac gets a request with no Origin" "grep -q '^GET /plain' $p/m"
 	t "relayd: desk.lavish.teoyujie.org passes its own Origin" "grep -q '^GET /same' $p/k"
 	t "relayd: fh.teoyujie.org passes its own Origin" "grep -q '^GET /same' $p/f"
