@@ -387,6 +387,44 @@ fi
 t "tunnel: the ports listen only on 10.8.0.1 (127.0.0.1.8790 is the room relay)" "echo '$l' | grep -q 10.8.0.1 && [ -z \"\$(echo $l | tr ' ' '\n' | grep -vxE '10\.8\.0\.1\.(4387|4388|8790)|127\.0\.0\.1\.8790')\" ]"
 cp $p/keys $a
 rm -r $p
+# The fleet view (bin/fleet-upload), with a test key. The key and the test pages go away after the
+# tests, and the real pages come back. fleet PATH: GET PATH of fleet.teoyujie.org through relayd.
+p=$(mktemp -d)
+ssh-keygen -q -t ed25519 -N '' -f $p/key
+a=/home/fleet/.ssh/authorized_keys
+w=/var/www/fleet
+cp $a $p/keys
+for n in mac desk; do [ ! -e $w/$n.html ] || cp -p $w/$n.html $p/$n.saved; done
+echo "from=\"10.8.0.0/24,127.0.0.1\",restrict,command=\"/usr/local/sbin/fleet-upload\" $(cat $p/key.pub)" >> $a
+s="ssh -i $p/key -o UserKnownHostsFile=$p/known -o StrictHostKeyChecking=accept-new -o BatchMode=yes fleet@127.0.0.1"
+fleet() {
+	(printf 'GET %s HTTP/1.1\r\nHost: fleet.teoyujie.org\r\n%b\r\n' "$1" "${2:-}"; sleep 2) |
+	openssl s_client -quiet -connect 10.8.0.1:443 -servername fleet.teoyujie.org 2>/dev/null | tr -d '\r'
+}
+echo "test-$d-old" > $p/old
+t "fleet: upload of mac" "$s mac < $p/old && cmp $p/old $w/mac.html"
+t "fleet: upload of desk" "echo test-$d-desk | $s desk && grep -qx test-$d-desk $w/desk.html"
+t "fleet: another name fails" "! echo x | $s index && ! echo x | $s ../x && ! echo x | $s 'mac; touch /tmp/fleet-$d' && ! echo x | $s && [ ! -e /tmp/fleet-$d ] && [ \"\$(ls -A $w | tr '\n' ' ')\" = 'desk.html index.html mac.html ' ]"
+t "fleet: a page of 1 MiB passes" "dd if=/dev/zero bs=1048576 count=1 2>/dev/null | $s mac && [ \$(wc -c < $w/mac.html) -eq 1048576 ]"
+$s mac < $p/old
+t "fleet: a page larger than 1 MiB fails, and the old page stays" "! dd if=/dev/zero bs=1048577 count=1 2>/dev/null | $s mac && cmp $p/old $w/mac.html"
+t "fleet: no connection from the server" "! $s -W 127.0.0.1:22 </dev/null 2>/dev/null | grep -q SSH-"
+# A slow upload: during it, the old page stays complete and the new page is in a temp file.
+{ echo test-$d-new1; sleep 5; echo test-$d-new2; } | $s mac & q=$!
+sleep 2
+t "fleet: during an upload, the old page stays complete" "cmp $p/old $w/mac.html && ls -A $w | grep -q '^\.mac\.'"
+wait $q
+printf 'test-%s-new1\ntest-%s-new2\n' $d $d > $p/new
+t "fleet: after the upload, the new page is complete and no temp file stays" "cmp $p/new $w/mac.html && ! ls -A $w | grep -q '^\.'"
+t "fleet: relayd serves the index on 10.8.0.1" "fleet / | grep -qi '<title>Fleet</title>'"
+t "fleet: relayd serves the page with its time" "fleet /mac.html > $p/got && grep -q '^Last-Modified: ' $p/got && grep -qx test-$d-new2 $p/got"
+t "fleet: httpd does not serve a temp file" "fleet /.mac.x | head -n 1 | grep -q ' 404 '"
+t "fleet: another Origin gets 403" "fleet / 'Origin: https://evil.example\r\n' | head -n 1 | grep -q ' 403 '"
+for n in mac desk; do
+	if [ -e $p/$n.saved ]; then cp -p $p/$n.saved $w/.$n.saved && mv $w/.$n.saved $w/$n.html; else rm -f $w/$n.html; fi
+done
+cp $p/keys $a
+rm -r $p
 # From the internet, pf passes only SSH, mail, web, WireGuard and ICMP, and only to the public
 # addresses. Thus the tunnel ports and relayd on 10.8.0.1 are closed.
 t "pf: the internet reaches only the public services on the public addresses" "! pfctl -sr | grep '^pass' | grep -v '^pass out' | grep -v '^pass on wg0 ' | grep -vE '^pass in on egress .*to \(egress\) port = (22|25|80|443|51820)( |\$)|^pass in on egress .*proto [a-z0-9-]*icmp'"
@@ -397,7 +435,7 @@ pub() {
 	printf 'GET %s HTTP/1.0\r\nHost: %s\r\n\r\n' "$3" "$2" |
 	if [ "$1" = 80 ]; then nc -w 3 $ip4 80; else openssl s_client -quiet -connect $ip4:443 -servername "$2"; fi 2>/dev/null | head -n 1
 }
-for n in mac.lavish desk.lavish fh; do
+for n in mac.lavish desk.lavish fh fleet; do
 	t "private names: $n.teoyujie.org is 10.8.0.1 on the VPN" "[ \"\$(dig +short @10.8.0.1 $n.teoyujie.org A)\" = 10.8.0.1 ] && [ -z \"\$(dig +short @10.8.0.1 $n.teoyujie.org AAAA)\" ]"
 	t "private names: https://$n.teoyujie.org gives nothing on the public address" "[ -z \"\$(pub 443 $n.teoyujie.org /)\" ]"
 	t "private names: http://$n.teoyujie.org gives nothing on the public address" "[ -z \"\$(pub 80 $n.teoyujie.org /)\" ]"

@@ -15,12 +15,13 @@ private values. No value in it gives access to the server.
 | `install.sh` | Runs on the server as root. Makes a fresh OpenBSD 8.0 server into teoyujie.org. Safe to run again. |
 | `test.sh` | Runs on the server as root after `install.sh`. Tests all services. |
 | `apply` | Runs on the Mac. Copies this repo and `local.conf` to the server, then runs `install.sh`. |
-| `private-setup` | Runs on the Mac. The one-time setup of the private names of Lavish and femahoy (below). |
+| `private-setup` | Runs on the Mac. The one-time setup of the private names of Lavish, femahoy and the fleet view (below). |
 | `mail-alias` | Runs on the Mac. `./mail-alias add NAME` or `./mail-alias del NAME`. |
 | `share` | Runs on the Mac. `./share FILE` prints a link to FILE that works for 30 days. |
 | `local.conf.example` | The private values, with test values. CI uses it. |
 | `etc/` | The configs: httpd, relayd, acme-client, smtpd, pf, sshd, unbound, doas, sysctl, crontab, and `rc.d/neurons_room`. |
-| `bin/` | The jobs: health-check, ssh-alert, blocklist-update, site-update (below), private-cert (below), deploy-only (the forced command of the deploy user), and tunnel-wait (the login shell of the tunnel user). |
+| `bin/` | The jobs: health-check, ssh-alert, blocklist-update, site-update (below), private-cert (below), deploy-only (the forced command of the deploy user), tunnel-wait (the login shell of the tunnel user), and fleet-upload (the forced command of the fleet user, below). |
+| `fleet/index.html` | The page of the fleet view (below). It shows the pages of the Mac and the desktop. |
 | `www/` | Files on the web: security.txt, the GPG key with WKD, the MTA-STS policy, and `errdocs/err.html`, the error page (403, 404 and the others) in the look of the site. |
 | `pond/` | The pond save and read services (below). `pond_save.c`, `pond_verify.h`, `pond_lock.h`, `pond_read.c` and `pond_read.h` are copies of `server/` in the [pond repo](https://github.com/yujieteo/pond) at commit `cb6bbac6ffcb050347d1fab6852e4302184d1362`. Do not change them here. `main.c` adds pledge and unveil to `pond_save`. `pond_read` does its own unveil (read only) and pledge (`stdio rpath`). |
 | `room/` | The room relay of the neuron explorer (below). `room.c` is the C that Goose makes from `room.goose`. |
@@ -69,6 +70,7 @@ After a change to this repo: `./apply ADMIN_USER@10.8.0.1`.
 | `mac.lavish` | A | the IPv4 address of the server |
 | `desk.lavish` | A | the IPv4 address of the server |
 | `fh` | A | the IPv4 address of the server |
+| `fleet` | A | the IPv4 address of the server |
 
 Make no other record. A wildcard record stops GnuPG from finding the key with WKD.
 If you change `www/.well-known/mta-sts.txt`, also change the `id` of `_mta-sts`.
@@ -206,6 +208,34 @@ To set it up:
 
 `test.sh` tests the tunnel user, the listen addresses, the pf rules, the headers that relayd sends to
 each app, and that the public addresses do not answer for the 3 names.
+
+## Fleet view
+
+`https://fleet.teoyujie.org` shows the workers on the Mac and on the desktop: each worker, its task, its
+last event, and each PR that waits for a word from the captain. It is read only, and only for the VPN devices.
+The Mac and the desktop make their pages (the dotfiles do that, not this repo) and upload them:
+
+```
+ssh -i ~/.ssh/tunnel_ed25519 fleet@10.8.0.1 mac < mac.html        # on the Mac
+ssh -i ~/.ssh/tunnel_ed25519 fleet@10.8.0.1 desk < desk.html      # on the desktop
+```
+
+- The user `fleet` logs in with the tunnel keys (`TUNNEL_KEY` in `local.conf`), only through the VPN.
+  It can only run `bin/fleet-upload`: no shell, no terminal, no forwarding. Root owns its home.
+- `fleet-upload` accepts only the name `mac` or `desk`, and a page of 1 MiB or less. It writes the page to a
+  temp file in `/var/www/fleet`, then renames it to `mac.html` or `desk.html`. Thus httpd always serves a
+  complete page, and a failed upload keeps the old page.
+- `fleet/index.html` shows the 2 pages and the time of each upload (the `Last-Modified` of the page). It
+  says OLD when an upload is more than 10 minutes ago. It loads the pages again each 30 seconds.
+  The pages show in a sandbox, so they cannot run a script. Use HTML and CSS only.
+- unbound gives `fleet.teoyujie.org` to the VPN devices as 10.8.0.1. relayd on 10.8.0.1 port 443 sends it to
+  httpd on 127.0.0.1 port 8092, with the same `Origin` and `Sec-Fetch-Site` rule as the other private names.
+  The public addresses answer only the Let's Encrypt challenge for it, as for the other private names.
+  To set it up, add the DNS record `fleet` (in [DNS records](#dns-records)), then `./apply ADMIN_USER@10.8.0.1`.
+  Until the public DNS has that record, `bin/private-cert` renews no private name. If the tunnel keys are
+  not set up yet, run `./private-setup` (below) in place of `./apply`.
+
+`test.sh` tests the names, the size limit, the replace in 1 step, and that the public addresses do not answer.
 
 ## Upgrade to the next OpenBSD release (each 6 months)
 

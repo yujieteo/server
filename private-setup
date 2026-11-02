@@ -43,4 +43,4 @@ echo "4. Dotfiles"
 zsh -ic rebuild || fail "rebuild on the Mac"
 ssh -t desktop 'zsh -ic rebuild' || fail "rebuild on the desktop"
 echo "Done. On the VPN, open https://mac.lavish.teoyujie.org,
-https://desk.lavish.teoyujie.org and https://fh.teoyujie.org."
+https://desk.lavish.teoyujie.org, https://fh.teoyujie.org and https://fleet.teoyujie.org."
