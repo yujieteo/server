@@ -40,7 +40,9 @@ echo "3. Apply to the server"
 ./apply "$host" || fail "./apply $host"
 
 echo "4. Dotfiles"
-zsh -ic rebuild || fail "rebuild on the Mac"
+# +m turns off job control. Without it, zsh -ic takes the terminal and the script gets
+# "zsh: suspended (tty output)". stdin from /dev/null keeps it from reading a later password.
+zsh +m -ic rebuild </dev/null || fail "rebuild on the Mac"
 ssh -t desktop 'zsh -ic rebuild' || fail "rebuild on the desktop"
 echo "Done. On the VPN, open https://mac.lavish.teoyujie.org,
 https://desk.lavish.teoyujie.org, https://fh.teoyujie.org and https://fleet.teoyujie.org."

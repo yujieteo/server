@@ -10,7 +10,7 @@ d=teoyujie.org
 put() {
 	sed "s#@KNOWN_IPS@#$KNOWN_IPS#g; s#@FH_TOKEN@#${FH_TOKEN:-}#g" "$1" > "$2.new"
 	chmod "${3:-644}" "$2.new"
-	mv "$2.new" "$2"
+	mv -f "$2.new" "$2"
 }
 
 echo $d > /etc/myname
@@ -66,15 +66,15 @@ cp -R www /var/www/htdocs/server
 install -d -m 755 /var/www/pond /var/www/pond/keys
 install -d -o www -m 755 /var/www/pond/entries
 cc -O2 -static -DGS_STACK_RESERVE='(16ull<<20)' -o /var/www/cgi-bin/pond_save.new pond/main.c -lcrypto -lm -pthread
-mv /var/www/cgi-bin/pond_save.new /var/www/cgi-bin/pond_save
+mv -f /var/www/cgi-bin/pond_save.new /var/www/cgi-bin/pond_save
 cc -O2 -static -DGS_STACK_RESERVE='(16ull<<20)' -o /var/www/cgi-bin/pond_read.new pond/pond_read.c -lm -pthread
-mv /var/www/cgi-bin/pond_read.new /var/www/cgi-bin/pond_read
+mv -f /var/www/cgi-bin/pond_read.new /var/www/cgi-bin/pond_read
 
 # The room relay of the neuron explorer: a daemon on 127.0.0.1 port 8790, with its own user.
 # It keeps the rooms in memory only, so a restart ends all rooms.
 id _neuronsroom >/dev/null 2>&1 || useradd -L daemon -c 'neurons room relay' -d /var/empty -s /sbin/nologin _neuronsroom
 cc -O2 -DGS_STACK_RESERVE='(16ull<<20)' -o /usr/local/sbin/neurons_room.new room/room.c -lm -pthread
-mv /usr/local/sbin/neurons_room.new /usr/local/sbin/neurons_room
+mv -f /usr/local/sbin/neurons_room.new /usr/local/sbin/neurons_room
 
 # Until acme-client gets the Let's Encrypt certificate, httpd and smtpd use a 1-day self-signed one.
 if [ ! -e /etc/ssl/$d.fullchain.pem ]; then
@@ -99,7 +99,7 @@ for a in contact postmaster $ALIASES; do echo "$a@$d $FORWARD_TO"; done > /etc/m
 	for a in $ALIASES; do echo "$a: contact"; done
 	echo "# END teoyujie.org"
 } > /etc/mail/aliases.new
-mv /etc/mail/aliases.new /etc/mail/aliases
+mv -f /etc/mail/aliases.new /etc/mail/aliases
 
 # WireGuard. The private key stays in hostname.wg0 and never leaves the server.
 key=$(awk '$1 == "wgkey" { print $2 }' /etc/hostname.wg0 2>/dev/null || true)
@@ -123,7 +123,7 @@ chmod 640 /etc/hostname.wg0.new
 if cmp -s /etc/hostname.wg0.new /etc/hostname.wg0 && ifconfig wg0 >/dev/null 2>&1; then
 	rm /etc/hostname.wg0.new
 elif ! ifconfig wg0 >/dev/null 2>&1; then
-	mv /etc/hostname.wg0.new /etc/hostname.wg0
+	mv -f /etc/hostname.wg0.new /etc/hostname.wg0
 	sh /etc/netstart wg0
 fi
 
@@ -160,5 +160,5 @@ echo "Done. WireGuard public key of the server: $(ifconfig wg0 | awk '$1 == "wgp
 if [ -e /etc/hostname.wg0.new ]; then
 	echo "wg0 restarts in 2 seconds. The VPN stops for some seconds."
 	trap '' HUP
-	nohup sh -c 'sleep 2; mv /etc/hostname.wg0.new /etc/hostname.wg0; ifconfig wg0 destroy; sh /etc/netstart wg0' >/dev/null 2>&1 &
+	nohup sh -c 'sleep 2; mv -f /etc/hostname.wg0.new /etc/hostname.wg0; ifconfig wg0 destroy; sh /etc/netstart wg0' >/dev/null 2>&1 &
 fi
