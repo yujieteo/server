@@ -8,7 +8,7 @@ d=teoyujie.org
 
 # put SRC DEST [MODE]: install a repo file, with the private values put in.
 put() {
-	sed "s#@KNOWN_IPS@#$KNOWN_IPS#g" "$1" > "$2.new"
+	sed "s#@KNOWN_IPS@#$KNOWN_IPS#g; s#@FH_TOKEN@#${FH_TOKEN:-}#g" "$1" > "$2.new"
 	chmod "${3:-644}" "$2.new"
 	mv "$2.new" "$2"
 }
@@ -44,6 +44,7 @@ put etc/acme-client.conf /etc/acme-client.conf
 put etc/smtpd.conf /etc/mail/smtpd.conf
 put etc/unbound.conf /var/unbound/etc/unbound.conf
 put etc/pf.conf /etc/pf.conf 600
+put etc/relayd.conf /etc/relayd.conf 600
 put etc/rc.d/neurons_room /etc/rc.d/neurons_room 555
 sysctl -q net.inet.ip.forwarding=1
 
@@ -72,6 +73,11 @@ mv /usr/local/sbin/neurons_room.new /usr/local/sbin/neurons_room
 if [ ! -e /etc/ssl/$d.fullchain.pem ]; then
 	(umask 077 && openssl ecparam -genkey -name prime256v1 -out /etc/ssl/private/$d.key 2>/dev/null)
 	openssl req -x509 -new -key /etc/ssl/private/$d.key -days 1 -subj /CN=$d -out /etc/ssl/$d.fullchain.pem
+fi
+# The same for the private names of Lavish and femahoy (relayd and httpd), until private-cert gets one.
+if [ ! -e /etc/ssl/lavish.$d.crt ]; then
+	(umask 077 && openssl ecparam -genkey -name prime256v1 -out /etc/ssl/private/lavish.$d.key 2>/dev/null)
+	openssl req -x509 -new -key /etc/ssl/private/lavish.$d.key -days 1 -subj /CN=lavish.$d -out /etc/ssl/lavish.$d.crt
 fi
 
 # Mail. From the internet, only contact, postmaster and the website aliases go to the mailbox.
@@ -131,10 +137,12 @@ smtpd -n
 unbound-anchor || true
 unbound-checkconf >/dev/null
 acme-client -n >/dev/null
+relayd -n >/dev/null
 pfctl -nf /etc/pf.conf
 pfctl -f /etc/pf.conf
-rcctl enable slowcgi neurons_room httpd smtpd unbound >/dev/null
-rcctl restart sshd syslogd slowcgi neurons_room httpd smtpd unbound >/dev/null
+rcctl enable slowcgi neurons_room httpd relayd smtpd unbound >/dev/null
+rcctl restart sshd syslogd slowcgi neurons_room httpd relayd smtpd unbound >/dev/null
+/usr/local/sbin/private-cert || echo "private-cert failed: cron tries again each hour"
 [ -s /var/unbound/etc/blocklist.conf ] || /usr/local/sbin/blocklist-update
 # Deploy the site now, so that cron does not deploy it while test.sh runs.
 su deploy -c /usr/local/sbin/site-update || true

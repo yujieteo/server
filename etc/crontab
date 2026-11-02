@@ -4,6 +4,7 @@
 30	20	*	*	*	syspatch >/dev/null; [ $? -eq 0 ] && shutdown -r +1
 45	20	*	*	*	/usr/local/sbin/health-check
 ~	*	*	*	*	acme-client teoyujie.org && rcctl reload httpd >/dev/null && rcctl restart smtpd >/dev/null
+~	*	*	*	*	/usr/local/sbin/private-cert
 0	3	*	*	0	/usr/local/sbin/blocklist-update
 # -s: only 1 site-update runs at a time.
 *	*	*	*	*	-s su deploy -c /usr/local/sbin/site-update
