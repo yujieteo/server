@@ -8,7 +8,7 @@ set -eu
 n=${SSH_ORIGINAL_COMMAND:-}
 case $n in mac|desk) ;; *) echo "fleet: use 'mac' or 'desk'" >&2; exit 1 ;; esac
 cd /var/www/fleet
-t=$(mktemp .$n.XXXXXXXXXX)
+t=$(mktemp ."$n".XXXXXXXXXX)
 # The file size limit is in blocks of 512 bytes. cat stops at the limit and fails.
 if ! (ulimit -f 2048 && cat > "$t") 2>/dev/null; then
 	rm -f "$t"
