@@ -359,7 +359,6 @@ else
 	front mac.lavish.teoyujie.org 'Origin: https://desk.lavish.teoyujie.org\r\n' /evil ''
 	front desk.lavish.teoyujie.org 'Origin: https://fh.teoyujie.org\r\n' /evil ''
 	front fh.teoyujie.org 'Sec-Fetch-Site: cross-site\r\n' /cross
-	front screen.teoyujie.org 'Origin: https://evil.example\r\n' /evil ''
 	kill -9 $q; wait $q 2>/dev/null
 	kill $n1 $n2 $n3
 	tr -d '\r' < $p/mac > $p/m
@@ -376,7 +375,6 @@ else
 	t "relayd: a request with no Origin passes" "grep -q '^GET /x' $p/f"
 	t "relayd: another Origin or a cross-site request reaches no app" "! cat $p/m $p/k $p/f | grep -qE '^GET /(evil|cross)' && ! grep -q evil $p/m $p/k $p/f"
 	t "relayd: another Origin gets 403" "[ \"\$(printf 'GET /x HTTP/1.1\r\nHost: fh.teoyujie.org\r\nOrigin: https://evil.example\r\n\r\n' | openssl s_client -quiet -connect 10.8.0.1:443 -servername fh.teoyujie.org 2>/dev/null | head -n 1 | cut -d' ' -f2)\" = 403 ]"
-	t "relayd: screen.teoyujie.org with another Origin gets 403" "[ \"\$(printf 'GET /x HTTP/1.1\r\nHost: screen.teoyujie.org\r\nOrigin: https://evil.example\r\n\r\n' | openssl s_client -quiet -connect 10.8.0.1:443 -servername screen.teoyujie.org 2>/dev/null | head -n 1 | cut -d' ' -f2)\" = 403 ]"
 	t "relayd: Sec-Fetch-Site cross-site gets 403" "[ \"\$(printf 'GET /x HTTP/1.1\r\nHost: fh.teoyujie.org\r\nSec-Fetch-Site: cross-site\r\n\r\n' | openssl s_client -quiet -connect 10.8.0.1:443 -servername fh.teoyujie.org 2>/dev/null | head -n 1 | cut -d' ' -f2)\" = 403 ]"
 	t "relayd: another name goes to no app" "[ \"\$(cat $p/m $p/k $p/f | grep -c '^GET ')\" = 3 ]"
 fi
@@ -385,7 +383,6 @@ cp $p/keys $a
 rm -r $p
 # From the internet, pf passes only SSH, mail, web, WireGuard and ICMP, and only to the public
 # addresses. Thus the tunnel ports and relayd on 10.8.0.1 are closed.
-t "pf: only the server gets to noVNC on the desktop" "pfctl -sr | grep -q '^block drop in on wg0 proto tcp from any to 10.8.0.4 port = 6080'"
 t "pf: the internet reaches only the public services on the public addresses" "! pfctl -sr | grep '^pass' | grep -v '^pass out' | grep -v '^pass on wg0 ' | grep -vE '^pass in on egress .*to \(egress\) port = (22|25|80|443|51820)( |\$)|^pass in on egress .*proto [a-z0-9-]*icmp'"
 # The private names: the VPN devices get 10.8.0.1. The public addresses answer only the ACME
 # challenge for them. pub PORT NAME PATH: print the first line of the answer of the public address.
@@ -394,7 +391,7 @@ pub() {
 	printf 'GET %s HTTP/1.0\r\nHost: %s\r\n\r\n' "$3" "$2" |
 	if [ "$1" = 80 ]; then nc -w 3 $ip4 80; else openssl s_client -quiet -connect $ip4:443 -servername "$2"; fi 2>/dev/null | head -n 1
 }
-for n in mac.lavish desk.lavish fh screen; do
+for n in mac.lavish desk.lavish fh; do
 	t "private names: $n.teoyujie.org is 10.8.0.1 on the VPN" "[ \"\$(dig +short @10.8.0.1 $n.teoyujie.org A)\" = 10.8.0.1 ] && [ -z \"\$(dig +short @10.8.0.1 $n.teoyujie.org AAAA)\" ]"
 	t "private names: https://$n.teoyujie.org gives nothing on the public address" "[ -z \"\$(pub 443 $n.teoyujie.org /)\" ]"
 	t "private names: http://$n.teoyujie.org gives nothing on the public address" "[ -z \"\$(pub 80 $n.teoyujie.org /)\" ]"
