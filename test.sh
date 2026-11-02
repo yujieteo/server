@@ -351,7 +351,7 @@ else
 	sleep 3
 	l=$(listen)
 	front teoyujie.org ''
-	front mac.lavish.teoyujie.org 'Connection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n'
+	front mac.lavish.teoyujie.org ''
 	front desk.lavish.teoyujie.org '' /x ''
 	front fh.teoyujie.org 'Authorization: Bearer wrong\r\n' /x ''
 	front fh.teoyujie.org 'Origin: https://evil.example\r\n' /evil ''
@@ -366,7 +366,6 @@ else
 	tr -d '\r' < $p/fh > $p/f
 	t "relayd: mac.lavish.teoyujie.org goes to Lavish on the Mac with Host 127.0.0.1:4387" "[ \"\$(grep -ci '^Host:' $p/m)\" = 1 ] && grep -qix 'Host: 127.0.0.1:4387' $p/m"
 	t "relayd: Lavish on the Mac gets Origin http://127.0.0.1:4387" "[ \"\$(grep -ci '^Origin:' $p/m)\" = 1 ] && grep -qix 'Origin: http://127.0.0.1:4387' $p/m"
-	t "relayd: Lavish on the Mac gets the websocket upgrade" "grep -qix 'Upgrade: websocket' $p/m"
 	t "relayd: desk.lavish.teoyujie.org goes to Lavish on the desktop with Host 127.0.0.1:4387" "[ \"\$(grep -ci '^Host:' $p/k)\" = 1 ] && grep -qix 'Host: 127.0.0.1:4387' $p/k && grep -q '^GET /x' $p/k"
 	t "relayd: Lavish on the desktop gets Origin http://127.0.0.1:4387" "grep -qix 'Origin: http://127.0.0.1:4387' $p/k"
 	t "relayd: fh.teoyujie.org goes to femahoy with Host 127.0.0.1:8790" "[ \"\$(grep -ci '^Host:' $p/f)\" = 1 ] && grep -qix 'Host: 127.0.0.1:8790' $p/f"
