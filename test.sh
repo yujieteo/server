@@ -334,7 +334,7 @@ t "tunnel: no connection from the server" "! $s -W 127.0.0.1:22 </dev/null 2>/de
 # With no real tunnel open, the test tunnels go to 2 test apps, which keep the requests that
 # relayd gives them. front NAME HEADERS: send GET /x to relayd on 10.8.0.1 for NAME.
 front() {
-	printf 'GET /x HTTP/1.1\r\nHost: %s\r\nOrigin: https://%s\r\n%b\r\n' $1 $1 "$2" |
+	printf 'GET %s HTTP/1.1\r\nHost: %s\r\n%b\r\n' "${3:-/x}" $1 "${4-Origin: https://$1\r\n}$2" |
 	openssl s_client -quiet -connect 10.8.0.1:443 -servername $1 >/dev/null 2>&1 & f=$!
 	sleep 2; kill $f 2>/dev/null; wait $f
 }
@@ -351,7 +351,11 @@ else
 	l=$(listen)
 	front teoyujie.org ''
 	front lavish.teoyujie.org 'Connection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n'
-	front fh.teoyujie.org 'Authorization: Bearer wrong\r\n'
+	front fh.teoyujie.org 'Authorization: Bearer wrong\r\n' /x ''
+	front fh.teoyujie.org 'Origin: https://evil.example\r\n' /evil ''
+	front lavish.teoyujie.org 'Origin: https://evil.example\r\n' /evil ''
+	front lavish.teoyujie.org 'Origin: https://fh.teoyujie.org\r\n' /evil ''
+	front fh.teoyujie.org 'Sec-Fetch-Site: cross-site\r\n' /cross
 	kill -9 $q; wait $q 2>/dev/null
 	kill $n1 $n2
 	tr -d '\r' < $p/lavish > $p/l
@@ -362,6 +366,10 @@ else
 	t "relayd: fh.teoyujie.org goes to femahoy with Host 127.0.0.1:8790" "[ \"\$(grep -ci '^Host:' $p/f)\" = 1 ] && grep -qix 'Host: 127.0.0.1:8790' $p/f"
 	t "relayd: femahoy gets Origin http://127.0.0.1:8790" "[ \"\$(grep -ci '^Origin:' $p/f)\" = 1 ] && grep -qix 'Origin: http://127.0.0.1:8790' $p/f"
 	t "relayd: femahoy gets only the token of local.conf" "[ \"\$(grep -ci '^Authorization:' $p/f)\" = 1 ] && grep -qx 'Authorization: Bearer $FH_TOKEN' $p/f"
+	t "relayd: a request with no Origin passes" "grep -q '^GET /x' $p/f"
+	t "relayd: another Origin or a cross-site request reaches no app" "! cat $p/l $p/f | grep -qE '^GET /(evil|cross)' && ! grep -q evil $p/l $p/f"
+	t "relayd: another Origin gets 403" "[ \"\$(printf 'GET /x HTTP/1.1\r\nHost: fh.teoyujie.org\r\nOrigin: https://evil.example\r\n\r\n' | openssl s_client -quiet -connect 10.8.0.1:443 -servername fh.teoyujie.org 2>/dev/null | head -n 1 | cut -d' ' -f2)\" = 403 ]"
+	t "relayd: Sec-Fetch-Site cross-site gets 403" "[ \"\$(printf 'GET /x HTTP/1.1\r\nHost: fh.teoyujie.org\r\nSec-Fetch-Site: cross-site\r\n\r\n' | openssl s_client -quiet -connect 10.8.0.1:443 -servername fh.teoyujie.org 2>/dev/null | head -n 1 | cut -d' ' -f2)\" = 403 ]"
 	t "relayd: another name goes to no app" "[ \"\$(cat $p/l $p/f | grep -c '^GET ')\" = 2 ]"
 fi
 t "tunnel: the ports listen only on 10.8.0.1 (127.0.0.1.8790 is the room relay)" "echo '$l' | grep -q 10.8.0.1 && [ -z \"\$(echo $l | tr ' ' '\n' | grep -vxE '10\.8\.0\.1\.(4387|8790)|127\.0\.0\.1\.8790')\" ]"

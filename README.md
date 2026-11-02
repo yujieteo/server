@@ -177,8 +177,9 @@ No token is necessary. Nobody without a WireGuard key gets to them.
   run a command, get a terminal, or connect from the server to another address. It logs in with a key
   only, and only through the VPN.
 - unbound gives the 2 names to the VPN devices as 10.8.0.1. relayd on 10.8.0.1 port 443 (`etc/relayd.conf`)
-  sends each name to its tunnel. Each app accepts only its local address, so relayd sets `Host` and
-  `Origin` to it. For femahoy, relayd also sends the token of `fh serve` (`FH_TOKEN` in `local.conf`).
+  sends each name to its tunnel. relayd gives 403 to a request with an `Origin` other than its own
+  name, or with `Sec-Fetch-Site: cross-site`, so a web page cannot use the apps. Then relayd sets `Host`
+  and `Origin` to the local address of the app. For femahoy, relayd also sends the token of `fh serve` (`FH_TOKEN` in `local.conf`).
   httpd on 10.8.0.1 port 80 sends the names to HTTPS.
 - pf lets the internet in only to the public addresses. On the public addresses, httpd answers only
   the Let's Encrypt challenge for the 2 names. `bin/private-cert` gets their certificate.
