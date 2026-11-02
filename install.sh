@@ -75,9 +75,9 @@ if [ ! -e /etc/ssl/$d.fullchain.pem ]; then
 	openssl req -x509 -new -key /etc/ssl/private/$d.key -days 1 -subj /CN=$d -out /etc/ssl/$d.fullchain.pem
 fi
 # The same for the private names of Lavish and femahoy (relayd and httpd), until private-cert gets one.
-if [ ! -e /etc/ssl/lavish.$d.crt ]; then
-	(umask 077 && openssl ecparam -genkey -name prime256v1 -out /etc/ssl/private/lavish.$d.key 2>/dev/null)
-	openssl req -x509 -new -key /etc/ssl/private/lavish.$d.key -days 1 -subj /CN=lavish.$d -out /etc/ssl/lavish.$d.crt
+if [ ! -e /etc/ssl/apps.crt ]; then
+	(umask 077 && openssl ecparam -genkey -name prime256v1 -out /etc/ssl/private/apps.key 2>/dev/null)
+	openssl req -x509 -new -key /etc/ssl/private/apps.key -days 1 -subj /CN=mac.lavish.$d -out /etc/ssl/apps.crt
 fi
 
 # Mail. From the internet, only contact, postmaster and the website aliases go to the mailbox.

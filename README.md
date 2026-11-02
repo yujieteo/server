@@ -66,7 +66,8 @@ After a change to this repo: `./apply ADMIN_USER@10.8.0.1`.
 | `@` | CAA | `0 issue "letsencrypt.org"` |
 | `@` | CAA | `0 issuewild ";"` |
 | `@` | CAA | `0 iodef "mailto:contact@teoyujie.org"` |
-| `lavish` | A | the IPv4 address of the server |
+| `mac.lavish` | A | the IPv4 address of the server |
+| `desk.lavish` | A | the IPv4 address of the server |
 | `fh` | A | the IPv4 address of the server |
 
 Make no other record. A wildcard record stops GnuPG from finding the key with WKD.
@@ -166,27 +167,34 @@ cd room && GOOSE_STDLIB=../../goose/stdlib ../../goose/build/goose --standalone 
 
 ## Private names of Lavish and femahoy
 
-On a device on the VPN (Mac, iPhone, desktop), `https://lavish.teoyujie.org` opens Lavish (on the Mac,
-127.0.0.1:4387), and `https://fh.teoyujie.org` opens femahoy `fh serve` (on the desktop, 127.0.0.1:8790).
-No token is necessary. Nobody without a WireGuard key gets to them.
+On a device on the VPN (Mac, iPhone, desktop), these names open the apps. No token is necessary.
+
+| Name | App | Tunnel port on 10.8.0.1 |
+|---|---|---|
+| `https://mac.lavish.teoyujie.org` | Lavish on the Mac (127.0.0.1:4387) | 4387 |
+| `https://desk.lavish.teoyujie.org` | Lavish on the desktop (127.0.0.1:4387) | 4388 |
+| `https://fh.teoyujie.org` | femahoy `fh serve` on the desktop (127.0.0.1:8790) | 8790 |
+
+Lavish uses paths from the root of the site (`/api/...`, `/events/...`), so each Lavish has its own name,
+not a path such as `/mac`. Nobody without a WireGuard key gets to them.
 
 - The Mac and the desktop open a reverse SSH tunnel to the server, as the user `tunnel`. The tunnel ports
   listen only on 10.8.0.1, the VPN address of the server. The room relay also uses port 8790, but on
   127.0.0.1, so the two do not collide.
-- The user `tunnel` can only open these 2 tunnels (`Match User tunnel` in `etc/sshd_config`). It cannot
+- The user `tunnel` can only open these 3 tunnels (`Match User tunnel` in `etc/sshd_config`). It cannot
   run a command, get a terminal, or connect from the server to another address. It logs in with a key
   only, and only through the VPN.
-- unbound gives the 2 names to the VPN devices as 10.8.0.1. relayd on 10.8.0.1 port 443 (`etc/relayd.conf`)
+- unbound gives the 3 names to the VPN devices as 10.8.0.1. relayd on 10.8.0.1 port 443 (`etc/relayd.conf`)
   sends each name to its tunnel. relayd gives 403 to a request with an `Origin` other than its own
   name, or with `Sec-Fetch-Site: cross-site`, so a web page cannot use the apps. Then relayd sets `Host`
   and `Origin` to the local address of the app. For femahoy, relayd also sends the token of `fh serve` (`FH_TOKEN` in `local.conf`).
   httpd on 10.8.0.1 port 80 sends the names to HTTPS.
 - pf lets the internet in only to the public addresses. On the public addresses, httpd answers only
-  the Let's Encrypt challenge for the 2 names. `bin/private-cert` gets their certificate.
+  the Let's Encrypt challenge for the 3 names. `bin/private-cert` gets their certificate.
 
 To set it up:
 
-1. In Gandi LiveDNS, add the records `lavish` and `fh` of the table in [DNS records](#dns-records). This
+1. In Gandi LiveDNS, add the records `mac.lavish`, `desk.lavish` and `fh` of the table in [DNS records](#dns-records). This
    is the only step by hand. Let's Encrypt needs them to check the names. The records give the public
    address, which answers only the check.
 2. On the Mac (also from Termius over SSH), with the VPN on: `./private-setup ADMIN_USER@10.8.0.1`.
@@ -197,7 +205,7 @@ To set it up:
    It is safe to run again, for example after a new femahoy token.
 
 `test.sh` tests the tunnel user, the listen addresses, the pf rules, the headers that relayd sends to
-each app, and that the public addresses do not answer for the 2 names.
+each app, and that the public addresses do not answer for the 3 names.
 
 ## Upgrade to the next OpenBSD release (each 6 months)
 

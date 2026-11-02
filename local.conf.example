@@ -22,8 +22,8 @@ WG_PEERS='mac:10.8.0.2:LhKtpXWoWMpryX+dR8AiL21BsFczQXP0WAqAqjIBNRY= phone:10.8.0
 # SSH logins from these addresses send no alert. Shell patterns, with | between them.
 KNOWN_IPS='10.8.0.*'
 
-# Tunnel login of the Mac (Lavish) and the desktop (femahoy): SSH public keys, 1 key on each line.
-# It can only open the tunnels on 10.8.0.1 port 4387 and 8790. README.md has the client command.
+# Tunnel login of the Mac (Lavish) and the desktop (Lavish and femahoy): SSH public keys, 1 key on each line.
+# It can only open the tunnels on 10.8.0.1 port 4387, 4388 and 8790. README.md has the client command.
 TUNNEL_KEY='ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIK6HiekzW/ld/c/Db1MgfSbGU3e7HEvqYY4JrXp1oTfx test-mac-tunnel
 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHgFT6FPlQhAbIST8RRFHBhg74v6t67cGoZbNn5g0Gbu test-desktop-tunnel'
 
