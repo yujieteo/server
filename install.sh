@@ -36,6 +36,13 @@ for f in bin/*; do put "$f" /usr/local/sbin/"${f#bin/}" 755; done
 id tunnel >/dev/null 2>&1 || useradd -d /home/tunnel -s /usr/local/sbin/tunnel-wait tunnel
 install -d -m 755 /home/tunnel /home/tunnel/.ssh
 printf '%s\n' "${TUNNEL_KEY:-}" | sed '/^[[:space:]]*$/d; s#^[[:space:]]*#from="10.8.0.0/24,127.0.0.1" #' > /home/tunnel/.ssh/authorized_keys
+# The fleet user, with the same keys, can only run fleet-upload, which replaces mac.html or desk.html
+# in /var/www/fleet (the fleet view). fleet-upload is also its login shell. Root owns its home.
+id fleet >/dev/null 2>&1 || useradd -d /home/fleet -s /usr/local/sbin/fleet-upload fleet
+install -d -m 755 /home/fleet /home/fleet/.ssh
+printf '%s\n' "${TUNNEL_KEY:-}" | sed '/^[[:space:]]*$/d; s#^[[:space:]]*#from="10.8.0.0/24,127.0.0.1",restrict,command="/usr/local/sbin/fleet-upload" #' > /home/fleet/.ssh/authorized_keys
+install -d -o fleet -m 755 /var/www/fleet
+install -m 644 fleet/index.html /var/www/fleet/index.html
 put etc/doas.conf /etc/doas.conf
 put etc/sysctl.conf /etc/sysctl.conf
 put etc/sshd_config /etc/ssh/sshd_config
@@ -74,7 +81,7 @@ if [ ! -e /etc/ssl/$d.fullchain.pem ]; then
 	(umask 077 && openssl ecparam -genkey -name prime256v1 -out /etc/ssl/private/$d.key 2>/dev/null)
 	openssl req -x509 -new -key /etc/ssl/private/$d.key -days 1 -subj /CN=$d -out /etc/ssl/$d.fullchain.pem
 fi
-# The same for the private names of Lavish and femahoy (relayd and httpd), until private-cert gets one.
+# The same for the private names of Lavish, femahoy and the fleet view (relayd and httpd), until private-cert gets one.
 if [ ! -e /etc/ssl/apps.crt ]; then
 	(umask 077 && openssl ecparam -genkey -name prime256v1 -out /etc/ssl/private/apps.key 2>/dev/null)
 	openssl req -x509 -new -key /etc/ssl/private/apps.key -days 1 -subj /CN=mac.lavish.$d -out /etc/ssl/apps.crt
