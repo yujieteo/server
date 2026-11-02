@@ -334,7 +334,8 @@ t "tunnel: no connection from the server" "! $s -W 127.0.0.1:22 </dev/null 2>/de
 # With no real tunnel open, the test tunnels go to 2 test apps, which keep the requests that
 # relayd gives them. front NAME HEADERS: send GET /x to relayd on 10.8.0.1 for NAME.
 front() {
-	printf 'GET %s HTTP/1.1\r\nHost: %s\r\n%b\r\n' "${3:-/x}" $1 "${4-Origin: https://$1\r\n}$2" |
+	if [ $# -ge 4 ]; then o=$4; else o="Origin: https://$1\r\n"; fi
+	printf 'GET %s HTTP/1.1\r\nHost: %s\r\n%b%b\r\n' "${3:-/x}" $1 "$o" "$2" |
 	openssl s_client -quiet -connect 10.8.0.1:443 -servername $1 >/dev/null 2>&1 & f=$!
 	sleep 2; kill $f 2>/dev/null; wait $f
 }
