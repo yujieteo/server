@@ -368,13 +368,13 @@ else
 	tr -d '\r' < $p/mac > $p/m
 	tr -d '\r' < $p/desk > $p/k
 	tr -d '\r' < $p/fh > $p/f
-	t "relayd: mac.lavish.teoyujie.org goes to Lavish on the Mac with Host 127.0.0.1:4387" "[ \"\$(grep -ci '^Host:' $p/m)\" = 1 ] && grep -qix 'Host: 127.0.0.1:4387' $p/m"
-	t "relayd: Lavish on the Mac gets Origin http://127.0.0.1:4387" "[ \"\$(grep -ci '^Origin:' $p/m)\" = 1 ] && grep -qix 'Origin: http://127.0.0.1:4387' $p/m"
-	t "relayd: desk.lavish.teoyujie.org goes to Lavish on the desktop with Host 127.0.0.1:4387" "[ \"\$(grep -ci '^Host:' $p/k)\" = 1 ] && grep -qix 'Host: 127.0.0.1:4387' $p/k && grep -q '^GET /x' $p/k"
+	t "relayd: mac.lavish.teoyujie.org goes to Lavish on the Mac with Host 127.0.0.1:4387" "[ \"\$(grep -ci '^Host:' $p/m)\" = \"\$(grep -c '^GET ' $p/m)\" ] && ! grep -i '^Host:' $p/m | grep -vqix 'Host: 127.0.0.1:4387'"
+	t "relayd: Lavish on the Mac gets Origin http://127.0.0.1:4387" "[ \"\$(grep -ci '^Origin:' $p/m)\" = \"\$(grep -c '^GET ' $p/m)\" ] && ! grep -i '^Origin:' $p/m | grep -vqix 'Origin: http://127.0.0.1:4387'"
+	t "relayd: desk.lavish.teoyujie.org goes to Lavish on the desktop with Host 127.0.0.1:4387" "[ \"\$(grep -ci '^Host:' $p/k)\" = \"\$(grep -c '^GET ' $p/k)\" ] && ! grep -i '^Host:' $p/k | grep -vqix 'Host: 127.0.0.1:4387' && grep -q '^GET /x' $p/k"
 	t "relayd: Lavish on the desktop gets Origin http://127.0.0.1:4387" "grep -qix 'Origin: http://127.0.0.1:4387' $p/k"
-	t "relayd: fh.teoyujie.org goes to femahoy with Host 127.0.0.1:8790" "[ \"\$(grep -ci '^Host:' $p/f)\" = 1 ] && grep -qix 'Host: 127.0.0.1:8790' $p/f"
-	t "relayd: femahoy gets Origin http://127.0.0.1:8790" "[ \"\$(grep -ci '^Origin:' $p/f)\" = 1 ] && grep -qix 'Origin: http://127.0.0.1:8790' $p/f"
-	t "relayd: femahoy gets only the token of local.conf" "[ \"\$(grep -ci '^Authorization:' $p/f)\" = 1 ] && grep -qx 'Authorization: Bearer $FH_TOKEN' $p/f"
+	t "relayd: fh.teoyujie.org goes to femahoy with Host 127.0.0.1:8790" "[ \"\$(grep -ci '^Host:' $p/f)\" = \"\$(grep -c '^GET ' $p/f)\" ] && ! grep -i '^Host:' $p/f | grep -vqix 'Host: 127.0.0.1:8790'"
+	t "relayd: femahoy gets Origin http://127.0.0.1:8790" "[ \"\$(grep -ci '^Origin:' $p/f)\" = \"\$(grep -c '^GET ' $p/f)\" ] && ! grep -i '^Origin:' $p/f | grep -vqix 'Origin: http://127.0.0.1:8790'"
+	t "relayd: femahoy gets only the token of local.conf" "[ \"\$(grep -ci '^Authorization:' $p/f)\" = \"\$(grep -c '^GET ' $p/f)\" ] && ! grep -i '^Authorization:' $p/f | grep -vqix 'Authorization: Bearer $FH_TOKEN'"
 	t "relayd: a request with no Origin passes" "grep -q '^GET /x' $p/f"
 	t "relayd: another Origin or a cross-site request reaches no app" "! cat $p/m $p/k $p/f | grep -qE '^GET /(evil|cross)' && ! grep -q evil $p/m $p/k $p/f"
 	t "relayd: another Origin gets 403" "[ \"\$( (printf 'GET /x HTTP/1.1\r\nHost: fh.teoyujie.org\r\nOrigin: https://evil.example\r\n\r\n'; sleep 2) | openssl s_client -quiet -connect 10.8.0.1:443 -servername fh.teoyujie.org 2>/dev/null | head -n 1 | cut -d' ' -f2)\" = 403 ]"
