@@ -1,6 +1,6 @@
 #!/bin/sh
 # Run on the Mac, also from Termius over SSH. The one-time setup of mac.lavish.teoyujie.org,
-# desk.lavish.teoyujie.org and fh.teoyujie.org (README.md). It is safe to run again.
+# desk.lavish.teoyujie.org, fh.teoyujie.org and screen.teoyujie.org (README.md). It is safe to run again.
 #   ./private-setup ADMIN_USER@10.8.0.1
 # 1. Make the tunnel key on the Mac and on the desktop, if it is not there. Each private key
 #    stays on its own machine.
@@ -43,4 +43,4 @@ echo "4. Dotfiles"
 zsh -ic rebuild || fail "rebuild on the Mac"
 ssh -t desktop 'zsh -ic rebuild' || fail "rebuild on the desktop"
 echo "Done. On the VPN, open https://mac.lavish.teoyujie.org,
-https://desk.lavish.teoyujie.org and https://fh.teoyujie.org."
+https://desk.lavish.teoyujie.org, https://fh.teoyujie.org and https://screen.teoyujie.org."
