@@ -19,7 +19,7 @@ private values. No value in it gives access to the server.
 | `share` | Runs on the Mac. `./share FILE` prints a link to FILE that works for 30 days. |
 | `local.conf.example` | The private values, with test values. CI uses it. |
 | `etc/` | The configs: httpd, acme-client, smtpd, pf, sshd, unbound, doas, sysctl, crontab, and `rc.d/neurons_room`. |
-| `bin/` | The jobs: health-check, ssh-alert, blocklist-update, and deploy-only (the forced command of the deploy user). |
+| `bin/` | The jobs: health-check, ssh-alert, blocklist-update, deploy-only (the forced command of the deploy user), and tunnel-wait (the login shell of the tunnel user). |
 | `www/` | Files on the web: security.txt, the GPG key with WKD, the MTA-STS policy, and `errdocs/err.html`, the error page (403, 404 and the others) in the look of the site. |
 | `pond/` | The pond save and read services (below). `pond_save.c`, `pond_verify.h`, `pond_lock.h`, `pond_read.c` and `pond_read.h` are copies of `server/` in the [pond repo](https://github.com/yujieteo/pond) at commit `cb6bbac6ffcb050347d1fab6852e4302184d1362`. Do not change them here. `main.c` adds pledge and unveil to `pond_save`. `pond_read` does its own unveil (read only) and pledge (`stdio rpath`). |
 | `room/` | The room relay of the neuron explorer (below). `room.c` is the C that Goose makes from `room.goose`. |
@@ -148,6 +148,29 @@ cd room && GOOSE_STDLIB=../../goose/stdlib ../../goose/build/goose --standalone 
 ```
 
 `install.sh` builds the daemon from `room.c`. `test.sh` tests it through httpd, and the limits on 2 more daemons.
+
+## Private tunnels of Lavish and femahoy
+
+Only the devices on the VPN can use Lavish (on the Mac, 127.0.0.1:4387) and femahoy `fh serve` (on the
+desktop, 127.0.0.1:8790). The Mac and the desktop open a reverse SSH tunnel to the server, as the user
+`tunnel`. The VPN devices then use `http://10.8.0.1:4387` (Lavish) and `http://10.8.0.1:8790` (femahoy).
+
+- The tunnel ports listen only on 10.8.0.1, the VPN address of the server. pf passes no other port
+  from the internet. The room relay also uses port 8790, but on 127.0.0.1, so the two do not collide.
+- The user `tunnel` can only open these 2 tunnels (`Match User tunnel` in `etc/sshd_config`). It cannot
+  run a command, get a terminal, or connect from the server to another address.
+- It logs in with a key only, and only through the VPN. Thus the desktop must also be in `WG_PEERS`.
+
+To set it up, make a key on the Mac and on the desktop (`ssh-keygen -t ed25519 -f ~/.ssh/tunnel`). Put
+each public key in `TUNNEL_KEY` in `local.conf`, then apply. The private keys stay on the devices.
+The client command (the dotfiles repo makes a service for it):
+
+```
+ssh -N -i ~/.ssh/tunnel -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 -R 10.8.0.1:4387:127.0.0.1:4387 tunnel@10.8.0.1   # Mac
+ssh -N -i ~/.ssh/tunnel -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 -R 10.8.0.1:8790:127.0.0.1:8790 tunnel@10.8.0.1   # desktop
+```
+
+`test.sh` tests that the ports listen only on 10.8.0.1, that the user can do nothing else, and the pf rules.
 
 ## Upgrade to the next OpenBSD release (each 6 months)
 

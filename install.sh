@@ -30,6 +30,11 @@ install -d -m 755 /home/deploy/.ssh
 echo "from=\"10.8.0.0/24,127.0.0.1\",restrict,command=\"/usr/local/sbin/deploy-only\" $DEPLOY_KEY" > /home/deploy/.ssh/authorized_keys
 
 for f in bin/*; do put "$f" /usr/local/sbin/"${f#bin/}" 755; done
+# The tunnel user can only open the tunnels of Lavish and femahoy on 10.8.0.1 (see sshd_config).
+# Its login shell is tunnel-wait, which runs no command. Root owns its home, so it cannot change its keys.
+id tunnel >/dev/null 2>&1 || useradd -d /home/tunnel -s /usr/local/sbin/tunnel-wait tunnel
+install -d -m 755 /home/tunnel /home/tunnel/.ssh
+printf '%s\n' "${TUNNEL_KEY:-}" | sed '/^[[:space:]]*$/d; s#^[[:space:]]*#from="10.8.0.0/24,127.0.0.1" #' > /home/tunnel/.ssh/authorized_keys
 put etc/doas.conf /etc/doas.conf
 put etc/sysctl.conf /etc/sysctl.conf
 put etc/sshd_config /etc/ssh/sshd_config

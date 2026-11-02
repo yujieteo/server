@@ -287,6 +287,31 @@ done | PATH=$p:$PATH /usr/local/sbin/ssh-alert
 t "SSH alert: a user name cannot make a false alert" "[ \"\$(cat $p/sent)\" = 'SSH login from 192.0.2.1' ]"
 rm -r $p
 
+# The tunnels of Lavish (port 4387, from the Mac) and femahoy (port 8790, from the desktop), with a
+# test key. The key goes away after the tests. If the real tunnels are open, the tests also pass.
+# tunnel ARGS: log in as tunnel for 3 s. It gives 137 if the login stays open, and 255 if sshd refuses it.
+p=$(mktemp -d)
+ssh-keygen -q -t ed25519 -N '' -f $p/key
+a=/home/tunnel/.ssh/authorized_keys
+cp $a $p/keys
+echo "from=\"10.8.0.0/24,127.0.0.1\" $(cat $p/key.pub)" >> $a
+s="ssh -i $p/key -o UserKnownHostsFile=$p/known -o StrictHostKeyChecking=accept-new -o BatchMode=yes -o ExitOnForwardFailure=yes tunnel@127.0.0.1"
+tunnel() { $s "$@" </dev/null >/dev/null 2>&1 & q=$!; sleep 3; kill -9 $q 2>/dev/null; wait $q; }
+t "tunnel: a login runs no command and only waits" "tunnel touch /tmp/tunnel-$d; [ \$? = 137 ] && [ ! -e /tmp/tunnel-$d ]"
+t "tunnel: no tunnel on a public address" "tunnel -N -R 0.0.0.0:4387:127.0.0.1:80; [ \$? = 255 ]"
+t "tunnel: no tunnel on 127.0.0.1" "tunnel -N -R 127.0.0.1:4387:127.0.0.1:80; [ \$? = 255 ]"
+t "tunnel: no tunnel on another port" "tunnel -N -R 10.8.0.1:4388:127.0.0.1:80; [ \$? = 255 ]"
+t "tunnel: no connection from the server" "! $s -W 127.0.0.1:22 </dev/null 2>/dev/null | grep -q SSH-"
+$s -N -R 10.8.0.1:4387:127.0.0.1:80 -R 10.8.0.1:8790:127.0.0.1:80 </dev/null >/dev/null 2>&1 & q=$!
+sleep 3
+l=$(netstat -an -p tcp | awk '$NF == "LISTEN" && $4 ~ /\.(4387|8790)$/ { print $4 }' | sort | tr '\n' ' ')
+t "tunnel: the ports listen only on 10.8.0.1 (127.0.0.1.8790 is the room relay)" "[ '$l' = '10.8.0.1.4387 10.8.0.1.8790 127.0.0.1.8790 ' ]"
+t "tunnel: a VPN device reaches the ports" "nc -z 10.8.0.1 4387 && nc -z 10.8.0.1 8790"
+kill -9 $q; wait $q 2>/dev/null
+cp $p/keys $a
+rm -r $p
+# From the internet, pf passes only SSH, mail, web, WireGuard and ICMP. Thus 4387 and 8790 are closed.
+t "pf: the internet reaches no other port" "! pfctl -sr | grep '^pass' | grep -v '^pass out' | grep -v '^pass on wg0 ' | grep -vE '^pass in on egress .*(port = (22|25|80|443|51820)( |\$)|proto [a-z0-9-]*icmp)'"
 t "VPN: wg0 has all peers" "[ \$(ifconfig wg0 | grep -c wgpeer) -eq $(echo $WG_PEERS | wc -w) ]"
 b=$(sed -n '1s/^local-zone: "\(.*\)" always_nxdomain$/\1/p' /var/unbound/etc/blocklist.conf)
 t "DNS: blocklist loaded" "[ -n '$b' ] && dig @10.8.0.1 '$b' | grep -q NXDOMAIN"
