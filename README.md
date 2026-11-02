@@ -19,7 +19,7 @@ private values. No value in it gives access to the server.
 | `share` | Runs on the Mac. `./share FILE` prints a link to FILE that works for 30 days. |
 | `local.conf.example` | The private values, with test values. CI uses it. |
 | `etc/` | The configs: httpd, acme-client, smtpd, pf, sshd, unbound, doas, sysctl, crontab, and `rc.d/neurons_room`. |
-| `bin/` | The jobs: health-check, ssh-alert, blocklist-update, deploy-only (the forced command of the deploy user), and tunnel-wait (the login shell of the tunnel user). |
+| `bin/` | The jobs: health-check, ssh-alert, blocklist-update, site-update (below), deploy-only (the forced command of the deploy user), and tunnel-wait (the login shell of the tunnel user). |
 | `www/` | Files on the web: security.txt, the GPG key with WKD, the MTA-STS policy, and `errdocs/err.html`, the error page (403, 404 and the others) in the look of the site. |
 | `pond/` | The pond save and read services (below). `pond_save.c`, `pond_verify.h`, `pond_lock.h`, `pond_read.c` and `pond_read.h` are copies of `server/` in the [pond repo](https://github.com/yujieteo/pond) at commit `cb6bbac6ffcb050347d1fab6852e4302184d1362`. Do not change them here. `main.c` adds pledge and unveil to `pond_save`. `pond_read` does its own unveil (read only) and pledge (`stdio rpath`). |
 | `room/` | The room relay of the neuron explorer (below). `room.c` is the C that Goose makes from `room.goose`. |
@@ -42,7 +42,7 @@ private values. No value in it gives access to the server.
 5. In Gandi LiveDNS, set the records of the next section.
 6. When `dig +short teoyujie.org` shows the new address:
    `ssh -t ADMIN_USER@10.8.0.1 'doas acme-client -v teoyujie.org && doas rcctl reload httpd && doas rcctl restart smtpd'`
-7. Deploy the site from its repo. The site repo also has the app pages.
+7. `install.sh` deploys the site from the main branch of its repo (below). The site repo also has the app pages.
 8. Test on the server: `ssh -t ADMIN_USER@10.8.0.1 doas sh server/test.sh`.
    Test from outside that the server is not an open relay. Expect 550:
    `python3 -c 'import smtplib; s=smtplib.SMTP("teoyujie.org"); s.ehlo(); s.mail("a@example.org"); print(s.rcpt("a@example.net"))'`
@@ -93,6 +93,18 @@ PersistentKeepalive = 25
 The iPhone uses `Address = 10.8.0.3/32`. Only traffic to 10.8.0.0/24 goes through the VPN. All DNS
 goes to the server, which blocks ads and trackers. Turn on "On Demand" on both devices.
 The iPhone reaches the Mac at 10.8.0.2 (Remote Login or Screen Sharing in macOS Settings).
+
+## Site deploys
+
+Each minute, the cron job `bin/site-update` (as the user deploy) reads the commit of the main branch of
+[yujieteo/site](https://github.com/yujieteo/site). When it changes, the job gets the tarball of that commit
+from GitHub and gives its `public/` to deploy-only. Then it gets `/` and each URL in `fixed-urls.txt` of that
+commit from httpd. If one does not give 200, it puts the previous site back and mails root. Thus a push to
+main deploys the site, with no key and no Mac. `/home/deploy/site-commit` holds the last commit, so a failed
+commit is not deployed again. The next commit on main deploys again. If GitHub does not answer, the job
+tries again the next minute and mails nothing.
+
+`scripts/deploy.sh` of the site repo also deploys from the Mac. The next change on main replaces that deploy.
 
 ## Pond save and read services
 

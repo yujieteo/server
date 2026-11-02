@@ -18,6 +18,7 @@ hostname $d
 
 # Users. The admin logs in with a key, only through the VPN, and uses doas with a password.
 # The deploy user can only run deploy-only, which replaces 1 web folder with a tar archive.
+# The cron job site-update also runs as deploy.
 id "$ADMIN_USER" >/dev/null 2>&1 || useradd -m -G wheel -s /bin/ksh "$ADMIN_USER"
 id deploy >/dev/null 2>&1 || useradd -m -s /bin/sh deploy
 if grep -q "^$ADMIN_USER:\*:" /etc/master.passwd; then
@@ -135,6 +136,8 @@ pfctl -f /etc/pf.conf
 rcctl enable slowcgi neurons_room httpd smtpd unbound >/dev/null
 rcctl restart sshd syslogd slowcgi neurons_room httpd smtpd unbound >/dev/null
 [ -s /var/unbound/etc/blocklist.conf ] || /usr/local/sbin/blocklist-update
+# Deploy the site now, so that cron does not deploy it while test.sh runs.
+su deploy -c /usr/local/sbin/site-update || true
 
 echo "Done. WireGuard public key of the server: $(ifconfig wg0 | awk '$1 == "wgpubkey" { print $2 }')"
 # The key does not change on a restart. The restart runs detached, so it survives the SSH hangup.

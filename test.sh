@@ -47,6 +47,33 @@ if [ -n "${1:-}" ]; then
 	rm -rf "$p"
 fi
 
+# site-update, with a test ftp that gives a test commit of main and its tarball. The tarball is the
+# site as it is, plus a test file. The first commit has a URL that is not found in fixed-urls.txt.
+# With DEPLOY_KEY, a second commit has good URLs, so the test file stays (the site changes).
+# site TAG: make the commit TAG with the tarball of the site as it is, plus the test file.
+site() {
+	c=$(echo "$1 $$" | sha1)
+	rm -rf $p/x && mkdir -p $p/x/site-$c
+	cp -R /var/www/web/site $p/x/site-$c/public
+	echo test > $p/x/site-$c/public/site-update-test.html
+	echo "$2" > $p/x/site-$c/fixed-urls.txt
+	tar -czf $p/site.tgz -C $p/x .
+	printf '#!/bin/sh\ncase $3 in *info/refs*) printf "003d%s refs/heads/main\\n" ;; *) cp %s/site.tgz "$2" ;; esac\n' $c $p > $p/ftp
+}
+p=$(mktemp -d) && chmod 755 $p && cp /home/deploy/site-commit $p/last 2>/dev/null
+u="su deploy -c 'PATH=$p:\$PATH /usr/local/sbin/site-update'"
+site bad /no-such-page && chmod 755 $p/ftp && chmod 644 $p/site.tgz
+o=$(eval "$u" 2>&1)
+t "site-update: a failed check puts the previous site back" "[ ! -e /var/www/web/site/site-update-test.html ]"
+t "site-update: a failed check sends an alert" "echo '$o' | grep -qx 'site: $c gave 404 for /no-such-page, so the previous site is back. The next commit on main deploys again.'"
+t "site-update: a failed commit is not deployed again" "[ -z \"\$(eval \"$u\" 2>&1)\" ] && [ \"\$(cat /home/deploy/site-commit)\" = $c ]"
+if [ -n "${1:-}" ]; then
+	site good / && chmod 755 $p/ftp && chmod 644 $p/site.tgz
+	t "site-update: a new commit on main is deployed" "[ -z \"\$(eval \"$u\" 2>&1)\" ] && [ -e /var/www/web/site/site-update-test.html ]"
+fi
+if [ -e $p/last ]; then cp $p/last /home/deploy/site-commit; else rm /home/deploy/site-commit; fi
+rm -rf $p
+
 for u in / /lullapixie/privacy.html /lullapixie/support.html /marklove/privacy.html /marklove/support.html \
 	/play/beamdiag/ /.well-known/security.txt /contact.gpg /.well-known/openpgpkey/hu/dj3498u4hyyarh35rkjfnghbjxug6b19; do
 	t "web: $u" "[ \"\$(web 443 teoyujie.org $u)\" = '200 ' ]"
