@@ -18,7 +18,7 @@ private values. No value in it gives access to the server.
 | `private-setup` | Runs on the Mac. The one-time setup of the private names of Lavish, femahoy and the fleet view (below). |
 | `mail-alias` | Runs on the Mac. `./mail-alias add NAME` or `./mail-alias del NAME`. |
 | `share` | Runs on the Mac. `./share FILE` prints a link to FILE that works for 30 days. |
-| `local.conf.example` | The private values, with test values. CI uses it. |
+| `local.conf.example` | The private values, with test values. CI uses it. `CONF_KEYS` in `check/conf.ts` gives the meaning and the format of each key. |
 | `etc/` | The configs: httpd, relayd, acme-client, smtpd, pf, sshd, unbound, doas, sysctl, crontab, and `rc.d/neurons_room`. |
 | `bin/` | The jobs: health-check, ssh-alert, blocklist-update, site-update (below), private-cert (below), deploy-only (the forced command of the deploy user), tunnel-wait (the login shell of the tunnel user), and fleet-upload (the forced command of the fleet user, below). |
 | `fleet/index.html` | The page of the fleet view (below). It shows the pages of the Mac and the desktop. |

@@ -1,4 +1,4 @@
 {
-  "entry": ["check/main.ts", "check/*.test.ts"],
+  "entry": ["check/*.test.ts"],
   "project": ["check/**/*.ts"]
 }
