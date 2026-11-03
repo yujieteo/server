@@ -7,7 +7,7 @@ permissions:
   contents: read
 jobs:
   gitleaks:
-    runs-on: ubuntu-24.04
+    runs-on: desktop
     steps:
       - name: actions/checkout v5.0.0
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
@@ -20,7 +20,7 @@ jobs:
           tar -xzf gitleaks.tgz gitleaks
           ./gitleaks git --redact --no-banner -v
   rebuild:
-    runs-on: ubuntu-24.04
+    runs-on: desktop
     timeout-minutes: 20
     steps:
       - name: actions/checkout v5.0.0
