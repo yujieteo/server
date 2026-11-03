@@ -22,12 +22,14 @@ export async function renderConfigs(): Promise<Rendered> {
 interface Statement {
   readonly line: number;
   readonly depth: number;
+  readonly parent: string;
   readonly tokens: readonly string[];
 }
 
 function statements(text: string, file: string, findings: Finding[]): readonly Statement[] {
   const found: Statement[] = [];
   let depth = 0;
+  const blocks: string[] = [];
   text.split("\n").forEach((raw, index) => {
     const line = index + 1;
     const tokens: string[] = [];
@@ -47,8 +49,12 @@ function statements(text: string, file: string, findings: Finding[]): readonly S
       } else if (c === "{" || c === "}") {
         if (c === "}") {
           depth -= 1;
+          blocks.pop();
           if (tokens.length === 0) startDepth = depth;
-        } else depth += 1;
+        } else {
+          depth += 1;
+          blocks.push(tokens[0] ?? "");
+        }
         tokens.push(c);
         at += 1;
       } else {
@@ -61,8 +67,9 @@ function statements(text: string, file: string, findings: Finding[]): readonly S
     if (depth < 0) {
       findings.push({ file, line, message: "a } has no {" });
       depth = 0;
+      blocks.length = 0;
     }
-    if (tokens.length > 0) found.push({ line, depth: startDepth, tokens });
+    if (tokens.length > 0) found.push({ line, depth: startDepth, parent: blocks[startDepth - 1] ?? "", tokens });
   });
   if (depth !== 0) findings.push({ file, line: 0, message: "a { has no }" });
   return found;
@@ -105,7 +112,7 @@ function grammarFindings(file: string, text: string): readonly Finding[] {
   for (const statement of parsed) {
     const first = statement.tokens[0] ?? "";
     const allowed = statement.depth === 0 ? grammar.top : grammar.inner;
-    const mediaType = file === "etc/httpd.conf" && statement.depth > 0 && /^[a-z]+\/[a-z0-9.+-]+$/.test(first);
+    const mediaType = file === "etc/httpd.conf" && statement.parent === "types" && /^[a-z]+\/[a-z0-9.+-]+$/.test(first);
     if (first !== "}" && !mediaType && !allowed.has(first)) {
       findings.push({ file, line: statement.line, message: `"${first}" is not a keyword here` });
     }
