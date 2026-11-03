@@ -1,8 +1,4 @@
 #!/bin/sh
-# Get or renew the certificate of mac.lavish.teoyujie.org, desk.lavish.teoyujie.org,
-# fh.teoyujie.org and fleet.teoyujie.org (relayd.conf). For a new certificate, reload httpd and relayd. cron runs it
-# each hour, and install.sh runs it 1 time. Let's Encrypt checks the names on the public address,
-# so it does nothing until the public DNS has the A records of the names (README.md).
 d=teoyujie.org
 ip4=$(ifconfig egress | awk '$1 == "inet" { print $2; exit }')
 for n in mac.lavish desk.lavish fh fleet; do [ "$(dig +short @9.9.9.9 $n.$d A)" = "$ip4" ] || exit 0; done

@@ -1,22 +1,16 @@
 #!/bin/sh
-# Test a server that install.sh made. Run it as root on the server, from this folder:
-#   sh test.sh               test the server as it is
-#   sh test.sh DEPLOY_KEY    also deploy test pages with the private deploy key. This replaces the
-#                            site and the app pages, so use it only before the real deploy.
-# It prints 1 line for each test and exits 1 if a test fails.
+[ $# -le 1 ] || { echo "usage: sh test.sh [DEPLOY_KEY] (run as root on the server, from this folder; with DEPLOY_KEY, it also deploys test pages with the private deploy key, which replaces the site and the app pages, so use it only before the real deploy)" >&2; exit 2; }
 cd "$(dirname "$0")" || exit 1
 . ./local.conf
 fails=0
 t() {
 	if eval "$2" >/dev/null 2>&1; then echo "ok   $1"; else echo "FAIL $1"; fails=$((fails + 1)); fi
 }
-# web PORT HOST PATH: print the status code and the Location of 1 request.
 web() {
 	printf 'GET %s HTTP/1.0\r\nHost: %s\r\n\r\n' "$3" "$2" |
 	if [ "$1" = 80 ]; then nc 127.0.0.1 80; else openssl s_client -quiet -connect 127.0.0.1:443 -servername "$2"; fi 2>/dev/null |
 	tr -d '\r' | awk 'NR == 1 { s = $2 } /^Location:/ { l = $2 } END { print s, l }'
 }
-# get PATH: print the reply (head and body) of 1 GET.
 get() {
 	printf 'GET %s HTTP/1.0\r\nHost: teoyujie.org\r\n\r\n' "$1" |
 	openssl s_client -quiet -connect 127.0.0.1:443 -servername teoyujie.org 2>/dev/null | tr -d '\r'
@@ -49,10 +43,6 @@ if [ -n "${1:-}" ]; then
 	rm -rf "$p"
 fi
 
-# site-update, with a test ftp that gives a test commit of main and its tarball. The tarball is the
-# site as it is, plus a test file. The first commit has a URL that is not found in fixed-urls.txt.
-# With DEPLOY_KEY, a second commit has good URLs, so the test file stays (the site changes).
-# site TAG: make the commit TAG with the tarball of the site as it is, plus the test file.
 site() {
 	c=$(echo "$1 $$" | sha1)
 	rm -rf $p/x && mkdir -p $p/x/site-$c
@@ -81,7 +71,6 @@ for u in / /lullapixie/privacy.html /lullapixie/support.html /marklove/privacy.h
 	t "web: $u" "[ \"\$(web 443 teoyujie.org $u)\" = '200 ' ]"
 done
 t "web: old URL is 404" "[ \"\$(web 443 teoyujie.org /old.html)\" = '404 ' ]"
-# errpage PATH: print the title of the error page of PATH, if it is the site error page (www/errdocs).
 errpage() { get "$1" | grep -q '^<link rel="stylesheet" href="/style.css">$' && get "$1" | grep '^<h1>'; }
 t "web: a 404 is the site error page" "[ \"\$(errpage /old.html)\" = '<h1>404 Not Found</h1>' ]"
 t "web: the error page has the header and footer of the home page" "get /old.html | grep -qx '<span class=\"tagline\">Mechanical Engineer</span>' && get /old.html | grep -qx '<footer class=\"wrap\">'"
@@ -96,8 +85,6 @@ t "web: no file list" "[ \"\$(web 443 teoyujie.org /f/)\" != '200 ' ]"
 t "web: a 403 is the site error page" "[ \"\$(errpage /f/)\" = '<h1>403 Forbidden</h1>' ]"
 rm -r /var/www/files/f/$d
 
-# The pond save service, with a test key and a test entry. Both go away after the tests.
-# post FILE SIGNATURE [PATH]: POST FILE to PATH (default /pond/entry) and print the status code.
 post() {
 	{ printf 'POST %s HTTP/1.0\r\nHost: teoyujie.org\r\nContent-Length: %s\r\nSignature: %s\r\n\r\n' \
 		"${3:-/pond/entry}" "$(wc -c < "$1" | tr -d ' ')" "$2"; cat "$1"; } |
@@ -119,10 +106,6 @@ t "pond: body over 8192 bytes is refused" "[ \"\$(post $p/big '')\" = 413 ]"
 t "pond: refused requests change nothing" "cmp $p/2 /var/www/pond/entries/test-$d.json"
 rm -r $p /var/www/pond/keys/test-$d.pub /var/www/pond/entries/test-$d.json
 
-# The pond read service, with test entries as pond_save keeps them. They go away after the tests.
-# The tests look only at the test entries, so they also pass on a server with real entries.
-# If the site has no log template, a test template goes in and away again.
-# entry NAME MTIME ENTRY: write the entry test-$d-NAME, with its time of change.
 entry() {
 	printf '{"entry":%s,"id":"test-%s-%s","key":"phone","op":"put","rev":1,"v":1}' "$3" $d $1 > /var/www/pond/entries/test-$d-$1.json
 	touch -t $2 /var/www/pond/entries/test-$d-$1.json
@@ -130,8 +113,7 @@ entry() {
 p=$(mktemp -d)
 tp=/var/www/web/site/log/template.html
 tl=; [ -e $tp ] || { tl=$tp; [ -d ${tp%/*} ] || tl="$tp ${tp%/*}"; }
-# A fresh server (the CI VM) has no entries and no log template.
-if ! ls /var/www/pond/entries | grep -q '\.json$'; then
+if ! (set -- /var/www/pond/entries/*.json; [ -e "$1" ]); then
 	get /pond/entries.json > $p/json
 	get /log/ > $p/log
 	get /log/feed.xml > $p/feed
@@ -152,15 +134,12 @@ printf '{"id":"test-%s-gone","key":"phone","op":"remove","rev":2,"v":1}' $d > /v
 get /pond/entries.json > $p/json
 get /log/ > $p/log
 get /log/feed.xml > $p/feed
-# httpd decodes the path before it chooses the location, but gives pond_read the path as it came.
 get /log/%66eed.xml > $p/other
 : > $p/empty
 printf '%s\n' "<h2><a href=\"https://example.org/?a=1&amp;b=&quot;2&quot;\">&lt;script&gt;test-$d&lt;/script&gt; &amp; co</a></h2>" > $p/html-link
 printf '%s\n' '<p>it&#39;s &lt;i&gt;</p>' > $p/html-made
 printf '%s\n' '<link>https://example.org/?a=1&amp;b=&quot;2&quot;</link>' > $p/xml-link
-# item NAME: print the feed item of the test entry NAME.
 item() { sed -n "/<title>test-$d-$1</,/<\/item>/p" $p/feed; }
-# order FILE: print the test entries of FILE in their sequence.
 order() { grep -oE "test-$d-(old|morning|evening)" $1 | uniq | tr '\n' ' '; }
 o="test-$d-evening test-$d-morning test-$d-old "
 t "pond: entries.json is JSON" "head -n 1 $p/json | grep -q ' 200 ' && grep -qi '^Content-Type: application/json' $p/json"
@@ -188,16 +167,12 @@ t "pond: an unknown path is not found" "head -n 1 $p/other | grep -q ' 404 ' && 
 t "pond: a POST to the read service is refused" "[ \"\$(post $p/empty '' /log/)\" = 405 ]"
 rm -r $p /var/www/pond/entries/test-$d-*.json $tl
 
-# The room relay of the neuron explorer, through httpd. The test room ends after 3 days; the
-# test members leave it. README.md of the neurons repo has the protocol.
-# room FILE: POST FILE to /play/neurons/room and print the status code, then the body of the reply.
 room() {
 	{ printf 'POST /play/neurons/room HTTP/1.0\r\nHost: teoyujie.org\r\nContent-Type: application/json\r\nContent-Length: %s\r\n\r\n' \
 		"$(wc -c < "$1" | tr -d ' ')"; cat "$1"; } |
 	openssl s_client -quiet -connect 127.0.0.1:443 -servername teoyujie.org 2>/dev/null | tr -d '\r' |
 	awk 'NR == 1 { print $2 } b { print } /^$/ { b = 1 }'
 }
-# body NAME OP MEMBER [FIELDS]: write the request NAME for the test room.
 p=$(mktemp -d)
 r=$(openssl rand -hex 11)
 body() { printf '{"op":"%s","room":"%s","member":"%s","name":"test","since":-1%s}' "$2" "$r" "$3" "${4:-}" > $p/$1; }
@@ -208,7 +183,6 @@ body view view member-a ',"view":"{\"layer\":16,\"index\":1275}"'
 body list view member-a ',"view":"[16]"'
 body note note member-a ',"neuron":"16.1275","text":"test note","base":0'
 body old note member-b ',"neuron":"16.1275","text":"old base","base":0'
-# An OpenRouter key has the shape sk-or-v1- and 64 hex digits. This file holds no full key.
 k=sk-or-v1-$(jot -b 0 -s '' 64)
 body key note member-a ',"neuron":"16.1275","text":"'$k'","base":0'
 body key-view view member-a ',"view":"{\"layer\":\"\\u0073'${k#s}'\"}"'
@@ -240,10 +214,6 @@ sleep 16
 t "rooms: a member that is away for 15 s is not in the room" "room $p/poll-f | grep -qF '\"members\":[{\"name\":\"test\",\"you\":true}]'"
 for m in a b c d e f; do room $p/leave-$m >/dev/null; done
 
-# The limits of the relay, on 2 more relays: requests from 1 address, rooms from 1 address,
-# writes in 1 room, and the end of a room. Without httpd, a test speaks FastCGI with nc.
-# fcgi PORT FILE [ADDRESS]: POST FILE to the relay on PORT from ADDRESS (default 127.0.0.1), and
-# print the status code.
 fcgi() {
 	n=$(wc -c < "$2" | tr -d ' ')
 	ip=${3:-127.0.0.1}
@@ -271,7 +241,6 @@ t "rooms: 120 views and notes in a minute in a room" "[ $i = 121 ] && [ $s = 429
 sed 's/"view","/"poll","/; s/,"view":"{}"//' $p/room1 > $p/poll1
 s=; for i in $(jot 480); do s=$(fcgi 8791 $p/poll1); [ $s = 200 ] || break; done
 t "rooms: 600 requests in a minute from 1 address" "[ $i = 473 ] && [ $s = 429 ]"
-# A request that is not all in after 2 s does not hold the relay longer.
 { printf '\001\001\000\001\000\010\000\000'; sleep 5; } | nc -N 127.0.0.1 8792 >/dev/null & q3=$!
 sleep 1
 a=$(date +%s); fcgi 8792 $p/poll-a >/dev/null; b=$(date +%s)
@@ -279,10 +248,6 @@ t "rooms: a slow request holds the relay for 2 s at most" "[ $((b - a)) -le 2 ]"
 kill $q1 $q2 $q3 2>/dev/null
 rm -r $p
 
-# Mail, sent to the egress address as from the internet. With the values of local.conf.example, no
-# test mail leaves the server: example.org and example.com have no mail server. With the real
-# local.conf, the mailbox gets 1 mail for each alias.
-# The open relay test must come from outside the server: see README.md.
 m="smtp -C -s smtp://$(ifconfig egress | awk '$1 == "inet" { print $2; exit }') -F test@example.org"
 msg='From: test@example.org\nSubject: test.sh\n\ntest\n'
 for a in contact postmaster $ALIASES; do
@@ -291,7 +256,6 @@ done
 for a in root nobody-$d; do
 	t "mail: $a@ is refused" "printf '$msg' | $m $a@teoyujie.org 2>&1 | grep -q 'RCPT: 550'"
 done
-# Mail from the VPN, sent to 10.8.0.1. The source address is 10.8.0.1, in the VPN range.
 v="smtp -C -s smtp://10.8.0.1 -F test@example.org"
 t "mail: VPN to contact@ is accepted" "printf '$msg' | $v contact@teoyujie.org 2>&1 | grep -q ' 250 '"
 t "mail: VPN to another domain is refused" "printf '$msg' | $v test@example.net 2>&1 | grep -q 'RCPT: 550'"
@@ -302,8 +266,6 @@ before=$(grep -c 'from=<_syslogd@' /var/log/maillog)
 logger -p auth.info -t sshd "Accepted publickey for test from 192.0.2.1 port 1 ssh2"
 sleep 2
 t "SSH alert for an unknown address" "[ \$(grep -c 'from=<_syslogd@' /var/log/maillog) -gt $before ]"
-# ssh-alert with a test mail command. A client that is not logged in chooses the user name in
-# these sshd messages, so the name can hold the text of a login.
 p=$(mktemp -d)
 printf '#!/bin/sh\necho "$2" >> %s/sent\ncat > /dev/null\n' $p > $p/mail && chmod +x $p/mail
 for l in 'Invalid user x: Accepted y from 203.0.113.9 port 4000' \
@@ -316,10 +278,6 @@ done | PATH=$p:$PATH /usr/local/sbin/ssh-alert
 t "SSH alert: a user name cannot make a false alert" "[ \"\$(cat $p/sent)\" = 'SSH login from 192.0.2.1' ]"
 rm -r $p
 
-# The tunnels of Lavish (port 4387 from the Mac, 4388 from the desktop) and femahoy (port 8790), with a
-# test key. The key goes away after the tests. If the real tunnels are open, the tests also pass.
-# Then relayd (etc/relayd.conf) on 10.8.0.1 port 443, through the test tunnels.
-# tunnel ARGS: log in as tunnel for 3 s. It gives 137 if the login stays open, and 255 if sshd refuses it.
 p=$(mktemp -d)
 ssh-keygen -q -t ed25519 -N '' -f $p/key
 a=/home/tunnel/.ssh/authorized_keys
@@ -332,15 +290,12 @@ t "tunnel: no tunnel on a public address" "tunnel -N -R 0.0.0.0:4387:127.0.0.1:8
 t "tunnel: no tunnel on 127.0.0.1" "tunnel -N -R 127.0.0.1:4387:127.0.0.1:80; [ \$? = 255 ]"
 t "tunnel: no tunnel on another port" "tunnel -N -R 10.8.0.1:4389:127.0.0.1:80; [ \$? = 255 ]"
 t "tunnel: no connection from the server" "! $s -W 127.0.0.1:22 </dev/null 2>/dev/null | grep -q SSH-"
-# With no real tunnel open, the test tunnels go to 2 test apps, which keep the requests that
-# relayd gives them. front NAME HEADERS: send GET /x to relayd on 10.8.0.1 for NAME.
 front() {
 	if [ $# -ge 4 ]; then o=$4; else o="Origin: https://$1\r\n"; fi
 	printf 'GET %s HTTP/1.1\r\nHost: %s\r\n%b%b\r\n' "${3:-/x}" $1 "$o" "$2" |
 	openssl s_client -quiet -connect 10.8.0.1:443 -servername $1 >/dev/null 2>&1 & f=$!
 	sleep 2; kill $f 2>/dev/null; wait $f
 }
-# listen: print the addresses that listen on port 4387, 4388 or 8790.
 listen() { netstat -an -p tcp | awk '$NF == "LISTEN" && $4 ~ /\.(4387|4388|8790)$/ { print $4 }' | sort | tr '\n' ' '; }
 if netstat -an -p tcp | awk '$NF == "LISTEN" { print $4 }' | grep -qE '^10\.8\.0\.1\.(4387|4388|8790)$'; then
 	echo "skip the test tunnels and the tests of relayd to the apps: a real tunnel is open"
@@ -389,8 +344,6 @@ fi
 t "tunnel: the ports listen only on 10.8.0.1 (127.0.0.1.8790 is the room relay)" "echo '$l' | grep -q 10.8.0.1 && [ -z \"\$(echo $l | tr ' ' '\n' | grep -vxE '10\.8\.0\.1\.(4387|4388|8790)|127\.0\.0\.1\.8790')\" ]"
 cp $p/keys $a
 rm -r $p
-# The fleet view (bin/fleet-upload), with a test key. The key and the test pages go away after the
-# tests, and the real pages come back. fleet PATH: GET PATH of fleet.teoyujie.org through relayd.
 p=$(mktemp -d)
 ssh-keygen -q -t ed25519 -N '' -f $p/key
 a=/home/fleet/.ssh/authorized_keys
@@ -411,7 +364,6 @@ t "fleet: a page of 1 MiB passes" "dd if=/dev/zero bs=1048576 count=1 2>/dev/nul
 $s mac < $p/old
 t "fleet: a page larger than 1 MiB fails, and the old page stays" "! dd if=/dev/zero bs=1048577 count=1 2>/dev/null | $s mac && cmp $p/old $w/mac.html"
 t "fleet: no connection from the server" "! $s -W 127.0.0.1:22 </dev/null 2>/dev/null | grep -q SSH-"
-# A slow upload: during it, the old page stays complete and the new page is in a temp file.
 { echo test-$d-new1; sleep 5; echo test-$d-new2; } | $s mac & q=$!
 sleep 2
 t "fleet: during an upload, the old page stays complete" "cmp $p/old $w/mac.html && ls -A $w | grep -q '^\.mac\.'"
@@ -427,11 +379,7 @@ for n in mac desk; do
 done
 cp $p/keys $a
 rm -r $p
-# From the internet, pf passes only SSH, mail, web, WireGuard and ICMP, and only to the public
-# addresses. Thus the tunnel ports and relayd on 10.8.0.1 are closed.
 t "pf: the internet reaches only the public services on the public addresses" "! pfctl -sr | grep '^pass' | grep -v '^pass out' | grep -v '^pass on wg0 ' | grep -vE '^pass in on egress .*to \(egress\) port = (22|25|80|443|51820)( |\$)|^pass in on egress .*proto [a-z0-9-]*icmp'"
-# The private names: the VPN devices get 10.8.0.1. The public addresses answer only the ACME
-# challenge for them. pub PORT NAME PATH: print the first line of the answer of the public address.
 ip4=$(ifconfig egress | awk '$1 == "inet" { print $2; exit }')
 pub() {
 	printf 'GET %s HTTP/1.0\r\nHost: %s\r\n\r\n' "$3" "$2" |
@@ -450,4 +398,4 @@ t "DNS: blocklist loaded" "[ -n '$b' ] && dig @10.8.0.1 '$b' | grep -q NXDOMAIN"
 t "DNS: other names resolve" "dig +short @10.8.0.1 openbsd.org | grep -q ."
 t "health-check runs" "/usr/local/sbin/health-check"
 
-[ $fails -eq 0 ] && echo "all tests passed" || { echo "$fails tests failed"; exit 1; }
+if [ $fails -eq 0 ]; then echo "all tests passed"; else echo "$fails tests failed"; exit 1; fi

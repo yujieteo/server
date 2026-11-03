@@ -1,13 +1,11 @@
 #!/bin/sh
-# Turn a fresh OpenBSD 8.0 server into teoyujie.org. Run it as root from this folder, with local.conf
-# next to it. It is safe to run again: each run writes the same files and restarts the services.
 set -eu
 cd "$(dirname "$0")"
 . ./local.conf
 d=teoyujie.org
 
-# put SRC DEST [MODE]: install a repo file, with the private values put in.
 put() {
+	case $KNOWN_IPS${FH_TOKEN:-} in *[\#\&\\]*) echo "put: KNOWN_IPS and FH_TOKEN must not have #, & or a backslash, because sed would write other text" >&2; exit 1 ;; *) ;; esac
 	sed "s#@KNOWN_IPS@#$KNOWN_IPS#g; s#@FH_TOKEN@#${FH_TOKEN:-}#g" "$1" > "$2.new"
 	chmod "${3:-644}" "$2.new"
 	mv -f "$2.new" "$2"
@@ -16,9 +14,6 @@ put() {
 echo $d > /etc/myname
 hostname $d
 
-# Users. The admin logs in with a key, only through the VPN, and uses doas with a password.
-# The deploy user can only run deploy-only, which replaces 1 web folder with a tar archive.
-# The cron job site-update also runs as deploy.
 id "$ADMIN_USER" >/dev/null 2>&1 || useradd -m -G wheel -s /bin/ksh "$ADMIN_USER"
 id deploy >/dev/null 2>&1 || useradd -m -s /bin/sh deploy
 if grep -q "^$ADMIN_USER:\*:" /etc/master.passwd; then
@@ -31,13 +26,9 @@ install -d -m 755 /home/deploy/.ssh
 echo "from=\"10.8.0.0/24,127.0.0.1\",restrict,command=\"/usr/local/sbin/deploy-only\" $DEPLOY_KEY" > /home/deploy/.ssh/authorized_keys
 
 for f in bin/*; do put "$f" /usr/local/sbin/"${f#bin/}" 755; done
-# The tunnel user can only open the tunnels of Lavish and femahoy on 10.8.0.1 (see sshd_config).
-# Its login shell is tunnel-wait, which runs no command. Root owns its home, so it cannot change its keys.
 id tunnel >/dev/null 2>&1 || useradd -d /home/tunnel -s /usr/local/sbin/tunnel-wait tunnel
 install -d -m 755 /home/tunnel /home/tunnel/.ssh
 printf '%s\n' "${TUNNEL_KEY:-}" | sed '/^[[:space:]]*$/d; s#^[[:space:]]*#from="10.8.0.0/24,127.0.0.1" #' > /home/tunnel/.ssh/authorized_keys
-# The fleet user, with the same keys, can only run fleet-upload, which replaces mac.html or desk.html
-# in /var/www/fleet (the fleet view). fleet-upload is also its login shell. Root owns its home.
 id fleet >/dev/null 2>&1 || useradd -d /home/fleet -s /usr/local/sbin/fleet-upload fleet
 install -d -m 755 /home/fleet /home/fleet/.ssh
 printf '%s\n' "${TUNNEL_KEY:-}" | sed '/^[[:space:]]*$/d; s#^[[:space:]]*#from="10.8.0.0/24,127.0.0.1",restrict,command="/usr/local/sbin/fleet-upload" #' > /home/fleet/.ssh/authorized_keys
@@ -55,14 +46,11 @@ put etc/relayd.conf /etc/relayd.conf 600
 put etc/rc.d/neurons_room /etc/rc.d/neurons_room 555
 sysctl -q net.inet.ip.forwarding=1
 
-# Web folders. The deploy user owns /var/www/web: site, and apps/NAME for each app.
 install -d -o deploy -m 755 /var/www/web /var/www/web/site /var/www/web/apps
 install -d -o "$ADMIN_USER" -m 755 /var/www/files/f
 rm -rf /var/www/htdocs/server
 cp -R www /var/www/htdocs/server
 
-# The pond save and read services: static programs in the httpd chroot, under slowcgi (user www).
-# Their data is outside /var/www/web, so a deploy does not touch it. Root adds the keys by hand.
 install -d -m 755 /var/www/pond /var/www/pond/keys
 install -d -o www -m 755 /var/www/pond/entries
 cc -O2 -static -DGS_STACK_RESERVE='(16ull<<20)' -o /var/www/cgi-bin/pond_save.new pond/main.c -lcrypto -lm -pthread
@@ -70,25 +58,19 @@ mv -f /var/www/cgi-bin/pond_save.new /var/www/cgi-bin/pond_save
 cc -O2 -static -DGS_STACK_RESERVE='(16ull<<20)' -o /var/www/cgi-bin/pond_read.new pond/pond_read.c -lm -pthread
 mv -f /var/www/cgi-bin/pond_read.new /var/www/cgi-bin/pond_read
 
-# The room relay of the neuron explorer: a daemon on 127.0.0.1 port 8790, with its own user.
-# It keeps the rooms in memory only, so a restart ends all rooms.
 id _neuronsroom >/dev/null 2>&1 || useradd -L daemon -c 'neurons room relay' -d /var/empty -s /sbin/nologin _neuronsroom
 cc -O2 -DGS_STACK_RESERVE='(16ull<<20)' -o /usr/local/sbin/neurons_room.new room/room.c -lm -pthread
 mv -f /usr/local/sbin/neurons_room.new /usr/local/sbin/neurons_room
 
-# Until acme-client gets the Let's Encrypt certificate, httpd and smtpd use a 1-day self-signed one.
 if [ ! -e /etc/ssl/$d.fullchain.pem ]; then
 	(umask 077 && openssl ecparam -genkey -name prime256v1 -out /etc/ssl/private/$d.key 2>/dev/null)
 	openssl req -x509 -new -key /etc/ssl/private/$d.key -days 1 -subj /CN=$d -out /etc/ssl/$d.fullchain.pem
 fi
-# The same for the private names of Lavish, femahoy and the fleet view (relayd and httpd), until private-cert gets one.
 if [ ! -e /etc/ssl/apps.crt ]; then
 	(umask 077 && openssl ecparam -genkey -name prime256v1 -out /etc/ssl/private/apps.key 2>/dev/null)
 	openssl req -x509 -new -key /etc/ssl/private/apps.key -days 1 -subj /CN=mac.lavish.$d -out /etc/ssl/apps.crt
 fi
 
-# Mail. From the internet, only contact, postmaster and the website aliases go to the mailbox.
-# The aliases block sends the mail of this server (root) to contact, and contact to the mailbox.
 [ -e /etc/mail/srs.conf ] || (umask 077 && echo "srs key $(openssl rand -hex 32)" > /etc/mail/srs.conf)
 for a in contact postmaster $ALIASES; do echo "$a@$d $FORWARD_TO"; done > /etc/mail/virtual
 {
@@ -101,7 +83,6 @@ for a in contact postmaster $ALIASES; do echo "$a@$d $FORWARD_TO"; done > /etc/m
 } > /etc/mail/aliases.new
 mv -f /etc/mail/aliases.new /etc/mail/aliases
 
-# WireGuard. The private key stays in hostname.wg0 and never leaves the server.
 key=$(awk '$1 == "wgkey" { print $2 }' /etc/hostname.wg0 2>/dev/null || true)
 [ -n "$key" ] || key=$(openssl rand -base64 32)
 {
@@ -117,9 +98,6 @@ key=$(awk '$1 == "wgkey" { print $2 }' /etc/hostname.wg0 2>/dev/null || true)
 	echo "up"
 } > /etc/hostname.wg0.new
 chmod 640 /etc/hostname.wg0.new
-# Restart wg0 only for a change, because a restart stops the VPN for some seconds.
-# The SSH session of the admin can go through wg0, so a restart of a running wg0 is the last step.
-# Until then /etc/hostname.wg0.new stays, so a failed run gives a restart on the next run.
 if cmp -s /etc/hostname.wg0.new /etc/hostname.wg0 && ifconfig wg0 >/dev/null 2>&1; then
 	rm /etc/hostname.wg0.new
 elif ! ifconfig wg0 >/dev/null 2>&1; then
@@ -127,7 +105,6 @@ elif ! ifconfig wg0 >/dev/null 2>&1; then
 	sh /etc/netstart wg0
 fi
 
-# SSH login alert and jobs.
 grep -q ssh-alert /etc/syslog.conf || printf 'auth.info\t|/usr/local/sbin/ssh-alert\n' >> /etc/syslog.conf
 {
 	crontab -l | sed '/^# BEGIN teoyujie.org/,/^# END teoyujie.org/d'
@@ -137,7 +114,6 @@ grep -q ssh-alert /etc/syslog.conf || printf 'auth.info\t|/usr/local/sbin/ssh-al
 } | crontab -
 touch /var/unbound/etc/blocklist.conf
 
-# Check every config, then start everything.
 sshd -t
 httpd -n
 smtpd -n
@@ -151,12 +127,9 @@ rcctl enable slowcgi neurons_room httpd relayd smtpd unbound >/dev/null
 rcctl restart sshd syslogd slowcgi neurons_room httpd relayd smtpd unbound >/dev/null
 /usr/local/sbin/private-cert || echo "private-cert failed: cron tries again each hour"
 [ -s /var/unbound/etc/blocklist.conf ] || /usr/local/sbin/blocklist-update
-# Deploy the site now, so that cron does not deploy it while test.sh runs.
 su deploy -c /usr/local/sbin/site-update || true
 
 echo "Done. WireGuard public key of the server: $(ifconfig wg0 | awk '$1 == "wgpubkey" { print $2 }')"
-# The key does not change on a restart. The restart runs detached, so it survives the SSH hangup.
-# trap '' HUP protects the job before nohup starts. The mv is in the job, so a killed job gives a restart on the next run.
 if [ -e /etc/hostname.wg0.new ]; then
 	echo "wg0 restarts in 2 seconds. The VPN stops for some seconds."
 	trap '' HUP

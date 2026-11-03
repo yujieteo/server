@@ -1,5 +1,3 @@
-# gitleaks: the default rules, plus the 2 secrets that install.sh makes on the server.
-# They must never be in Git. If one is, make a new one on the server.
 [extend]
 useDefault = true
 
@@ -15,8 +13,6 @@ description = "OpenSMTPD SRS key (/etc/mail/srs.conf)"
 regex = '''srs\s+key\s+(\S{16,})'''
 secretGroup = 1
 
-# Old commits of the branch fm/server-private-tunnels hold the public sample Sec-WebSocket-Key of
-# RFC 6455 in test.sh. It is not a secret. History is not rewritten, so allow this exact value.
 [[allowlists]]
-description = "RFC 6455 sample Sec-WebSocket-Key"
+description = "RFC 6455 sample Sec-WebSocket-Key: old commits of the branch fm/server-private-tunnels hold it in test.sh, it is not a secret, history is not rewritten"
 regexes = ['''dGhlIHNhbXBsZSBub25jZQ==''']

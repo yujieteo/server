@@ -1,15 +1,9 @@
 #!/bin/sh
-# Login shell and forced command of the user fleet (see its authorized_keys). The only use is:
-#   ssh -i ~/.ssh/tunnel_ed25519 fleet@10.8.0.1 mac < mac.html        (or desk < desk.html)
-# It puts the page in place of /var/www/fleet/NAME.html. A page larger than 1 MiB fails.
-# The page goes to a temp file in the same folder, then mv replaces the old page in 1 step,
-# so httpd always serves a complete page. httpd does not serve the temp files (they start with a dot).
 set -eu
 n=${SSH_ORIGINAL_COMMAND:-}
 case $n in mac|desk) ;; *) echo "fleet: use 'mac' or 'desk'" >&2; exit 1 ;; esac
 cd /var/www/fleet
 t=$(mktemp ."$n".XXXXXXXXXX)
-# The file size limit is in blocks of 512 bytes. cat stops at the limit and fails.
 if ! (ulimit -f 2048 && cat > "$t") 2>/dev/null; then
 	rm -f "$t"
 	echo "fleet: the page is larger than 1 MiB, or the write failed" >&2
