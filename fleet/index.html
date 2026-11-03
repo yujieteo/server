@@ -5,8 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; frame-src 'self'">
 <title>Fleet</title>
-<!-- The fleet view (README.md of the server repo). This page does not change. It shows mac.html
-     and desk.html, which the Mac and the desktop upload, and the time of each upload (Last-Modified). -->
+<meta name="description" content="The fleet view. It shows mac.html and desk.html, which the Mac and the desktop upload, and the time of each upload (Last-Modified). This page does not change.">
 <style>
 :root { --bg: #fff; --fg: #111; --muted: #666; --line: #ddd; --old: #b00020; color-scheme: light dark; }
 @media (prefers-color-scheme: dark) { :root { --bg: #111; --fg: #eee; --muted: #999; --line: #333; --old: #ff6b7f; } }
@@ -25,24 +24,30 @@ iframe { display: block; width: 100%; height: 75vh; border: 0; background: var(-
 <section><h2>Desktop <span class="time" id="desk-time">no page yet</span></h2><iframe id="desk" sandbox title="Desktop"></iframe></section>
 </main>
 <script>
-// A page is old when its last upload is more than OLD minutes ago.
-const OLD = 10;
-const made = {};
-async function load(n) {
+const OLD_AFTER_MINUTES = 10;
+const made = Object.fromEntries([["mac", 0], ["desk", 0]]);
+const keepLastPageAndLetShowMarkItOld = () => {};
+function element(id = "") {
+	const el = document.getElementById(id);
+	if (el === null) throw new Error("no element " + id);
+	return el;
+}
+async function load(n = "") {
 	try {
 		const r = await fetch(n + ".html", { method: "HEAD", cache: "no-store" });
-		if (!r.ok) { made[n] = null; return; }
-		const t = Date.parse(r.headers.get("Last-Modified"));
-		if (t !== made[n]) document.getElementById(n).src = n + ".html?t=" + t;
+		if (!r.ok) { made[n] = 0; return; }
+		const t = Date.parse(r.headers.get("Last-Modified") ?? "");
+		const frame = element(n);
+		if (t !== made[n] && frame instanceof HTMLIFrameElement) frame.src = n + ".html?t=" + t;
 		made[n] = t;
-	} catch (e) { /* keep the last page; show() marks it old */ }
+	} catch { keepLastPageAndLetShowMarkItOld(); }
 }
-function show(n) {
-	const el = document.getElementById(n + "-time");
+function show(n = "") {
+	const el = element(n + "-time");
 	const t = made[n];
 	if (!t) { el.textContent = "no page yet"; el.className = "time old"; return; }
 	const min = Math.floor((Date.now() - t) / 60000);
-	const old = min > OLD;
+	const old = min > OLD_AFTER_MINUTES;
 	el.textContent = "made " + new Date(t).toLocaleString() + " (" + min + " min ago)" + (old ? ", OLD" : "");
 	el.className = old ? "time old" : "time";
 }

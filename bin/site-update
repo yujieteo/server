@@ -1,10 +1,4 @@
 #!/bin/sh
-# Each minute, as the user deploy (see etc/crontab): deploy the site when the main branch of
-# github.com/yujieteo/site changes. It takes public/ from the GitHub tarball of that commit and
-# gives it to deploy-only. Then it checks / and each URL in fixed-urls.txt of that commit.
-# If a check fails, it puts the previous site back and prints the problem, and cron mails it.
-# It deploys each commit 1 time only, also a commit that failed. If GitHub does not answer, it
-# prints nothing and tries again at the next run.
 set -eu
 repo=yujieteo/site
 last=/home/deploy/site-commit
@@ -20,7 +14,6 @@ tar -xzf "$t/site.tgz" -C "$t/x"
 new=$(echo "$t"/x/*/public)
 [ -s "$new/index.html" ] || { echo "site: $sha has no public/index.html, not deployed"; exit 1; }
 
-# code PATH: print the status code of a GET of PATH, from httpd on this server.
 code() {
 	printf 'GET %s HTTP/1.0\r\nHost: teoyujie.org\r\n\r\n' "$1" |
 	openssl s_client -quiet -connect 127.0.0.1:443 -servername teoyujie.org 2>/dev/null | awk 'NR == 1 { print $2 }'

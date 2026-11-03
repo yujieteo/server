@@ -1,0 +1,15 @@
+{
+  "name": "server-checks",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "bun check/main.ts",
+    "replay": "bun check/main.ts replay"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.4.4",
+    "fast-check": "^4.10.2",
+    "knip": "^6.44.1",
+    "typescript": "^7.0.2"
+  }
+}

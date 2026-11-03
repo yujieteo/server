@@ -26,6 +26,7 @@ private values. No value in it gives access to the server.
 | `pond/` | The pond save and read services (below). `pond_save.c`, `pond_verify.h`, `pond_lock.h`, `pond_read.c` and `pond_read.h` are copies of `server/` in the [pond repo](https://github.com/yujieteo/pond) at commit `cb6bbac6ffcb050347d1fab6852e4302184d1362`. Do not change them here. `main.c` adds pledge and unveil to `pond_save`. `pond_read` does its own unveil (read only) and pledge (`stdio rpath`). |
 | `room/` | The room relay of the neuron explorer (below). `room.c` is the C that Goose makes from `room.goose`. |
 | `.githooks/pre-commit`, `.gitleaks.toml` | gitleaks stops a commit that has a secret in it. Turn on the hook once in each clone: `git config core.hooksPath .githooks`. |
+| `check/`, `package.json`, `tsconfig.json`, `knip.json`, `bun.lock` | The local check, in Bun and strict TypeScript. Run `bun install`, then `bun run check` before a review. It needs bun, shellcheck, clang, pkg-config with the OpenSSL headers, and OpenSSH. It runs the type checks, shellcheck, the comment ban, the dead code check, the syntax and the facts of the configs, the page budget, the C warnings, the C analysis, the C sanitizer run and the tests. `bun run replay` replays `put` of `install.sh` on the base commit and on the branch, and fails on each difference (`--base REV` sets the base, `--accept` accepts a difference). CI does not run them. |
 | `.github/workflows/ci.yml` | gitleaks, and `install.sh` plus `test.sh` on a fresh OpenBSD 8.0 VM. |
 
 ## Rebuild from zero
