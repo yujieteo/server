@@ -105,7 +105,8 @@ function grammarFindings(file: string, text: string): readonly Finding[] {
   for (const statement of parsed) {
     const first = statement.tokens[0] ?? "";
     const allowed = statement.depth === 0 ? grammar.top : grammar.inner;
-    if (first !== "}" && !allowed.has(first)) {
+    const mediaType = file === "etc/httpd.conf" && statement.depth > 0 && /^[a-z]+\/[a-z0-9.+-]+$/.test(first);
+    if (first !== "}" && !mediaType && !allowed.has(first)) {
       findings.push({ file, line: statement.line, message: `"${first}" is not a keyword here` });
     }
     for (const token of statement.tokens) {
