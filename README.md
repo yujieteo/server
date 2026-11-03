@@ -180,6 +180,10 @@ On a device on the VPN (Mac, iPhone, desktop), these names open the apps. No tok
 Lavish uses paths from the root of the site (`/api/...`, `/events/...`), so each Lavish has its own name,
 not a path such as `/mac`. Nobody without a WireGuard key gets to them.
 
+<img src="docs/figures/private-names.svg" width="640" alt="The path of a request to a private name. A VPN device asks unbound, which gives the name as 10.8.0.1. The device sends HTTPS to relayd on 10.8.0.1 port 443, which gives 403 to a cross-site Origin. relayd sends mac.lavish to port 4387, desk.lavish to port 4388, fh to port 8790 and fleet to httpd port 8092. Reverse SSH tunnels take ports 4387, 4388 and 8790 to Lavish on the Mac, Lavish on the desktop and femahoy on the desktop. From the internet, the public httpd answers only the Let's Encrypt check.">
+
+*Only a VPN device reaches relayd. relayd sends each name to its tunnel port or to the fleet view.*
+
 - The Mac and the desktop open a reverse SSH tunnel to the server, as the user `tunnel`. The tunnel ports
   listen only on 10.8.0.1, the VPN address of the server. The room relay also uses port 8790, but on
   127.0.0.1, so the two do not collide.
