@@ -106,8 +106,9 @@ describe("deploy-only: the forced command of the user deploy", () => {
       const code = await deploy("apps/test", archive);
       expect(existsSync(outside)).toBe(false);
       expect(readdirSync(join(work, "web")).sort()).toEqual(["apps"]);
-      expect(readdirSync(join(work, "web", "apps"))).toEqual([code === 0 ? "test" : "test.new"]);
-      expect(readFileSync(join(work, "web", "apps", code === 0 ? "test" : "test.new", "index.html"), "utf8")).toBe("1");
+      const placed = code === 0 ? "test" : "test.new";
+      expect(readdirSync(join(work, "web", "apps"))).toEqual([placed]);
+      expect(readFileSync(join(work, "web", "apps", placed, "index.html"), "utf8")).toBe("1");
     });
   }
 
@@ -255,7 +256,7 @@ describe("install.sh: the wg0 restart", () => {
     if (mv === null) throw new Error("mv is not in PATH");
     fake("sleep", `echo "sleep $*" >> ${log()}`);
     fake("mv", `echo "mv $*" >> ${log()}; exec ${mv} "$@"`);
-    fake("nohup", `echo "nohup HUP ignored: $(( 0x$(awk '$1 == "SigIgn:" { print $2 }' /proc/$$/status) & 1 ))" >> ${log()}; exec "$@"`);
+    fake("nohup", `kill -HUP $$; echo "nohup survived HUP" >> ${log()}; exec "$@"`);
     writeFileSync(join(etc(), "netstart"), `echo "netstart $*" >> ${log()}\n`);
   });
 
@@ -266,7 +267,7 @@ describe("install.sh: the wg0 restart", () => {
     expect(ran).toEqual({ code: 0, stdout: "wg0 restarts in 2 seconds. The VPN stops for some seconds.\n", stderr: "" });
     for (let attempt = 0; attempt < 100 && !calls().some((call) => call.startsWith("netstart")); attempt += 1) await Bun.sleep(20);
     expect(calls()).toEqual([
-      "nohup HUP ignored: 1",
+      "nohup survived HUP",
       "sleep 2",
       `mv -f ${etc()}/hostname.wg0.new ${etc()}/hostname.wg0`,
       "ifconfig wg0 destroy",
