@@ -97,15 +97,19 @@ describe("deploy-only: the forced command of the user deploy", () => {
     expect(readdirSync(join(work, "web")).sort()).toEqual(["apps", "site"]);
   });
 
-  test("a name with / or ../ in the archive writes nothing outside the folder", async () => {
-    const outside = join(work, "outside.txt");
-    writeFileSync(outside, "x");
-    const archive = await archiveOf({ "index.html": "1" }, ["../outside.txt", outside]);
-    rmSync(outside);
-    await deploy("apps/test", archive);
-    expect(existsSync(outside)).toBe(false);
-    expect(readdirSync(work).filter((name) => name.startsWith("outside"))).toEqual([]);
-  });
+  for (const [label, member] of [["../", "../outside.txt"], ["/", "ABSOLUTE"]] as const) {
+    test(`a name with ${label} in the archive writes nothing outside the folder, and a refused archive is not put in place`, async () => {
+      const outside = join(work, "outside.txt");
+      writeFileSync(outside, "x");
+      const archive = await archiveOf({ "index.html": "1" }, [member === "ABSOLUTE" ? outside : member]);
+      rmSync(outside);
+      const code = await deploy("apps/test", archive);
+      expect(existsSync(outside)).toBe(false);
+      expect(readdirSync(join(work, "web")).sort()).toEqual(["apps"]);
+      expect(readdirSync(join(work, "web", "apps"))).toEqual([code === 0 ? "test" : "test.new"]);
+      expect(readFileSync(join(work, "web", "apps", code === 0 ? "test" : "test.new", "index.html"), "utf8")).toBe("1");
+    });
+  }
 
   test("only site and apps/NAME are allowed", async () => {
     const archive = await archiveOf({ "index.html": "1" });
@@ -232,5 +236,71 @@ describe("blocklist-update: make the unbound blocklist from the hosts list", () 
     expect(await update(names.slice(0, 100).map((name) => `0.0.0.0 ${name}`).join("\n"))).toBe(1);
     expect(readFileSync(join(etc(), "blocklist.conf"), "utf8")).toBe("old\n");
     expect(existsSync(join(work, "unbound.log"))).toBe(false);
+  });
+});
+
+describe("install.sh: the wg0 restart", () => {
+  const installScript = readFileSync(join(REPO_ROOT, "install.sh"), "utf8");
+  const etc = (): string => join(work, "etc");
+  const from = (firstLine: string): string => {
+    const at = installScript.indexOf(`\n${firstLine}\n`);
+    if (at === -1) throw new Error(`install.sh has no line ${firstLine}`);
+    return installScript.slice(at + 1).replaceAll("/etc/", `${etc()}/`);
+  };
+  const log = (): string => join(work, "calls.log");
+  const calls = (): readonly string[] => (existsSync(log()) ? readFileSync(log(), "utf8").trim().split("\n") : []);
+  beforeEach(() => {
+    mkdirSync(etc());
+    const mv = Bun.which("mv");
+    if (mv === null) throw new Error("mv is not in PATH");
+    fake("sleep", `echo "sleep $*" >> ${log()}`);
+    fake("mv", `echo "mv $*" >> ${log()}; exec ${mv} "$@"`);
+    fake("nohup", `echo "nohup HUP ignored: $(( 0x$(awk '$1 == "SigIgn:" { print $2 }' /proc/$$/status) & 1 ))" >> ${log()}; exec "$@"`);
+    writeFileSync(join(etc(), "netstart"), `echo "netstart $*" >> ${log()}\n`);
+  });
+
+  test("a changed wg0 restarts as the last step of install.sh, in a job that ignores HUP and moves the new file in first", async () => {
+    fake("ifconfig", `echo "ifconfig $*" >> ${log()}`);
+    writeFileSync(join(etc(), "hostname.wg0.new"), "new");
+    const ran = await run(["sh", "-c", from("if [ -e /etc/hostname.wg0.new ]; then")], { env: env() });
+    expect(ran).toEqual({ code: 0, stdout: "wg0 restarts in 2 seconds. The VPN stops for some seconds.\n", stderr: "" });
+    for (let attempt = 0; attempt < 100 && !calls().some((call) => call.startsWith("netstart")); attempt += 1) await Bun.sleep(20);
+    expect(calls()).toEqual([
+      "nohup HUP ignored: 1",
+      "sleep 2",
+      `mv -f ${etc()}/hostname.wg0.new ${etc()}/hostname.wg0`,
+      "ifconfig wg0 destroy",
+      "netstart wg0",
+    ]);
+    expect(readFileSync(join(etc(), "hostname.wg0"), "utf8")).toBe("new");
+  });
+
+  const check = async (running: boolean, old: string): Promise<void> => {
+    fake("ifconfig", running ? "exit 0" : "exit 1");
+    writeFileSync(join(etc(), "hostname.wg0"), old);
+    writeFileSync(join(etc(), "hostname.wg0.new"), "new");
+    const block = from("if cmp -s /etc/hostname.wg0.new /etc/hostname.wg0 && ifconfig wg0 >/dev/null 2>&1; then");
+    const ran = await run(["sh", "-c", block.slice(0, block.indexOf("\nfi\n") + 4)], { env: env() });
+    expect(ran.code).toBe(0);
+  };
+
+  test("a running wg0 with the same file: hostname.wg0.new goes away and nothing restarts", async () => {
+    await check(true, "new");
+    expect(existsSync(join(etc(), "hostname.wg0.new"))).toBe(false);
+    expect(calls()).toEqual([]);
+  });
+
+  test("a running wg0 with a changed file: hostname.wg0.new stays for the last step, so a failed run restarts on the next run", async () => {
+    await check(true, "old");
+    expect(readFileSync(join(etc(), "hostname.wg0.new"), "utf8")).toBe("new");
+    expect(readFileSync(join(etc(), "hostname.wg0"), "utf8")).toBe("old");
+    expect(calls()).toEqual([]);
+  });
+
+  test("a wg0 that does not run: the new file goes in place and wg0 starts at once", async () => {
+    await check(false, "old");
+    expect(existsSync(join(etc(), "hostname.wg0.new"))).toBe(false);
+    expect(readFileSync(join(etc(), "hostname.wg0"), "utf8")).toBe("new");
+    expect(calls()).toEqual([`mv -f ${etc()}/hostname.wg0.new ${etc()}/hostname.wg0`, "netstart wg0"]);
   });
 });
