@@ -9,6 +9,11 @@ const VPN_ADDRESS = "10.8.0.1";
 const TUNNEL_PORTS = [4387, 4388, 8790] as const;
 const PUBLIC_TCP_PORTS = ["ssh", "smtp", "http", "https"] as const;
 const WIREGUARD_PORT = 51820;
+const APP_PORT_ON_ITS_HOST = { mac: 4387, desk: 4387, fh: 8790 } as const;
+const WG0_RESTART_IF = "if [ -e /etc/hostname.wg0.new ]; then";
+const WG0_RESTART_JOB = ["sleep 2", "mv -f /etc/hostname.wg0.new /etc/hostname.wg0", "ifconfig wg0 destroy", "sh /etc/netstart wg0"] as const;
+const WG0_SAME_AND_RUNNING = "if cmp -s /etc/hostname.wg0.new /etc/hostname.wg0 && ifconfig wg0 >/dev/null 2>&1; then";
+const WG0_NOT_RUNNING = "elif ! ifconfig wg0 >/dev/null 2>&1; then";
 const SYSPATCH_TIME_UTC = { minute: "30", hour: "20" } as const;
 
 interface Fact {
@@ -148,8 +153,48 @@ const FACTS: readonly Fact[] = [
     },
   },
   {
-    name: "install.sh: relayd.conf has mode 600, because it holds the token of femahoy",
-    holds: (_rendered, repoFile) => (/^put etc\/relayd\.conf \/etc\/relayd\.conf 600$/m.test(repoFile("install.sh")) ? null : "relayd.conf is not put with mode 600"),
+    name: "relayd: after the tests, it sets Host and Origin to the local address of each app, because each app accepts only that address",
+    holds: (rendered) => {
+      const sets = [...(rendered.get("etc/relayd.conf") ?? "").matchAll(/match request tagged "(\w+)" header set "(Host|Origin)" value "([^"]+)"/g)];
+      const want = Object.entries(APP_PORT_ON_ITS_HOST).flatMap(([tag, port]) => [`${tag} Host 127.0.0.1:${port}`, `${tag} Origin http://127.0.0.1:${port}`]);
+      const have = sets.map((m) => `${m[1] ?? ""} ${m[2] ?? ""} ${m[3] ?? ""}`);
+      return have.sort().join("\n") === want.sort().join("\n") ? null : `the set rules are:\n${have.join("\n")}`;
+    },
+  },
+  {
+    name: "relayd: only the requests of fh get the token of femahoy",
+    holds: (rendered) => {
+      const lines = (rendered.get("etc/relayd.conf") ?? "").split("\n").filter((line) => line.includes("Authorization"));
+      return lines.length === 1 && /^\tmatch request tagged "fh" header set "Authorization" value "Bearer [^"\s]+"$/.test(lines[0] ?? "") ? null : `the Authorization rules are:\n${lines.join("\n")}`;
+    },
+  },
+  {
+    name: "install.sh: the restart of a running wg0 is the last step, because the SSH session of the admin can go through wg0",
+    holds: (_rendered, repoFile) => {
+      const lines = repoFile("install.sh").trimEnd().split("\n");
+      const start = lines.lastIndexOf(WG0_RESTART_IF);
+      if (start === -1 || lines.at(-1) !== "fi") return `install.sh does not end with the block "${WG0_RESTART_IF}"`;
+      const block = lines.slice(start);
+      const trap = block.findIndex((line) => line.trim() === "trap '' HUP");
+      const job = block.findIndex((line) => line.trim().startsWith("nohup sh -c '"));
+      if (trap === -1 || job === -1 || trap > job) return "trap '' HUP does not come before the nohup job, so the SSH hangup can stop the job before nohup starts";
+      const steps = /nohup sh -c '([^']*)'/.exec(block[job] ?? "")?.[1]?.split(";").map((step) => step.trim()) ?? [];
+      return steps.join("; ") === WG0_RESTART_JOB.join("; ") ? null : `the job is "${steps.join("; ")}"; the mv must be in the job before the restart, so a killed job gives a restart on the next run`;
+    },
+  },
+  {
+    name: "install.sh: before the last step, hostname.wg0.new goes away only when wg0 runs with the same file, and goes in place only when wg0 does not run",
+    holds: (_rendered, repoFile) => {
+      const lines = repoFile("install.sh").split("\n");
+      const end = lines.lastIndexOf(WG0_RESTART_IF);
+      const bad = lines.slice(0, end).flatMap((line, at) => {
+        if (!/^\s*(rm|mv)\b.*\/etc\/hostname\.wg0\.new/.test(line)) return [];
+        const condition = lines[at - 1]?.trim() ?? "";
+        const allowed = line.trim().startsWith("rm") ? WG0_SAME_AND_RUNNING : WG0_NOT_RUNNING;
+        return condition === allowed ? [] : [`line ${at + 1}: "${line.trim()}" after "${condition}"`];
+      });
+      return bad.length === 0 ? null : bad.join("\n");
+    },
   },
   {
     name: "crontab: syspatch runs at 20:30 UTC, which is 04:30 in Singapore",

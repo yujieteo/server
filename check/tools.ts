@@ -1,7 +1,7 @@
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { type Finding, REPO_ROOT, lineOf, need, run, trackedFiles } from "./lib.ts";
+import { type Finding, REPO_ROOT, lineOf, need, orToolFailure, run, trackedFiles } from "./lib.ts";
 
 const TSC = join(REPO_ROOT, "node_modules/.bin/tsc");
 
@@ -17,7 +17,7 @@ function tscFindings(stdout: string, fallbackFile: string): readonly Finding[] {
 
 export async function typeCheck(): Promise<readonly Finding[]> {
   const ran = await run([TSC, "-p", "tsconfig.json"]);
-  return ran.code === 0 ? [] : tscFindings(ran.stdout, "tsconfig.json");
+  return orToolFailure(ran, "tsconfig.json", ran.code === 0 ? [] : tscFindings(ran.stdout, "tsconfig.json"));
 }
 
 const INLINE_SCRIPT_TSCONFIG = {
@@ -61,9 +61,8 @@ export async function inlineScripts(): Promise<readonly Finding[]> {
       writeFileSync(join(work, "tsconfig.json"), JSON.stringify(INLINE_SCRIPT_TSCONFIG));
       const ran = await run([TSC, "-p", work]);
       const offset = lineOf(html, html.indexOf(script));
-      for (const finding of tscFindings(ran.stdout, page)) {
-        findings.push({ file: page, line: finding.line + offset - 1, message: finding.message });
-      }
+      const found = tscFindings(ran.stdout, page).map((finding) => ({ file: page, line: finding.line + offset - 1, message: finding.message }));
+      findings.push(...orToolFailure(ran, page, found));
     } finally {
       rmSync(work, { recursive: true, force: true });
     }
@@ -122,10 +121,12 @@ export async function shellcheck(): Promise<readonly Finding[]> {
     for (const [key, group] of groups) {
       const exclude = key.slice(group.dialect.length + 1);
       const ran = await run(["shellcheck", "-x", "-s", group.dialect, "-o", "all", "-e", exclude, "-f", "gcc", ...group.targets], { cwd: work });
+      const found: Finding[] = [];
       for (const line of ran.stdout.split("\n")) {
-        const found = /^(.*?):(\d+):\d+: (.*)$/.exec(line);
-        if (found?.[1] !== undefined) findings.push({ file: found[1], line: Number(found[2]), message: found[3] ?? "" });
+        const match = /^(.*?):(\d+):\d+: (.*)$/.exec(line);
+        if (match?.[1] !== undefined) found.push({ file: match[1], line: Number(match[2]), message: match[3] ?? "" });
       }
+      findings.push(...orToolFailure(ran, `shellcheck ${key}`, found));
     }
     return findings;
   } finally {

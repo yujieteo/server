@@ -36,12 +36,17 @@ describe("put: install.sh puts the private values in a repo file", () => {
     }
   });
 
-  test("relayd.conf has the token and mode 600, because the token is a secret", async () => {
-    const relayd = (await installedTemplates()).find((input) => input.name === "etc/relayd.conf");
-    if (relayd === undefined) throw new Error("install.sh does not put etc/relayd.conf");
-    expect(relayd.mode).toBe("600");
-    const output = await runPut(REPO_ROOT, { ...relayd, fhToken: "abc_DEF-123" });
-    expect(output.content).toContain('value "Bearer abc_DEF-123"');
+  test("each installed file that holds the token of femahoy has mode 600, and relayd.conf sends it", async () => {
+    const token = "abc_DEF-123";
+    const holders = new Map<string, string>();
+    for (const input of await installedTemplates()) {
+      const output = await runPut(REPO_ROOT, { ...input, fhToken: token });
+      if (!output.content.includes(token)) continue;
+      holders.set(input.name, output.content);
+      expect(output.mode, input.name).toBe("600");
+    }
+    expect([...holders.keys()]).toEqual(["etc/relayd.conf"]);
+    expect(holders.get("etc/relayd.conf")).toContain(`value "Bearer ${token}"`);
   });
 
   const safe = fc.stringMatching(/^[A-Za-z0-9_.|*-]{0,24}$/);

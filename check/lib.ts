@@ -38,6 +38,11 @@ export async function run(
   return { code, stdout, stderr };
 }
 
+export function orToolFailure(ran: Ran, file: string, findings: readonly Finding[]): readonly Finding[] {
+  if (ran.code === 0 || findings.length > 0) return findings;
+  return [{ file, line: 0, message: `the tool exits with ${ran.code} and no finding: ${`${ran.stderr}${ran.stdout}`.trim()}` }];
+}
+
 function missingTool(name: string): Finding {
   return { file: name, line: 0, message: `the tool ${name} is not in PATH` };
 }

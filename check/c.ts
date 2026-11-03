@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { EXCLUDED } from "./comments.ts";
-import { type Finding, REPO_ROOT, errorText, need, run } from "./lib.ts";
+import { type Finding, REPO_ROOT, errorText, need, orToolFailure, run } from "./lib.ts";
 import { fastcgiPost } from "./fastcgi.ts";
 
 const PROGRAMS = ["pond/main.c", "pond/pond_read.c", "room/room.c"] as const;
@@ -41,13 +41,13 @@ async function ownedFindings(mode: readonly string[]): Promise<readonly Finding[
   const results = await Promise.all(
     PROGRAMS.map(async (program) => {
       const ran = await run(["clang", ...STRICT, ...mode, ...flags, program, "-o", "/dev/null"]);
-      return { program, found: diagnostics(`${ran.stdout}\n${ran.stderr}`) };
+      return { program, ran, found: diagnostics(`${ran.stdout}\n${ran.stderr}`) };
     }),
   );
   const findings: Finding[] = [];
-  for (const { program, found } of results) {
+  for (const { program, ran, found } of results) {
     const owned = found.filter((diagnostic) => diagnostic.fatal || OWNED_C.has(diagnostic.file));
-    findings.push(...owned.map(({ file, line, message }) => ({ file, line, message })));
+    findings.push(...orToolFailure(ran, program, owned.map(({ file, line, message }) => ({ file, line, message }))));
     const rest = found.length - owned.length;
     if (rest > 0) console.log(`  note: ${program}: ${rest} diagnostics in generated or copied C (${Object.keys(EXCLUDED).length} files are excluded; fix the Goose compiler)`);
   }
@@ -144,7 +144,6 @@ async function roomScenario(binary: string): Promise<readonly Finding[]> {
     stderr: "pipe",
     cwd: REPO_ROOT,
   });
-  await waitForPort(port);
   const attempt = async (): Promise<Finding[]> => {
     const room = Math.random().toString(16).slice(2).padEnd(22, "0").slice(0, 22);
     const post = (op: string, member: string, extra = ""): Promise<number | null> =>
@@ -165,11 +164,13 @@ async function roomScenario(binary: string): Promise<readonly Finding[]> {
   };
   let findings: Finding[];
   try {
+    await waitForPort(port);
     findings = await attempt();
   } catch (error) {
     findings = [{ file: "room/room.c", line: 0, message: `the daemon stopped: ${errorText(error)}` }];
+  } finally {
+    daemon.kill("SIGTERM");
   }
-  daemon.kill("SIGTERM");
   const stderr = await new Response(daemon.stderr).text();
   await daemon.exited;
   return [...findings, ...sanitizerFindings("room", stderr)];
