@@ -43,10 +43,11 @@ export default function draw(F, L) {
   lbl(ux + uw / 2, uy + 10, 'unbound', { weight: E.weight.name });
   sml(ux + uw / 2, uy + 21, 'name → 10.8.0.1');
   const hx = iX, hw = x1 - 6 - hx;
-  card(hx, uy, hw, 40);
+  card(hx, uy, hw, 48);
   lbl(hx + hw / 2, uy + 10, 'httpd', { weight: E.weight.name });
-  sml(hx + hw / 2, uy + 21, "Let's Encrypt");
-  sml(hx + hw / 2, uy + 31, 'check only');
+  sml(hx + hw / 2, uy + 21, 'these names:');
+  sml(hx + hw / 2, uy + 30, "Let's Encrypt");
+  sml(hx + hw / 2, uy + 39, 'check only');
 
   // relayd (left) and the fleet view (right)
   const ry = uy + 52, rx = ux, rw = 94, rh = 44;
