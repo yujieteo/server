@@ -73,7 +73,7 @@ After a change to this repo: `./apply ADMIN_USER@10.8.0.1`.
 | `fh` | A | the IPv4 address of the server |
 | `fleet` | A | the IPv4 address of the server |
 
-Make no other record. A wildcard record stops GnuPG from finding the key with WKD.
+Make no other record. A wildcard record blocks GnuPG key lookup with WKD.
 If you change `www/.well-known/mta-sts.txt`, also change the `id` of `_mta-sts`.
 
 ## WireGuard clients
