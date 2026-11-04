@@ -2,7 +2,7 @@
 // Sources: README.md (Private names, Fleet view), etc/relayd.conf, etc/unbound.conf, etc/pf.conf,
 // etc/httpd.conf, etc/sshd_config (Match User tunnel).
 // Hero: none, a network diagram has no physical object (flat cards, schematic-emil style).
-// Width 58 mm (164 pt): GitHub shows the README image 309 px wide at a 375 px screen, so the 6 pt text is 11 px.
+// Layout 58 mm (164 pt). The SVG root is shown 95 mm wide (about 360 px in the README), so the 6 pt text is about 13 px.
 // Made with the schematic-emil skill (on schematic-figure). To render it again: put this file at figure/figure.js
 // in an empty folder, copy schematic-emil/style.js to figure/emil.js and schematic-emil/fonts/ to figure/fonts/, then
 //   node <schematic-figure>/foundation/tools/render.mjs --root <folder> --fig <folder>/figure/figure.js
@@ -110,5 +110,7 @@ export default function draw(F, L) {
   L.callout(R, [mid(1) + 5, sy + sh + 11], [mid(1) + 9, sy + sh + 11], 'reverse SSH\ntunnel',
     { anchor: 'start', size: text.small, color: V[11], textColor: V[11] });
 
+  F.svg.setAttribute('width', '95mm');
+  F.svg.setAttribute('height', `${(figure.height * 95 / figure.width).toFixed(3)}mm`);
   E.emilTheme(F);
 }
