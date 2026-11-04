@@ -150,7 +150,7 @@ httpd sends the requests to `neurons_room`, a Goose daemon on 127.0.0.1 port 879
   A server-sent event stream or a long poll keeps one connection open for each member. A poll is a short request, so
   the daemon serves one request at a time, with no thread and no lock.
 - The daemon keeps the rooms in memory only. It writes no file and logs no room and no address. A room ends 3 days
-  after a member makes it, and a restart of the daemon ends all rooms.
+  after it was made, and a restart of the daemon ends all rooms.
 - The limits: 100 rooms, 5 members and 64 notes in a room, 8,192 bytes in a request, 2 s to send a request. In
   each minute, 600 requests from 1 address, and 600 requests or 120 views and notes in 1 room. In each hour, 6 new
   rooms from 1 address. For these limits, all of an IPv6 /64 is 1 address.
@@ -197,12 +197,12 @@ not a path such as `/mac`. Nobody without a WireGuard key gets to them.
   and `Origin` to the local address of the app. For femahoy, relayd also sends the token of `fh serve` (`FH_TOKEN` in `local.conf`).
   httpd on 10.8.0.1 port 80 sends the names to HTTPS.
 - pf lets the internet in only to the public addresses. On the public addresses, httpd answers only
-  the ACME challenge for the 3 names. `bin/private-cert` gets their certificate.
+  the Let's Encrypt challenge for the 3 names. `bin/private-cert` gets their certificate.
 
 To set it up:
 
 1. In Gandi LiveDNS, add the records `mac.lavish`, `desk.lavish` and `fh` of the table in [DNS records](#dns-records). This
-   is the only step by hand. The ACME server needs them to check the names. The records give the public
+   is the only step by hand. Let's Encrypt needs them to check the names. The records give the public
    address, which answers only the check.
 2. On the Mac (also from Termius over SSH), with the VPN on: `./private-setup ADMIN_USER@10.8.0.1`.
    It makes the key `~/.ssh/tunnel_ed25519` on the Mac and on the desktop (the private keys stay there).
@@ -235,7 +235,7 @@ ssh -i ~/.ssh/tunnel_ed25519 fleet@10.8.0.1 desk < desk.html      # on the deskt
   The pages show in a sandbox, so they cannot run a script. Use HTML and CSS only.
 - unbound gives `fleet.teoyujie.org` to the VPN devices as 10.8.0.1. relayd on 10.8.0.1 port 443 sends it to
   httpd on 127.0.0.1 port 8092, with the same `Origin` and `Sec-Fetch-Site` rule as the other private names.
-  The public addresses answer only the ACME challenge for it, as for the other private names.
+  The public addresses answer only the Let's Encrypt challenge for it, as for the other private names.
   To set it up, add the DNS record `fleet` (in [DNS records](#dns-records)), then `./apply ADMIN_USER@10.8.0.1`.
   Until the public DNS has that record, `bin/private-cert` renews no private name. If you did not set up the tunnel keys
   yet, run `./private-setup` (below) in place of `./apply`.
