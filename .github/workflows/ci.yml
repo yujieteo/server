@@ -25,8 +25,8 @@ jobs:
     steps:
       - name: actions/checkout v5.0.0
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
-      - name: Install zstd and rsync, which the runner image lacks
-        run: sudo apt-get update && sudo apt-get install -y zstd rsync
+      - name: Prepare the VM action: install zstd and rsync, link the work directory
+        run: sudo apt-get update && sudo apt-get install -y zstd rsync && ln -sfn /home/runner/_work /home/runner/work
       - name: vmactions/openbsd-vm v1.4.9 runs install.sh on a fresh OpenBSD 8.0 VM, then test.sh; install.sh turns off root login, so nothing is copied back
         uses: vmactions/openbsd-vm@f1ca8bc8ecc5b6ef7218e5b914836e067e1546d3
         with:
