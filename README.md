@@ -1,8 +1,8 @@
 # teoyujie.org server
 
-The config of the teoyujie.org server: OpenBSD 8.0 base system only, no packages.
-It serves the site and the app pages, runs the pond save and read services and the room relay of the
-neuron explorer, forwards mail, and is a VPN with an ad blocker.
+The config of the teoyujie.org server, an OpenBSD 8.0 base system with no packages.
+
+It serves the site and the app pages, and it runs the pond save and read services. It also runs the room relay of the neuron explorer, forwards mail, and is a VPN with an ad blocker.
 
 This repo is public and has no secret. The server makes its own secrets (TLS key, ACME account
 key, SRS key, WireGuard key), and they never leave it. `local.conf` (Git ignores it) has the
@@ -20,13 +20,13 @@ private values. No value in it gives access to the server.
 | `share` | Runs on the Mac. `./share FILE` prints a link to FILE that works for 30 days. |
 | `local.conf.example` | The private values, with test values. CI uses it. `CONF_KEYS` in `check/conf.ts` gives the meaning and the format of each key. |
 | `etc/` | The configs: httpd, relayd, acme-client, smtpd, pf, sshd, unbound, doas, sysctl, crontab, and `rc.d/neurons_room`. |
-| `bin/` | The jobs: health-check, ssh-alert, blocklist-update, site-update (below), private-cert (below), deploy-only (the forced command of the deploy user), tunnel-wait (the login shell of the tunnel user), and fleet-upload (the forced command of the fleet user, below). |
+| `bin/` | The jobs: health-check, ssh-alert, blocklist-update, site-update (below) and private-cert (below). deploy-only is the forced command of the deploy user. tunnel-wait is the login shell of the tunnel user. fleet-upload is the forced command of the fleet user (below). |
 | `fleet/index.html` | The page of the fleet view (below). It shows the pages of the Mac and the desktop. |
-| `www/` | Files on the web: security.txt, the GPG key with WKD, the MTA-STS policy, and `errdocs/err.html`, the error page (403, 404 and the others) in the look of the site. |
+| `www/` | Files on the web: security.txt, the GPG key with WKD, the MTA-STS policy, and `errdocs/err.html`. The last is the error page (403, 404 and the others) in the look of the site. |
 | `pond/` | The pond save and read services (below). `pond_save.c`, `pond_verify.h`, `pond_lock.h`, `pond_read.c` and `pond_read.h` are copies of `server/` in the [pond repo](https://github.com/yujieteo/pond) at commit `cb6bbac6ffcb050347d1fab6852e4302184d1362`. Do not change them here. `main.c` adds pledge and unveil to `pond_save`. `pond_read` does its own unveil (read only) and pledge (`stdio rpath`). |
 | `room/` | The room relay of the neuron explorer (below). `room.c` is the C that Goose makes from `room.goose`. |
 | `.githooks/pre-commit`, `.gitleaks.toml` | gitleaks stops a commit that has a secret in it. Turn on the hook once in each clone: `git config core.hooksPath .githooks`. |
-| `check/`, `package.json`, `tsconfig.json`, `knip.json`, `bun.lock` | The local check, in Bun and strict TypeScript. Run `bun install`, then `bun run check` before a review. It needs bun, shellcheck, clang, pkg-config with the OpenSSL headers, and OpenSSH. It runs the type checks, shellcheck, the comment ban, the dead code check, the syntax and the facts of the configs, the page budget, the C warnings, the C analysis, the C sanitizer run and the tests. `bun run replay` replays `put` of `install.sh` on the base commit and on the branch, and fails on each difference (`--base REV` sets the base, `--accept` accepts a difference). CI does not run them. |
+| `check/`, `package.json`, `tsconfig.json`, `knip.json`, `bun.lock` | The local check, in Bun and strict TypeScript. Run `bun install`, then `bun run check` before a review. It needs bun, shellcheck, clang, pkg-config with the OpenSSL headers, and OpenSSH. It runs the type checks, shellcheck, the comment ban and the dead code check. It also runs the syntax and facts checks of the configs and the page budget. It also runs the C warnings, the C analysis, the C sanitizer run and the tests. `bun run replay` replays `put` of `install.sh` on the base commit and on the branch. It fails on each difference (`--base REV` sets the base, `--accept` accepts a difference). CI does not run them. |
 | `.github/workflows/ci.yml` | gitleaks, and `install.sh` plus `test.sh` on a fresh OpenBSD 8.0 VM. |
 
 ## Rebuild from zero
@@ -34,8 +34,8 @@ private values. No value in it gives access to the server.
 1. At Vultr, deploy "OpenBSD 8.0" (plan vc2-1c-1gb, Singapore) with the SSH key of the Mac and the
    hostname `teoyujie.org`. Set the reverse DNS of the IPv4 and the IPv6 address to `teoyujie.org`.
 2. On the Mac: `cp local.conf.example local.conf`, then put in the real values. Before the first
-   apply, make the tunnels of the Mac and the iPhone in the WireGuard app (below) and put their
-   public keys in `WG_PEERS`. After the first apply, SSH works only through the VPN.
+   apply, make the tunnels of the Mac and the iPhone in the WireGuard app (below).
+   Put their public keys in `WG_PEERS`. After the first apply, SSH works only through the VPN.
 3. `./apply root@NEW_IPV4`. It asks for the doas password of the admin and prints the WireGuard
    public key of the server. After this run, root cannot log in with SSH.
 4. Put that key in the WireGuard configs of the Mac and the iPhone (below). Turn on the tunnel,
@@ -84,7 +84,7 @@ above). To add a new device later, run `./apply ADMIN_USER@10.8.0.1` from a devi
 on the VPN. If no device is on the VPN, log in to the Vultr web console.
 Add the key to `local.conf` in the `server` folder of the last apply, then run its `install.sh` as root.
 
-```
+```text
 [Interface]
 PrivateKey = (the app makes it)
 Address = 10.8.0.2/32
@@ -107,8 +107,8 @@ Each minute, the cron job `bin/site-update` (as the user deploy) reads the commi
 [yujieteo/site](https://github.com/yujieteo/site). When it changes, the job gets the tarball of that commit
 from GitHub and gives its `public/` to deploy-only. Then it gets `/` and each URL in `fixed-urls.txt` of that
 commit from httpd. If one does not give 200, it puts the previous site back and mails root. Thus a push to
-main deploys the site, with no key and no Mac. `/home/deploy/site-commit` holds the last commit, so a failed
-commit is not deployed again. The next commit on main deploys again. If GitHub does not answer, the job
+main deploys the site, with no key and no Mac. `/home/deploy/site-commit` holds the last commit, so the job does
+not deploy a failed commit again. The next commit on main deploys again. If GitHub does not answer, the job
 tries again the next minute and mails nothing.
 
 `scripts/deploy.sh` of the site repo also deploys from the Mac. The next change on main replaces that deploy.
@@ -123,7 +123,7 @@ entries. A deploy and `install.sh` do not change them. The server has no private
 To enrol a device, put the base64 of its public key (SubjectPublicKeyInfo DER) in `keys/NAME.pub`.
 NAME is the `key` of its requests. From the Mac:
 
-```
+```text
 scp NAME.pub ADMIN_USER@10.8.0.1:
 ssh -t ADMIN_USER@10.8.0.1 doas install -m 644 NAME.pub /var/www/pond/keys/
 ```
@@ -135,8 +135,8 @@ them to `/var/www/cgi-bin/pond_read` through slowcgi. `/log/` is the site file `
 with the entries in place of its line `<!-- pond:entries -->`. Without that file, `/log/` is a plain
 page. pond_read can only read the entries and the template.
 
-To use a new pond version, copy the 5 files from `server/` of the pond repo to `pond/`, change the
-commit in the table above, then apply.
+To use a new pond version, copy the 5 files from `server/` of the pond repo to `pond/`.
+Change the commit in the table above, then apply.
 
 ## Room relay of the neuron explorer
 
@@ -146,23 +146,23 @@ view and the same notes. The README of the neurons repo has the protocol (Rooms)
 httpd sends the requests to `neurons_room`, a Goose daemon on 127.0.0.1 port 8790, with FastCGI.
 `etc/rc.d/neurons_room` starts it as the user `_neuronsroom`. It pledges `stdio inet`, so it cannot open a file.
 
-- The page polls the relay once each second. httpd in the base system cannot pass a WebSocket to a daemon, and a
-  server-sent event stream or a long poll keeps one connection open for each member. A poll is a short request, so
+- The page polls the relay once each second. httpd in the base system cannot pass a WebSocket to a daemon.
+  A server-sent event stream or a long poll keeps one connection open for each member. A poll is a short request, so
   the daemon serves one request at a time, with no thread and no lock.
 - The daemon keeps the rooms in memory only. It writes no file and logs no room and no address. A room ends 3 days
-  after it was made, and a restart of the daemon ends all rooms.
+  after a member makes it, and a restart of the daemon ends all rooms.
 - The limits: 100 rooms, 5 members and 64 notes in a room, 8,192 bytes in a request, 2 s to send a request. In
   each minute, 600 requests from 1 address, and 600 requests or 120 views and notes in 1 room. In each hour, 6 new
   rooms from 1 address. For these limits, all of an IPv6 /64 is 1 address.
 - Known limit: a room stays for 3 days, also with no members. Thus about 17 addresses can make all 100 rooms in
   1 hour, and then nobody can make a room for up to 3 days.
 - The daemon refuses a request that holds an OpenRouter key (`sk-or-v1-` and 64 hex digits) in a string of its
-  JSON, so a key cannot go into a room.
+  JSON. Thus a key cannot go into a room.
 
-To change the relay, change `room.goose`, then make `room.c` again with Goose at commit
+To change the relay, change `room.goose`. Then make `room.c` again with Goose at commit
 `a108677d300cb0e8bbb842c35a353abe67a20c6c` (its build is in the README of the neurons repo):
 
-```
+```text
 cd room && GOOSE_STDLIB=../../goose/stdlib ../../goose/build/goose --standalone --include room_net.h -o room.c room.goose
 ```
 
@@ -181,7 +181,7 @@ On a device on the VPN (Mac, iPhone, desktop), these names open the apps. No tok
 Lavish uses paths from the root of the site (`/api/...`, `/events/...`), so each Lavish has its own name,
 not a path such as `/mac`. Nobody without a WireGuard key gets to them.
 
-<img src="docs/figures/private-names.svg" width="360" alt="The path of a request to a private name. A VPN device asks unbound, which gives the name as 10.8.0.1. The device sends HTTPS to relayd on 10.8.0.1 port 443, which gives 403 to a cross-site Origin. relayd sends mac.lavish to port 4387, desk.lavish to port 4388, fh to port 8790 and fleet to httpd port 8092. Reverse SSH tunnels take ports 4387, 4388 and 8790 to Lavish on the Mac, Lavish on the desktop and femahoy on the desktop. From the internet, the public httpd answers only the Let's Encrypt check for these names.">
+![The path of a request to a private name. A VPN device asks unbound, which gives the name as 10.8.0.1. The device sends HTTPS to relayd on 10.8.0.1 port 443, which gives 403 to a cross-site Origin. relayd sends mac.lavish to port 4387, desk.lavish to port 4388, fh to port 8790 and fleet to httpd port 8092. Reverse SSH tunnels take ports 4387, 4388 and 8790 to Lavish on the Mac, Lavish on the desktop and femahoy on the desktop. From the internet, the public httpd answers only the Let's Encrypt check for these names.](docs/figures/private-names.svg)
 
 *Only a VPN device reaches relayd. relayd sends each name to its tunnel port or to the fleet view.*
 
@@ -197,30 +197,30 @@ not a path such as `/mac`. Nobody without a WireGuard key gets to them.
   and `Origin` to the local address of the app. For femahoy, relayd also sends the token of `fh serve` (`FH_TOKEN` in `local.conf`).
   httpd on 10.8.0.1 port 80 sends the names to HTTPS.
 - pf lets the internet in only to the public addresses. On the public addresses, httpd answers only
-  the Let's Encrypt challenge for the 3 names. `bin/private-cert` gets their certificate.
+  the ACME challenge for the 3 names. `bin/private-cert` gets their certificate.
 
 To set it up:
 
 1. In Gandi LiveDNS, add the records `mac.lavish`, `desk.lavish` and `fh` of the table in [DNS records](#dns-records). This
-   is the only step by hand. Let's Encrypt needs them to check the names. The records give the public
+   is the only step by hand. The ACME server needs them to check the names. The records give the public
    address, which answers only the check.
 2. On the Mac (also from Termius over SSH), with the VPN on: `./private-setup ADMIN_USER@10.8.0.1`.
    It makes the key `~/.ssh/tunnel_ed25519` on the Mac and on the desktop (the private keys stay there).
-   It puts the public keys (`TUNNEL_KEY`) and the femahoy token (`FH_TOKEN`) in `local.conf`, runs `apply`
-   (it asks for the doas password), and runs `rebuild` on the Mac and on the desktop. The dotfiles make
+   It puts the public keys (`TUNNEL_KEY`) and the femahoy token (`FH_TOKEN`) in `local.conf`.
+   It runs `apply` (it asks for the doas password). It runs `rebuild` on the Mac and on the desktop. The dotfiles make
    the tunnel services. If a step fails, the command says which step and how to try again.
    It is safe to run again, for example after a new femahoy token.
 
-`test.sh` tests the tunnel user, the listen addresses, the pf rules, the headers that relayd sends to
-each app, and that the public addresses do not answer for the 3 names.
+`test.sh` tests the tunnel user, the listen addresses, the pf rules and the headers that relayd sends to
+each app. It also tests that the public addresses do not answer for the 3 names.
 
 ## Fleet view
 
-`https://fleet.teoyujie.org` shows the workers on the Mac and on the desktop: each worker, its task, its
-last event, and each PR that waits for a word from the captain. It is read only, and only for the VPN devices.
+`https://fleet.teoyujie.org` shows the workers on the Mac and on the desktop. It shows each worker, its task, its
+last event, and each PR that waits for a word from the captain. You cannot change anything with it, and only the VPN devices reach it.
 The Mac and the desktop make their pages (the dotfiles do that, not this repo) and upload them:
 
-```
+```text
 ssh -i ~/.ssh/tunnel_ed25519 fleet@10.8.0.1 mac < mac.html        # on the Mac
 ssh -i ~/.ssh/tunnel_ed25519 fleet@10.8.0.1 desk < desk.html      # on the desktop
 ```
@@ -235,16 +235,16 @@ ssh -i ~/.ssh/tunnel_ed25519 fleet@10.8.0.1 desk < desk.html      # on the deskt
   The pages show in a sandbox, so they cannot run a script. Use HTML and CSS only.
 - unbound gives `fleet.teoyujie.org` to the VPN devices as 10.8.0.1. relayd on 10.8.0.1 port 443 sends it to
   httpd on 127.0.0.1 port 8092, with the same `Origin` and `Sec-Fetch-Site` rule as the other private names.
-  The public addresses answer only the Let's Encrypt challenge for it, as for the other private names.
+  The public addresses answer only the ACME challenge for it, as for the other private names.
   To set it up, add the DNS record `fleet` (in [DNS records](#dns-records)), then `./apply ADMIN_USER@10.8.0.1`.
-  Until the public DNS has that record, `bin/private-cert` renews no private name. If the tunnel keys are
-  not set up yet, run `./private-setup` (below) in place of `./apply`.
+  Until the public DNS has that record, `bin/private-cert` renews no private name. If you did not set up the tunnel keys
+  yet, run `./private-setup` (below) in place of `./apply`.
 
 `test.sh` tests the names, the size limit, the replace in 1 step, and that the public addresses do not answer.
 
 ## Upgrade to the next OpenBSD release (each 6 months)
 
-```
+```text
 ssh -t ADMIN_USER@10.8.0.1 doas sysupgrade      # downloads, reboots, upgrades: about 10 minutes
 ./apply ADMIN_USER@10.8.0.1                     # writes the configs of this repo again
 ssh -t ADMIN_USER@10.8.0.1 doas sh server/test.sh
