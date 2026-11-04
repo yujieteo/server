@@ -32,6 +32,9 @@ jobs:
         with:
           release: "8.0"
           copyback: false
+          prepare: |
+            mkdir -p /home/runner/_work/server
+            ln -sfn /home/runner/work/server/server /home/runner/_work/server/server
           run: |
             cp local.conf.example local.conf
             ssh-keygen -q -t ed25519 -N '' -f /root/deploy
