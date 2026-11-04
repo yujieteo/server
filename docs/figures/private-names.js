@@ -2,7 +2,7 @@
 // Sources: README.md (Private names, Fleet view), etc/relayd.conf, etc/unbound.conf, etc/pf.conf,
 // etc/httpd.conf, etc/sshd_config (Match User tunnel).
 // Hero: none, a network diagram has no physical object (flat cards, schematic-emil style).
-// Width 95 mm (269 pt): the README image shows at about 360 px, the width of the earlier HTML image.
+// Width 58 mm (164 pt): GitHub shows the README image 309 px wide at a 375 px screen, so the 6 pt text is 11 px.
 // Made with the schematic-emil skill (on schematic-figure). To render it again: put this file at figure/figure.js
 // in an empty folder, copy schematic-emil/style.js to figure/emil.js and schematic-emil/fonts/ to figure/fonts/, then
 //   node <schematic-figure>/foundation/tools/render.mjs --root <folder> --fig <folder>/figure/figure.js
@@ -10,12 +10,12 @@
 // (fontTools subset, woff2, the glyphs of the figure) as a data URL in an @font-face rule of its <style>.
 import * as E from './emil.js';
 
-export const figure = { width: 95, height: 102, name: 'private-names', format: 'journal' };
+export const figure = { width: 58, height: 102, name: 'private-names', format: 'journal' };
 
 export default function draw(F, L) {
   const { r, line, text } = E.useEmil(F, L, 'web');
   const G = E.gray, B = E.hue.blue, T = E.hue.tomato, V = E.hue.violet;
-  const W = L.mm(95), R = F.root;
+  const W = L.mm(58), R = F.root;
   const lbl = (x, y, s, o = {}) => L.text(R, x, y, s, { size: text.label, color: G[1200], valign: 'middle', anchor: 'middle', ...o });
   const sml = (x, y, s, o = {}) => lbl(x, y, s, { size: text.small, color: G[1100], ...o });
   const card = (x, y, w, h, o = {}) => L.rect(R, x, y, w, h, { ...E.card(r.card), width: line.thin, ...o });
