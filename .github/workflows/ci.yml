@@ -29,12 +29,11 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y zstd rsync && ln -sfn /home/runner/_work /home/runner/work
       - name: vmactions/openbsd-vm v1.4.9 runs install.sh on a fresh OpenBSD 8.0 VM, then test.sh; install.sh turns off root login, so nothing is copied back
         uses: vmactions/openbsd-vm@f1ca8bc8ecc5b6ef7218e5b914836e067e1546d3
+        env:
+          GITHUB_WORKSPACE: /home/runner/work/server/server
         with:
           release: "8.0"
           copyback: false
-          prepare: |
-            mkdir -p /home/runner/_work/server
-            ln -sfn /home/runner/work/server/server /home/runner/_work/server/server
           run: |
             cp local.conf.example local.conf
             ssh-keygen -q -t ed25519 -N '' -f /root/deploy
