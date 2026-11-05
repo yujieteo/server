@@ -84,11 +84,16 @@ test("SCR-187: the list of long functions only shrinks, so a too generous or sta
   expect(checkJpl(root, { "check/a.ts:long": 71 })).toEqual([]);
 });
 
-test("SCR-225 round 2 R1: a local binding, parameter or block that shadows a function or an import is not a call to it", () => {
+test("SCR-225 round 2 R1: a parameter, local binding or block that shadows an import or function is not a call to it", () => {
   const root = project({
-    "check/b.ts": 'import { a } from "./a.ts";\nexport function b(a: () => void): void { a(); }\nexport function c(): void { const a = (): void => {}; a(); }\nexport function d(): void { { const a = (): void => {}; a(); } }\n',
-    "check/a.ts": "export function a(): void {}\n",
-    "check/e.ts": 'import { b } from "./b.ts";\nexport function e(): void { b(e); }\nfunction f(): void { { const g = (): void => {}; g(); } }\nfunction g(): void { f(); }\n',
+    "check/a.ts": 'import { b, c, d } from "./b.ts";\nexport function a(): void { b(a); c(); d(); }\n',
+    "check/b.ts": [
+      'import { a } from "./a.ts";',
+      "export function b(a: () => void): void { a(); }",
+      "export function c(): void { const a = (): void => {}; a(); }",
+      "export function d(): void { { const a = (): void => {}; a(); } }",
+    ].join("\n"),
+    "check/e.ts": "function f(): void { { const g = (): void => {}; g(); } }\nfunction g(): void { f(); }\n",
   });
   expect(rule1(root)).toEqual([]);
 });
