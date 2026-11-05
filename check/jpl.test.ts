@@ -14,13 +14,55 @@ function project(files: Record<string, string>): string {
 
 const body = (n: number): string => Array.from({ length: n }, (_, i) => `  x = ${i};`).join("\n");
 
-test("SCR-187: recursion, direct or through another function, fails in Goose and TypeScript", () => {
+const rule1 = (root: string): string[] =>
+  checkJpl(root, {}).filter((p) => p.message.includes("rule 1")).map((p) => p.message.split(" ")[0] as string).sort();
+
+test("SCR-225 R4: direct and mutual recursion fail in Goose", () => {
+  const direct = project({ "room/a.goose": "fn f(n: i64) -> i64 { f(n) }\nfn ok() { f2() }\nfn f2() {}\n" });
+  expect(rule1(direct)).toEqual(["f"]);
+  const mutual = project({ "room/a.goose": "fn f(n: i64) -> i64 { g(n) }\nfn g(n: i64) -> i64 { f(n) }\nfn ok() { f2() }\nfn f2() {}\n" });
+  expect(rule1(mutual)).toEqual(["f", "g"]);
+});
+
+test("SCR-225 R4: direct and mutual recursion fail in TypeScript", () => {
+  const direct = project({ "check/a.ts": "function h(n: number): number { return n ? h(n - 1) : 0; }\nfunction fine(): number { return 1; }\n" });
+  expect(rule1(direct)).toEqual(["h"]);
+  const mutual = project({ "check/a.ts": "function p(n: number): number { return q(n); }\nfunction q(n: number): number { return p(n); }\nfunction fine(): number { return p; }\n" });
+  expect(rule1(mutual)).toEqual(["p", "q"]);
+});
+
+test("SCR-225 R2: recursion through an object member, this, a static member and a constructor fails", () => {
   const root = project({
-    "room/a.goose": "fn f(n: i64) -> i64 { g(n) }\nfn g(n: i64) -> i64 { f(n) }\nfn ok() { f2() }\nfn f2() {}\n",
-    "check/a.ts": "function h(n: number): number { return n ? h(n - 1) : 0; }\nfunction fine(): number { return 1; }\n",
+    "check/a.ts": [
+      "const o = { f(): number { return o.f(); } };",
+      "class C { constructor() { new C(); } m(): void { this.m(); } static s(): void { C.s(); } }",
+      "class D { m(): void { this.n(); } n(): void { this.m(); } }",
+    ].join("\n"),
   });
-  const names = checkJpl(root, {}).filter((p) => p.message.includes("rule 1")).map((p) => p.message.split(" ")[0]);
-  expect(names.sort()).toEqual(["f", "g", "h"]);
+  expect(rule1(root)).toEqual(["constructor", "f", "m", "m#2", "n", "s"]);
+});
+
+test("SCR-225 R1: recursion across imports fails, and same names in other scopes do not", () => {
+  const cycle = project({
+    "check/a.ts": 'import { b } from "./b.ts";\nexport function a(): void { b(); }\n',
+    "check/b.ts": 'import * as m from "./a.ts";\nexport function b(): void { m.a(); }\n',
+  });
+  expect(rule1(cycle)).toEqual(["a", "b"]);
+  const clean = project({
+    "check/a.ts": [
+      "function top(): void {}",
+      "function outer1(): void { function top(): void { return; } top(); }",
+      "function outer2(): void { function inner(): void {} inner(); }",
+      "function inner(): void { outer2(); }",
+      "class K { top(): void { top(); } helper(): void { this.top(); } }",
+    ].join("\n"),
+  });
+  expect(rule1(clean)).toEqual([]);
+});
+
+test("SCR-225 R3: a getter or setter of 61 lines fails rule 4", () => {
+  const root = project({ "check/a.ts": `class K {\n  get big(): number {\n${body(59)}\n  return 1;\n  }\n  set big(v: number) {\n${body(59)}\n  }\n}\n` });
+  expect(checkJpl(root, {}).map((p) => p.message.split(" ").slice(0, 4).join(" "))).toEqual(["get big has 62", "set big has 61"]);
 });
 
 test("SCR-187: a function of 61 lines fails and one of 60 passes, in Goose and TypeScript", () => {
