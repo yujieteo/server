@@ -1,0 +1,3 @@
+version = "0.1.0"
+exclude = ["room/room.c", "pond/pond_save.c", "pond/pond_read.c", "pond/pond_read.h", "pond/pond_verify.h", "pond/pond_lock.h"]
+main_loop = ["room/room.goose::main"]

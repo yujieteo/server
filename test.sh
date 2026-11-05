@@ -3,8 +3,11 @@
 cd "$(dirname "$0")" || exit 1
 . ./local.conf
 fails=0
+case_file=$(mktemp) || exit 1
+trap 'rm -f "$case_file"' EXIT
 t() {
-	if eval "$2" >/dev/null 2>&1; then echo "ok   $1"; else echo "FAIL $1"; fails=$((fails + 1)); fi
+	printf '%s\n' "$2" >"$case_file"
+	if . "$case_file" >/dev/null 2>&1; then echo "ok   $1"; else echo "FAIL $1"; fails=$((fails + 1)); fi
 }
 web() {
 	printf 'GET %s HTTP/1.0\r\nHost: %s\r\n\r\n' "$3" "$2" |
@@ -55,13 +58,13 @@ site() {
 p=$(mktemp -d) && chmod 755 $p && cp /home/deploy/site-commit $p/last 2>/dev/null
 u="su deploy -c 'PATH=$p:\$PATH /usr/local/sbin/site-update'"
 site bad /no-such-page && chmod 755 $p/ftp && chmod 644 $p/site.tgz
-o=$(eval "$u" 2>&1)
+o=$(sh -c "$u" 2>&1)
 t "site-update: a failed check puts the previous site back" "[ ! -e /var/www/web/site/site-update-test.html ]"
 t "site-update: a failed check sends an alert" "echo '$o' | grep -qx 'site: $c gave 404 for /no-such-page, so the previous site is back. The next commit on main deploys again.'"
-t "site-update: a failed commit is not deployed again" "[ -z \"\$(eval \"$u\" 2>&1)\" ] && [ \"\$(cat /home/deploy/site-commit)\" = $c ]"
+t "site-update: a failed commit is not deployed again" "[ -z \"\$(sh -c \"$u\" 2>&1)\" ] && [ \"\$(cat /home/deploy/site-commit)\" = $c ]"
 if [ -n "${1:-}" ]; then
 	site good / && chmod 755 $p/ftp && chmod 644 $p/site.tgz
-	t "site-update: a new commit on main is deployed" "[ -z \"\$(eval \"$u\" 2>&1)\" ] && [ -e /var/www/web/site/site-update-test.html ]"
+	t "site-update: a new commit on main is deployed" "[ -z \"\$(sh -c \"$u\" 2>&1)\" ] && [ -e /var/www/web/site/site-update-test.html ]"
 fi
 if [ -e $p/last ]; then cp $p/last /home/deploy/site-commit; else rm /home/deploy/site-commit; fi
 rm -rf $p

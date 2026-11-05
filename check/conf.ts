@@ -1,3 +1,5 @@
+import { assert } from "./lib.ts";
+
 interface ConfKeySpec {
   readonly meaning: string;
   readonly format: string;
@@ -60,15 +62,47 @@ export const CONF_KEYS = {
 export type ConfKey = keyof typeof CONF_KEYS;
 export type LocalConf = Readonly<Record<ConfKey, string>>;
 
-export const CONF_KEY_NAMES = Object.keys(CONF_KEYS) as readonly ConfKey[];
-
 function isConfKey(name: string): name is ConfKey {
+  assert(name.length >= 0, "a name has a length");
+  assert(!name.includes("\n"), "a name has no newline");
+  assert(!name.includes("="), "a name ends before the equals sign");
   return Object.hasOwn(CONF_KEYS, name);
 }
 
+export const CONF_KEY_NAMES: readonly ConfKey[] = Object.keys(CONF_KEYS).filter((name) => isConfKey(name));
+
+interface Entry {
+  readonly name: string;
+  readonly rest: string;
+}
+
+interface Value {
+  readonly text: string;
+  readonly next: number;
+}
+
+function readValue(lines: readonly string[], from: number, entry: Entry): Value {
+  assert(from >= 1, "lines count from 1");
+  assert(entry.name !== "", "a key has a name");
+  assert(!entry.rest.includes("\n"), "a first line has no newline");
+  if (!entry.rest.startsWith("'")) return { text: entry.rest, next: from };
+  let value = entry.rest.slice(1);
+  let index = from;
+  while (!value.endsWith("'")) {
+    const next = lines[index];
+    if (next === undefined) throw new Error(`local.conf: the quote of ${entry.name} is not closed`);
+    index += 1;
+    value += `\n${next}`;
+  }
+  return { text: value.slice(0, -1), next: index };
+}
+
 export function parseLocalConf(text: string): LocalConf {
+  assert(!text.includes("\0"), "a conf has no NUL byte");
+  assert(text.length < 10 ** 6, "a conf is small");
   const found = new Map<ConfKey, string>();
   const lines = text.split("\n");
+  assert(lines.length > 0, "a text has a first line");
   let index = 0;
   while (index < lines.length) {
     const line = lines[index] ?? "";
@@ -77,21 +111,14 @@ export function parseLocalConf(text: string): LocalConf {
     const equals = line.indexOf("=");
     const name = line.slice(0, equals);
     if (equals < 1 || !isConfKey(name)) throw new Error(`local.conf line ${index}: unknown key in "${line}"`);
-    let rest = line.slice(equals + 1);
-    if (rest.startsWith("'")) {
-      let value = rest.slice(1);
-      while (!value.endsWith("'")) {
-        const next = lines[index];
-        if (next === undefined) throw new Error(`local.conf: the quote of ${name} is not closed`);
-        index += 1;
-        value += `\n${next}`;
-      }
-      rest = value.slice(0, -1);
-    }
-    if (!CONF_KEYS[name].valid.test(rest)) throw new Error(`local.conf: ${name} is not ${CONF_KEYS[name].format}`);
-    found.set(name, rest);
+    const value = readValue(lines, index, { name, rest: line.slice(equals + 1) });
+    index = value.next;
+    if (!CONF_KEYS[name].valid.test(value.text)) throw new Error(`local.conf: ${name} is not ${CONF_KEYS[name].format}`);
+    found.set(name, value.text);
   }
+  assert(found.size <= CONF_KEY_NAMES.length, "no key twice");
   const missing = CONF_KEY_NAMES.filter((key) => !found.has(key));
+  assert(missing.length <= CONF_KEY_NAMES.length, "at most all keys are missing");
   if (missing.length > 0) throw new Error(`local.conf: missing ${missing.join(", ")}`);
   const get = (key: ConfKey): string => found.get(key) ?? "";
   return {

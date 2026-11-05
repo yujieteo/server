@@ -1,4 +1,5 @@
 {
   "entry": ["check/*.test.ts"],
-  "project": ["check/**/*.ts"]
+  "project": ["check/**/*.ts"],
+  "ignoreDependencies": ["oxlint", "oxlint-tsgolint"]
 }
