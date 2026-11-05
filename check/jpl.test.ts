@@ -83,3 +83,32 @@ test("SCR-187: the list of long functions only shrinks, so a too generous or sta
   ]);
   expect(checkJpl(root, { "check/a.ts:long": 71 })).toEqual([]);
 });
+
+test("SCR-225 round 2 R1: a local binding, parameter or block that shadows a function or an import is not a call to it", () => {
+  const root = project({
+    "check/b.ts": 'import { a } from "./a.ts";\nexport function b(a: () => void): void { a(); }\nexport function c(): void { const a = (): void => {}; a(); }\nexport function d(): void { { const a = (): void => {}; a(); } }\n',
+    "check/a.ts": "export function a(): void {}\n",
+    "check/e.ts": 'import { b } from "./b.ts";\nexport function e(): void { b(e); }\nfunction f(): void { { const g = (): void => {}; g(); } }\nfunction g(): void { f(); }\n',
+  });
+  expect(rule1(root)).toEqual([]);
+});
+
+test("SCR-225 round 2 R5: a named function expression bound to a variable, property or field is recursive through its outer name", () => {
+  const root = project({
+    "check/a.ts": [
+      "const f = function inner(): void { f(); };",
+      "const o = { g: function inner2(): void { o.g(); } };",
+      "class K { h = function inner3(this: K): void { this.h(); }; }",
+    ].join("\n"),
+  });
+  expect(rule1(root)).toEqual(["inner", "inner2", "inner3"]);
+});
+
+test("SCR-225 round 2 R6: a static member calling the same name on its class is not an instance method calling itself", () => {
+  const root = project({
+    "check/a.ts": "class C { static f(): void {} f(): void { C.f(); } }\nclass D { static f(): void { D.f(); } f(): void {} }\n",
+  });
+  expect(rule1(root)).toEqual(["f#3"]);
+  const instance = project({ "check/a.ts": "class C { f(): void {} g(c: C): void { c.f(); } }\nclass E { f(e: E): void { e.f(); } }\n" });
+  expect(rule1(instance)).toEqual(["f#2"]);
+});
