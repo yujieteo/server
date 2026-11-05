@@ -12,7 +12,7 @@ const JPL_LONG_FUNCTIONS: Record<string, number> = {
   "check/scripts.test.ts:file>anonymous#9": 65,
 };
 
-type Fn = { file: string; name: string; start: number; lines: number; calls: string[]; sites: (ts.CallExpression | ts.NewExpression)[]; node: ts.Node | null; edges: Fn[] };
+type Fn = { file: string; name: string; start: number; lines: number; calls: string[]; sites: Site[]; node: ts.Node | null; edges: Fn[] };
 
 function files(root: string, patterns: readonly string[]): string[] {
   const found = new Set<string>();
@@ -54,11 +54,17 @@ const FUNCTION_KINDS = [
   ts.SyntaxKind.SetAccessor,
 ];
 
-function callsIn(function_: ts.Node): (ts.CallExpression | ts.NewExpression)[] {
-  const sites: (ts.CallExpression | ts.NewExpression)[] = [];
+type Site = ts.CallExpression | ts.NewExpression;
+
+function isInstanceField(node: ts.Node): node is ts.PropertyDeclaration {
+  return ts.isPropertyDeclaration(node) && !node.modifiers?.some((m) => m.kind === ts.SyntaxKind.StaticKeyword);
+}
+
+function callsIn(function_: ts.Node): Site[] {
+  const sites: Site[] = [];
   const stack = [...function_.getChildren()];
   for (let c = stack.pop(); c !== undefined; c = stack.pop()) {
-    if (FUNCTION_KINDS.includes(c.kind)) continue;
+    if (FUNCTION_KINDS.includes(c.kind) || isInstanceField(c)) continue;
     if (ts.isCallExpression(c) || ts.isNewExpression(c)) sites.push(c);
     stack.push(...c.getChildren());
   }
@@ -73,6 +79,10 @@ function ownName(node: ts.Node, source: ts.SourceFile): string {
   return ts.isConstructorDeclaration(node) ? "constructor" : "";
 }
 
+function initializerSites(cls: ts.ClassLikeDeclaration): Site[] {
+  return cls.members.filter(isInstanceField).flatMap((field) => callsIn(field));
+}
+
 function tsFile(file: string, source: ts.SourceFile): Fn[] {
   const found: Fn[] = [];
   const seen = new Map<string, number>();
@@ -80,6 +90,11 @@ function tsFile(file: string, source: ts.SourceFile): Fn[] {
   for (let item = pending.shift(); item !== undefined; item = pending.shift()) {
     const [node, outer] = item;
     let scope = outer;
+    if (ts.isClassLike(node) && !node.members.some(ts.isConstructorDeclaration)) {
+      const sites = initializerSites(node);
+      const line = source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1;
+      if (sites.length > 0) found.push({ file, name: `${node.name?.getText(source) ?? "class"}>init`, start: line, lines: 1, calls: [], sites, node, edges: [] });
+    }
     if (FUNCTION_KINDS.includes(node.kind)) {
       const own = ownName(node, source);
       const base = own === "" ? `${outer}>anonymous` : own;
@@ -88,7 +103,7 @@ function tsFile(file: string, source: ts.SourceFile): Fn[] {
       const name = n === 1 ? base : `${base}#${n}`;
       const first = source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1;
       const last = source.getLineAndCharacterOfPosition(node.getEnd()).line + 1;
-      found.push({ file, name, start: first, lines: last - first + 1, calls: [], sites: callsIn(node), node, edges: [] });
+      found.push({ file, name, start: first, lines: last - first + 1, calls: [], sites: ts.isConstructorDeclaration(node) ? [...callsIn(node), ...initializerSites(node.parent)] : callsIn(node), node, edges: [] });
       scope = name;
     }
     for (const child of node.getChildren(source)) pending.push([child, scope]);
@@ -97,7 +112,10 @@ function tsFile(file: string, source: ts.SourceFile): Fn[] {
 }
 
 function functionNodes(declaration: ts.Node): ts.Node[] {
-  if (ts.isClassLike(declaration)) return declaration.members.filter(ts.isConstructorDeclaration);
+  if (ts.isClassLike(declaration)) {
+    const constructors = declaration.members.filter(ts.isConstructorDeclaration);
+    return constructors.length > 0 ? constructors : [declaration];
+  }
   if (ts.isVariableDeclaration(declaration) || ts.isPropertyAssignment(declaration) || ts.isPropertyDeclaration(declaration)) {
     let init = declaration.initializer;
     while (init !== undefined && ts.isParenthesizedExpression(init)) init = init.expression;
@@ -106,7 +124,7 @@ function functionNodes(declaration: ts.Node): ts.Node[] {
   return FUNCTION_KINDS.includes(declaration.kind) ? [declaration] : [];
 }
 
-function targets(checker: ts.TypeChecker, site: ts.CallExpression | ts.NewExpression): ts.Node[] {
+function targets(checker: ts.TypeChecker, site: Site): ts.Node[] {
   const callee = site.expression;
   let symbol = checker.getSymbolAtLocation(ts.isPropertyAccessExpression(callee) ? callee.name : callee);
   if (symbol !== undefined && symbol.flags & ts.SymbolFlags.Alias) symbol = checker.getAliasedSymbol(symbol);

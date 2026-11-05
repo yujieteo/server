@@ -117,3 +117,14 @@ test("SCR-225 round 2 R6: a static member calling the same name on its class is 
   const instance = project({ "check/a.ts": "class C { f(): void {} g(c: C): void { c.f(); } }\nclass E { f(e: E): void { e.f(); } }\n" });
   expect(rule1(instance)).toEqual(["f#2"]);
 });
+
+test("SCR-225 round 3 R7: an instance field initializer runs at construction, not in the function that declares the class", () => {
+  const clean = project({ "check/a.ts": "function f(): unknown { class C { x = f(); } return C; }\n" });
+  expect(rule1(clean)).toEqual([]);
+  const implicit = project({ "check/a.ts": "function f(): object { return new C(); }\nclass C { x = f(); }\n" });
+  expect(rule1(implicit)).toEqual(["C>init", "f"]);
+  const explicit = project({ "check/a.ts": "function f(): object { return new C(); }\nclass C { x = f(); constructor() {} }\n" });
+  expect(rule1(explicit)).toEqual(["constructor", "f"]);
+  const staticField = project({ "check/a.ts": "function f(): unknown { class C { static x = f(); } return C; }\n" });
+  expect(rule1(staticField)).toEqual(["f"]);
+});
