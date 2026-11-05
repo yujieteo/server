@@ -3,6 +3,7 @@ import { cAnalyze, cSanitizers, cWarnings } from "./c.ts";
 import { noComments } from "./comments.ts";
 import { configSyntax } from "./configs.ts";
 import { facts } from "./facts.ts";
+import { jpl } from "./jpl.ts";
 import { type Step } from "./lib.ts";
 import { replay } from "./replay.ts";
 import { bunTests, deadCode, inlineScripts, shellcheck, typeCheck } from "./tools.ts";
@@ -12,6 +13,7 @@ const STEPS: readonly Step[] = [
   { name: "types: tsc strict on the inline scripts of the pages", run: inlineScripts },
   { name: "dead code: knip", run: deadCode },
   { name: "comments: none outside the excluded files", run: noComments },
+  { name: "JPL: no recursion, no function over 60 lines (rules 1 and 4)", run: jpl },
   { name: "shell: shellcheck", run: shellcheck },
   { name: "configs: syntax of the OpenBSD configs", run: configSyntax },
   { name: "configs: facts that the configs and scripts must keep", run: facts },
