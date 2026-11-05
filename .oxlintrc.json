@@ -25,10 +25,6 @@
     "eslint/no-bitwise": "off",
     "eslint/init-declarations": "off",
     "eslint/no-negated-condition": "off",
-    "eslint/max-statements": "off",
-    "eslint/max-lines": "off",
-    "eslint/max-lines-per-function": "off",
-    "eslint/complexity": "off",
     "eslint/no-inline-comments": "off",
     "eslint/capitalized-comments": "off",
     "unicorn/no-null": "off",
@@ -53,6 +49,34 @@
     "import/max-dependencies": "off",
     "import/group-exports": "off",
     "import/exports-last": "off",
-    "import/unambiguous": "off"
+    "import/unambiguous": "off",
+    "eslint/max-lines-per-function": [
+      "error",
+      {
+        "max": 60,
+        "skipBlankLines": true,
+        "skipComments": true
+      }
+    ],
+    "eslint/max-statements": [
+      "error",
+      {
+        "max": 40
+      }
+    ],
+    "eslint/max-lines": [
+      "error",
+      {
+        "max": 600,
+        "skipBlankLines": true,
+        "skipComments": true
+      }
+    ],
+    "eslint/complexity": [
+      "error",
+      {
+        "max": 15
+      }
+    ]
   }
 }

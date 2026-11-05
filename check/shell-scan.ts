@@ -144,12 +144,9 @@ export class ShellScanner {
     else frame.depth -= 1;
   }
 
-  private stepScan(): void {
-    assert(this.top("scan").kind === "scan", "a scan frame");
+  private stepQuoted(c: string): boolean {
+    assert(c.length <= 1, "one character");
     assert(this.pos < this.text.length, "the position is inside the text");
-    const c = this.text[this.pos] ?? "";
-    const before = this.pos === 0 ? "\n" : (this.text[this.pos - 1] ?? "");
-    const after = this.text[this.pos + 2];
     if (c === "\\") this.pos += 2;
     else if (c === "'") this.skipTo("'");
     else if (c === '"') {
@@ -158,7 +155,18 @@ export class ShellScanner {
     } else if (c === "`") this.skipTo("`");
     else if (c === "$") {
       if (!this.openSubstitution()) this.pos += 1;
-    } else if (c === "<" && this.text[this.pos + 1] === "<" && after !== "<" && after !== "=") this.stepHeredocStart();
+    } else return false;
+    return true;
+  }
+
+  private stepScan(): void {
+    assert(this.top("scan").kind === "scan", "a scan frame");
+    assert(this.pos < this.text.length, "the position is inside the text");
+    const c = this.text[this.pos] ?? "";
+    if (this.stepQuoted(c)) return;
+    const before = this.pos === 0 ? "\n" : (this.text[this.pos - 1] ?? "");
+    const after = this.text[this.pos + 2];
+    if (c === "<" && this.text[this.pos + 1] === "<" && after !== "<" && after !== "=") this.stepHeredocStart();
     else if (c === "#" && HASH_WORD_START.has(before)) this.stepHash();
     else if (c === "\n") {
       this.pos += 1;
@@ -167,4 +175,3 @@ export class ShellScanner {
     else this.pos += 1;
   }
 }
-
