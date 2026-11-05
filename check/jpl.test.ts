@@ -128,3 +128,17 @@ test("SCR-225 round 3 R7: an instance field initializer runs at construction, no
   const staticField = project({ "check/a.ts": "function f(): unknown { class C { static x = f(); } return C; }\n" });
   expect(rule1(staticField)).toEqual(["f"]);
 });
+
+test("SCR-225 round 4 R7: constructing a derived class with an implicit constructor runs the base initializers", () => {
+  const root = project({ "check/a.ts": "function f(): object { return new D(); }\nclass B { x = f(); }\nclass D extends B {}\n" });
+  expect(rule1(root)).toEqual(["B>init", "D>init", "f"]);
+  const clean = project({ "check/a.ts": "class B { x = 1; }\nclass D extends B {}\nfunction f(): object { return new D(); }\n" });
+  expect(rule1(clean)).toEqual([]);
+});
+
+test("SCR-225 round 4 R8: construction through a variable or property bound to a class expression is resolved", () => {
+  const variable = project({ "check/a.ts": "function f(): object { return new C(); }\nconst C = class { x = f(); };\n" });
+  expect(rule1(variable)).toEqual(["class>init", "f"]);
+  const property = project({ "check/a.ts": "const o = { C: class { constructor() { new o.C(); } } };\n" });
+  expect(rule1(property)).toEqual(["constructor"]);
+});

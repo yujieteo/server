@@ -12,7 +12,7 @@ const JPL_LONG_FUNCTIONS: Record<string, number> = {
   "check/scripts.test.ts:file>anonymous#9": 65,
 };
 
-type Fn = { file: string; name: string; start: number; lines: number; calls: string[]; sites: Site[]; node: ts.Node | null; edges: Fn[] };
+type Fn = { file: string; name: string; start: number; lines: number; calls: string[]; sites: Site[]; bases: ts.Expression[]; node: ts.Node | null; edges: Fn[] };
 
 function files(root: string, patterns: readonly string[]): string[] {
   const found = new Set<string>();
@@ -39,7 +39,7 @@ function gooseFunctions(file: string, text: string): Fn[] {
     const line = (at: number): number => code.slice(0, at).split("\n").length;
     const calls = [...code.slice(open, end).matchAll(/\b(\w+)\s*\(/g)].map((c) => c[1] as string);
     const name = m[1] as string;
-    found.push({ file, name, start: line(m.index), lines: line(end) - line(m.index) + 1, calls, sites: [], node: null, edges: [] });
+    found.push({ file, name, start: line(m.index), lines: line(end) - line(m.index) + 1, calls, sites: [], bases: [], node: null, edges: [] });
   }
   return found;
 }
@@ -79,6 +79,11 @@ function ownName(node: ts.Node, source: ts.SourceFile): string {
   return ts.isConstructorDeclaration(node) ? "constructor" : "";
 }
 
+function baseOf(cls: ts.ClassLikeDeclaration): ts.Expression[] {
+  const base = cls.heritageClauses?.find((h) => h.token === ts.SyntaxKind.ExtendsKeyword)?.types[0];
+  return base === undefined ? [] : [base.expression];
+}
+
 function initializerSites(cls: ts.ClassLikeDeclaration): Site[] {
   return cls.members.filter(isInstanceField).flatMap((field) => callsIn(field));
 }
@@ -93,7 +98,8 @@ function tsFile(file: string, source: ts.SourceFile): Fn[] {
     if (ts.isClassLike(node) && !node.members.some(ts.isConstructorDeclaration)) {
       const sites = initializerSites(node);
       const line = source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1;
-      if (sites.length > 0) found.push({ file, name: `${node.name?.getText(source) ?? "class"}>init`, start: line, lines: 1, calls: [], sites, node, edges: [] });
+      const bases = baseOf(node);
+      if (sites.length > 0 || bases.length > 0) found.push({ file, name: `${node.name?.getText(source) ?? "class"}>init`, start: line, lines: 1, calls: [], sites, bases, node, edges: [] });
     }
     if (FUNCTION_KINDS.includes(node.kind)) {
       const own = ownName(node, source);
@@ -103,7 +109,7 @@ function tsFile(file: string, source: ts.SourceFile): Fn[] {
       const name = n === 1 ? base : `${base}#${n}`;
       const first = source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1;
       const last = source.getLineAndCharacterOfPosition(node.getEnd()).line + 1;
-      found.push({ file, name, start: first, lines: last - first + 1, calls: [], sites: ts.isConstructorDeclaration(node) ? [...callsIn(node), ...initializerSites(node.parent)] : callsIn(node), node, edges: [] });
+      found.push({ file, name, start: first, lines: last - first + 1, calls: [], sites: ts.isConstructorDeclaration(node) ? [...callsIn(node), ...initializerSites(node.parent)] : callsIn(node), bases: ts.isConstructorDeclaration(node) ? baseOf(node.parent) : [], node, edges: [] });
       scope = name;
     }
     for (const child of node.getChildren(source)) pending.push([child, scope]);
@@ -111,22 +117,24 @@ function tsFile(file: string, source: ts.SourceFile): Fn[] {
   return found;
 }
 
+function classNodes(declaration: ts.ClassLikeDeclaration): ts.Node[] {
+  const constructors = declaration.members.filter(ts.isConstructorDeclaration);
+  return constructors.length > 0 ? constructors : [declaration];
+}
+
 function functionNodes(declaration: ts.Node): ts.Node[] {
-  if (ts.isClassLike(declaration)) {
-    const constructors = declaration.members.filter(ts.isConstructorDeclaration);
-    return constructors.length > 0 ? constructors : [declaration];
-  }
+  if (ts.isClassLike(declaration)) return classNodes(declaration);
   if (ts.isVariableDeclaration(declaration) || ts.isPropertyAssignment(declaration) || ts.isPropertyDeclaration(declaration)) {
     let init = declaration.initializer;
     while (init !== undefined && ts.isParenthesizedExpression(init)) init = init.expression;
+    if (init !== undefined && ts.isClassExpression(init)) return classNodes(init);
     return init !== undefined && FUNCTION_KINDS.includes(init.kind) ? [init] : [];
   }
   return FUNCTION_KINDS.includes(declaration.kind) ? [declaration] : [];
 }
 
-function targets(checker: ts.TypeChecker, site: Site): ts.Node[] {
-  const callee = site.expression;
-  let symbol = checker.getSymbolAtLocation(ts.isPropertyAccessExpression(callee) ? callee.name : callee);
+function nodesOf(checker: ts.TypeChecker, expression: ts.Expression): ts.Node[] {
+  let symbol = checker.getSymbolAtLocation(ts.isPropertyAccessExpression(expression) ? expression.name : expression);
   if (symbol !== undefined && symbol.flags & ts.SymbolFlags.Alias) symbol = checker.getAliasedSymbol(symbol);
   return (symbol?.declarations ?? []).flatMap(functionNodes);
 }
@@ -137,7 +145,7 @@ function link(fns: Fn[], checker: ts.TypeChecker): void {
   for (const f of fns) if (f.node === null) byName.set(`${f.file}\0${f.name}`, [...(byName.get(`${f.file}\0${f.name}`) ?? []), f]);
   for (const f of fns) {
     const named = f.calls.flatMap((c) => byName.get(`${f.file}\0${c}`) ?? []);
-    const typed = f.sites.flatMap((site) => targets(checker, site).flatMap((n) => byNode.get(n) ?? []));
+    const typed = [...f.sites.map((site) => site.expression), ...f.bases].flatMap((e) => nodesOf(checker, e).flatMap((n) => byNode.get(n) ?? []));
     f.edges = [...named, ...typed];
   }
 }
