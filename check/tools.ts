@@ -226,18 +226,16 @@ export async function power10(): Promise<readonly Finding[]> {
   assert(POWER10_REPO.startsWith("https://"), "the checker is fetched over https");
   const source = `git+${POWER10_REPO}@${POWER10_COMMIT}`;
   const ran = await run(["uvx", "--from", source, "power10-check", "--require-version", POWER10_VERSION]);
-  if (ran.code === 0) return [];
   const lines: Finding[] = [];
-  for (const line of `${ran.stdout}${ran.stderr}`.split("\n")) if (line.trim() !== "") lines.push({ file: "power10-check", line: 0, message: line });
-  return lines;
+  if (ran.code !== 0) for (const line of `${ran.stdout}${ran.stderr}`.split("\n")) if (line.trim() !== "") lines.push({ file: "power10-check", line: 0, message: line });
+  return orToolFailure(ran, "power10-check", lines);
 }
 
 export async function lint(): Promise<readonly Finding[]> {
   assert(REPO_ROOT !== "", "the repo root is known");
   const ran = await run([join(REPO_ROOT, "node_modules/.bin/oxlint"), "--type-aware", "--deny-warnings", "check"]);
   assert(Number.isInteger(ran.code), "oxlint exited");
-  if (ran.code === 0) return [];
   const lines: Finding[] = [];
-  for (const line of `${ran.stdout}${ran.stderr}`.split("\n")) if (line.trim() !== "") lines.push({ file: "oxlint", line: 0, message: line });
-  return lines;
+  if (ran.code !== 0) for (const line of `${ran.stdout}${ran.stderr}`.split("\n")) if (line.trim() !== "") lines.push({ file: "oxlint", line: 0, message: line });
+  return orToolFailure(ran, "oxlint", lines);
 }

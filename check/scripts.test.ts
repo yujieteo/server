@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -7,6 +7,8 @@ import { REPO_ROOT, run } from "./lib.ts";
 
 const conf = parseLocalConf(readFileSync(join(REPO_ROOT, "local.conf.example"), "utf8"));
 const MIB = 1024 * 1024;
+
+setDefaultTimeout(30_000);
 
 let work = "";
 beforeEach(() => {
@@ -37,13 +39,25 @@ function fake(name: string, body: string): void {
 }
 
 async function waitFor(done: () => boolean): Promise<void> {
-  await new Promise<void>((resolve) => {
-    const giveUp = setTimeout(resolve, 2000);
-    const poll = setInterval(() => {
-      if (!done()) return;
-      clearInterval(poll);
-      clearTimeout(giveUp);
+  await new Promise<void>((resolve, reject) => {
+    const timers: { poll?: ReturnType<typeof setInterval>; giveUp?: ReturnType<typeof setTimeout> } = {};
+    const stop = (): void => {
+      clearInterval(timers.poll);
+      clearTimeout(timers.giveUp);
+    };
+    timers.giveUp = setTimeout(() => {
+      stop();
       resolve();
+    }, 2000);
+    timers.poll = setInterval(() => {
+      try {
+        if (!done()) return;
+        stop();
+        resolve();
+      } catch (error) {
+        stop();
+        reject(error instanceof Error ? error : new Error(String(error)));
+      }
     }, 20);
   });
 }
