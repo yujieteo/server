@@ -62,105 +62,123 @@ function endOfLine(text: string, from: number): number {
   return end === -1 ? text.length : end;
 }
 
-export function findShellComments(text: string): readonly Comment[] {
-  const found: Comment[] = [];
-  let pos = 0;
-  const pending: { readonly word: string; readonly stripTabs: boolean }[] = [];
+type ShellFrame =
+  | { readonly kind: "scan"; readonly closing: boolean; depth: number }
+  | { readonly kind: "double" }
+  | { readonly kind: "braces"; depth: number };
 
-  const skipSingle = (): void => {
-    const close = text.indexOf("'", pos + 1);
-    pos = close === -1 ? text.length : close + 1;
-  };
-  const skipBraces = (): void => {
-    let depth = 0;
-    while (pos < text.length) {
-      const c = text[pos];
-      if (c === "\\") pos += 2;
-      else if (c === "'") skipSingle();
-      else if (c === '"') skipDouble();
-      else {
-        if (c === "{") depth += 1;
-        if (c === "}") depth -= 1;
-        pos += 1;
-        if (depth === 0) return;
-      }
+interface ShellScan {
+  readonly text: string;
+  readonly found: Comment[];
+  readonly pending: { readonly word: string; readonly stripTabs: boolean }[];
+  readonly stack: ShellFrame[];
+  pos: number;
+}
+
+function skipSingle(s: ShellScan): void {
+  const close = s.text.indexOf("'", s.pos + 1);
+  s.pos = close === -1 ? s.text.length : close + 1;
+}
+
+function skipBackquote(s: ShellScan): void {
+  const close = s.text.indexOf("`", s.pos + 1);
+  s.pos = close === -1 ? s.text.length : close + 1;
+}
+
+function readHeredocs(s: ShellScan): void {
+  for (let next = s.pending.shift(); next !== undefined; next = s.pending.shift()) {
+    while (s.pos < s.text.length) {
+      const end = endOfLine(s.text, s.pos);
+      const raw = s.text.slice(s.pos, end);
+      s.pos = Math.min(end + 1, s.text.length);
+      if ((next.stripTabs ? raw.replace(/^\t+/, "") : raw) === next.word) break;
     }
-  };
-  const skipDouble = (): void => {
-    pos += 1;
-    while (pos < text.length) {
-      const c = text[pos];
-      if (c === "\\") pos += 2;
-      else if (c === '"') {
-        pos += 1;
-        return;
-      } else if (c === "$" && text[pos + 1] === "(") {
-        pos += 2;
-        scan(")");
-      } else if (c === "$" && text[pos + 1] === "{") {
-        pos += 1;
-        skipBraces();
-      } else if (c === "`") {
-        const close = text.indexOf("`", pos + 1);
-        pos = close === -1 ? text.length : close + 1;
-      } else pos += 1;
-    }
-  };
-  const readHeredocs = (): void => {
-    while (pending.length > 0) {
-      const next = pending.shift();
-      if (next === undefined) return;
-      while (pos < text.length) {
-        const end = endOfLine(text, pos);
-        const raw = text.slice(pos, end);
-        pos = Math.min(end + 1, text.length);
-        if ((next.stripTabs ? raw.replace(/^\t+/, "") : raw) === next.word) break;
-      }
-    }
-  };
-  const scan = (until: ")" | null): void => {
-    let depth = 0;
-    while (pos < text.length) {
-      const c = text[pos] ?? "";
-      const before = pos === 0 ? "\n" : (text[pos - 1] ?? "");
-      if (c === "\\") pos += 2;
-      else if (c === "'") skipSingle();
-      else if (c === '"') skipDouble();
-      else if (c === "`") {
-        const close = text.indexOf("`", pos + 1);
-        pos = close === -1 ? text.length : close + 1;
-      } else if (c === "$" && text[pos + 1] === "(") {
-        pos += 2;
-        scan(")");
-      } else if (c === "$" && text[pos + 1] === "{") {
-        pos += 1;
-        skipBraces();
-      } else if (c === "<" && text[pos + 1] === "<" && text[pos + 2] !== "<" && text[pos + 2] !== "=") {
-        const heredoc = /^<<(-?)[ \t]*(["']?)([A-Za-z_][A-Za-z_0-9]*)\2/.exec(text.slice(pos, pos + 80));
-        if (heredoc === null) pos += 2;
-        else {
-          pending.push({ word: heredoc[3] ?? "", stripTabs: heredoc[1] === "-" });
-          pos += heredoc[0].length;
-        }
-      } else if (c === "#" && HASH_WORD_START.has(before)) {
-        const end = endOfLine(text, pos);
-        found.push({ line: lineOf(text, pos), text: text.slice(pos, end) });
-        pos = end;
-      } else if (c === "\n") {
-        pos += 1;
-        readHeredocs();
-      } else if (c === "(") {
-        depth += 1;
-        pos += 1;
-      } else if (c === ")") {
-        pos += 1;
-        if (depth === 0 && until === ")") return;
-        depth -= 1;
-      } else pos += 1;
-    }
-  };
-  scan(null);
-  return found;
+  }
+}
+
+function stepBraces(s: ShellScan, frame: { depth: number }): void {
+  const c = s.text[s.pos];
+  if (c === "\\") s.pos += 2;
+  else if (c === "'") skipSingle(s);
+  else if (c === '"') {
+    s.pos += 1;
+    s.stack.push({ kind: "double" });
+  } else {
+    if (c === "{") frame.depth += 1;
+    if (c === "}") frame.depth -= 1;
+    s.pos += 1;
+    if (frame.depth === 0) s.stack.pop();
+  }
+}
+
+function stepDouble(s: ShellScan): void {
+  const c = s.text[s.pos];
+  if (c === "\\") s.pos += 2;
+  else if (c === '"') {
+    s.pos += 1;
+    s.stack.pop();
+  } else if (c === "$" && s.text[s.pos + 1] === "(") {
+    s.pos += 2;
+    s.stack.push({ kind: "scan", closing: true, depth: 0 });
+  } else if (c === "$" && s.text[s.pos + 1] === "{") {
+    s.pos += 1;
+    s.stack.push({ kind: "braces", depth: 0 });
+  } else if (c === "`") skipBackquote(s);
+  else s.pos += 1;
+}
+
+function stepHeredocStart(s: ShellScan): void {
+  const heredoc = /^<<(-?)[ \t]*(["']?)([A-Za-z_][A-Za-z_0-9]*)\2/.exec(s.text.slice(s.pos, s.pos + 80));
+  if (heredoc === null) s.pos += 2;
+  else {
+    s.pending.push({ word: heredoc[3] ?? "", stripTabs: heredoc[1] === "-" });
+    s.pos += heredoc[0].length;
+  }
+}
+
+function stepScan(s: ShellScan, frame: { readonly closing: boolean; depth: number }): void {
+  const c = s.text[s.pos] ?? "";
+  const before = s.pos === 0 ? "\n" : (s.text[s.pos - 1] ?? "");
+  if (c === "\\") s.pos += 2;
+  else if (c === "'") skipSingle(s);
+  else if (c === '"') {
+    s.pos += 1;
+    s.stack.push({ kind: "double" });
+  } else if (c === "`") skipBackquote(s);
+  else if (c === "$" && s.text[s.pos + 1] === "(") {
+    s.pos += 2;
+    s.stack.push({ kind: "scan", closing: true, depth: 0 });
+  } else if (c === "$" && s.text[s.pos + 1] === "{") {
+    s.pos += 1;
+    s.stack.push({ kind: "braces", depth: 0 });
+  } else if (c === "<" && s.text[s.pos + 1] === "<" && s.text[s.pos + 2] !== "<" && s.text[s.pos + 2] !== "=") stepHeredocStart(s);
+  else if (c === "#" && HASH_WORD_START.has(before)) {
+    const end = endOfLine(s.text, s.pos);
+    s.found.push({ line: lineOf(s.text, s.pos), text: s.text.slice(s.pos, end) });
+    s.pos = end;
+  } else if (c === "\n") {
+    s.pos += 1;
+    readHeredocs(s);
+  } else if (c === "(") {
+    frame.depth += 1;
+    s.pos += 1;
+  } else if (c === ")") {
+    s.pos += 1;
+    if (frame.depth === 0 && frame.closing) s.stack.pop();
+    else frame.depth -= 1;
+  } else s.pos += 1;
+}
+
+export function findShellComments(text: string): readonly Comment[] {
+  const s: ShellScan = { text, found: [], pending: [], stack: [{ kind: "scan", closing: false, depth: 0 }], pos: 0 };
+  while (s.pos < text.length) {
+    const frame = s.stack[s.stack.length - 1];
+    if (frame === undefined) break;
+    if (frame.kind === "scan") stepScan(s, frame);
+    else if (frame.kind === "double") stepDouble(s);
+    else stepBraces(s, frame);
+  }
+  return s.found;
 }
 
 export function findLineHashComments(text: string): readonly Comment[] {
