@@ -46,7 +46,7 @@ jobs:
     steps:
       - name: actions/checkout v5.0.0
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
-      - name: vmactions/openbsd-vm v1.4.9 runs install.sh on a fresh OpenBSD 8.0 VM, then test.sh; install.sh runs twice, test.sh, then evals/vm.sh checks the keys, modes and configs; root login is off, so nothing is copied back
+      - name: vmactions/openbsd-vm v1.4.9 runs install.sh on a fresh OpenBSD 8.0 VM, then test.sh; install.sh runs twice with wg0 watched, test.sh runs the checks of the kept requirements, then evals/vm.sh checks the keys, modes and configs; root login is off, so nothing is copied back
         uses: vmactions/openbsd-vm@f1ca8bc8ecc5b6ef7218e5b914836e067e1546d3
         with:
           release: "8.0"
@@ -58,11 +58,9 @@ jobs:
             sed -i "s|^DEPLOY_KEY=.*|DEPLOY_KEY='$(cat /root/deploy.pub)'|" local.conf
             sh install.sh
             sh evals/vm.sh snapshot
-            start=$(date +%s)
-            sh install.sh
-            echo $(( $(date +%s) - start )) > /root/second-install-seconds
+            sh evals/vm.sh second
             status=0
-            sh test.sh /root/deploy > /root/test.log 2>&1 || status=$?
+            KEPT_ONLY=1 sh test.sh /root/deploy > /root/test.log 2>&1 || status=$?
             cat /root/test.log
             [ "$status" -eq 0 ]
             sh evals/vm.sh check

@@ -18,9 +18,18 @@ within() {
 	expect "bench:$1" at_most "$2" "$(column "$1" 3)"
 }
 
+payload_bytes() {
+	dir=$(mktemp -d)
+	git ls-files -co --exclude-standard -z | tar --null -T - -cf - | tar -xf - -C "${dir}"
+	cp local.conf.example "${dir}/local.conf"
+	pack=$(sed -n 's/^\(tar [^|]*\) | ssh.*/\1/p' apply)
+	bytes=$(cd "${dir}" && { sh -c "${pack}" 2> /dev/null || sh -c "$(echo "${pack}" | sed 's/--no-mac-metadata //')"; } | wc -c | tr -d ' ')
+	rm -rf "${dir}"
+	echo "${bytes}"
+}
+
 local_bench() {
-	bytes=$(git ls-files -co --exclude-standard -z | xargs -0 cat | wc -c | tr -d ' ')
-	within apply_bytes "${bytes}"
+	within apply_bytes "$(payload_bytes)"
 }
 
 vm_bench() {

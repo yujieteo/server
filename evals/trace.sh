@@ -19,21 +19,26 @@ file_of() {
 	esac
 }
 
+identities() {
+	grep -ohE 'expect (vm|replay|conf|secrets|wkd):[A-Za-z0-9_./-]+' evals/*.sh | sed 's/^expect //'
+	grep -ohE "\"vm:[a-z]+-[$]\(" evals/vm.sh | tr -d '"[$]('
+	sed 's#^/#replay:#; s/\t.*//' evals/golden/modes.tsv
+	cut -f1 evals/baseline.tsv | sed 's/^/bench:/'
+}
+
 ref_exists() {
 	kind=${1%%:*}
 	name=${1#*:}
 	case ${kind} in
 	test.sh) grep -qxF "${name}" "${work}/groups" ;;
-	bench) awk -F'\t' -v n="${name}" '$1 == n { f = 1 } END { exit !f }' evals/baseline.tsv ;;
 	manual) [ -n "${name}" ] ;;
-	*) in_file "${kind}" "${name}" ;;
+	*) grep -qxF -e "$1" -e "$1-" "${work}/identities" ;;
 	esac
 }
 
-in_file() {
-	f=$(file_of "$1")
-	[ "${f}" != none ] || return 1
-	grep -qF "$1:$2" "${f}" || [ -e "evals/golden/$2" ] || [ -e "evals/golden/${2#var/unbound/}" ]
+identity_used() {
+	bare=${1%-}
+	grep -vE '^- \*\*GONE-' "${req}" | grep -F -e "${tick}${bare}${tick}" > /dev/null
 }
 
 ids_of() {
@@ -62,6 +67,7 @@ unique_ids() {
 	[ "$(ids_of | sort | uniq -d | wc -l | tr -d ' ')" -eq 0 ]
 }
 
+identities | sort -u > "${work}/identities"
 sed -n 's/^\(.*[^A-Za-z_]\)\{0,1\}t "\([^":]*\)[:"].*/\2/p' test.sh | sort -u > "${work}/groups"
 ids_of | grep -v '^GONE-' > "${work}/kept"
 expect trace:ids-are-unique unique_ids
@@ -71,5 +77,8 @@ done < "${work}/kept"
 while IFS= read -r group; do
 	expect "trace:test.sh-group-${group}" group_used "${group}"
 done < "${work}/groups"
+while IFS= read -r id; do
+	expect "trace:eval-${id}-has-a-requirement" identity_used "${id}"
+done < "${work}/identities"
 echo "trace: $(wc -l < "${work}/kept" | tr -d ' ') requirements with evals"
 finish

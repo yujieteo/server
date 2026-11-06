@@ -36,6 +36,7 @@ const NO_COMMENT_SYNTAX = new Set([
   "REQUIREMENTS.md",
   "evals/baseline.tsv",
   "evals/removed-paths",
+  "evals/removed-checks",
 ]);
 
 const SHELL_FILES = new Set([

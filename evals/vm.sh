@@ -55,6 +55,54 @@ deploy_line() {
 	echo "from=\"10.8.0.0/24,127.0.0.1\",restrict,command=\"/usr/local/sbin/deploy-only\" $DEPLOY_KEY"
 }
 
+watch_start() {
+	rm -f "$state/stop" "$state/samples"
+	(
+		while [ ! -e "$state/stop" ]; do
+			if ifconfig wg0 > /dev/null 2>&1; then echo "up $(ifconfig wg0 | grep -c wgpeer)"; else echo gone; fi
+			sleep 0.1
+		done
+	) > "$state/samples" 2>&1 &
+	watcher=$!
+}
+
+watch_stop() {
+	touch "$state/stop"
+	wait "$watcher"
+}
+
+never_gone() {
+	[ -s "$state/samples" ] && ! grep -qx gone "$state/samples"
+}
+
+peers_stayed() {
+	[ "$(sort -u "$state/samples" | tr '\n' ' ')" = "up $1 " ]
+}
+
+conf_hash() {
+	sha256 -q /etc/hostname.wg0
+}
+
+http_status() {
+	(printf 'GET /x HTTP/1.1\r\nHost: mac.lavish.teoyujie.org\r\n%b\r\n' "$1"; sleep 2) |
+		openssl s_client -quiet -connect 10.8.0.1:443 -servername mac.lavish.teoyujie.org 2> /dev/null | tr -d '\r' > "$state/reply"
+	head -n 1 "$state/reply" | cut -d' ' -f2
+}
+
+private_blocked() {
+	[ "$(http_status "$1")" = 403 ]
+}
+
+private_block_page() {
+	http_status 'Origin: https://evil.example\r\n' > /dev/null
+	grep -q 'Mechanical Engineer' "$state/reply"
+}
+
+acme_on_private_name() {
+	ip4=$(ifconfig egress | awk '$1 == "inet" { print $2; exit }')
+	printf 'GET /.well-known/acme-challenge/x HTTP/1.0\r\nHost: mac.lavish.teoyujie.org\r\n\r\n' | nc -w 3 "$ip4" 80 | head -n 1 | grep -q ' 404 '
+}
+
 is_wheel() {
 	id "$ADMIN_USER" | grep -q wheel
 }
@@ -81,6 +129,24 @@ installed_all() {
 	done < "$g/modes.tsv"
 }
 
+second() {
+	before=$(conf_hash)
+	count=$(ifconfig wg0 | grep -c wgpeer)
+	watch_start
+	start=$(date +%s)
+	sh install.sh > "$state/second.log" 2>&1
+	status=$?
+	echo $(( $(date +%s) - start )) > /root/second-install-seconds
+	watch_stop
+	expect vm:second-install-ok [ "$status" -eq 0 ]
+	expect vm:wg-second-install-quiet second_was_quiet "$before" "$count"
+	finish
+}
+
+second_was_quiet() {
+	never_gone && peers_stayed "$2" && [ "$(conf_hash)" = "$1" ] && [ ! -e /etc/hostname.wg0.new ]
+}
+
 check() {
 	expect vm:wg-key-kept same_as_before wg wg
 	expect vm:srs-key-kept same_as_before srs srs
@@ -88,7 +154,6 @@ check() {
 	expect vm:apps-key-kept same_as_before apps /etc/ssl/private/apps.key
 	expect vm:wg-conf [ "$(wg_normal)" = "$(cat $g/gen/etc/hostname.wg0)" ]
 	expect vm:wg-conf-mode modes_are 640 /etc/hostname.wg0
-	expect vm:wg-second-install-quiet [ ! -e /etc/hostname.wg0.new ]
 	expect vm:wg-up wg_is_up
 	expect vm:forwarding [ "$(sysctl -n net.inet.ip.forwarding)" = 1 ]
 	expect vm:secret-modes modes_are 600 /etc/mail/srs.conf /etc/ssl/private/teoyujie.org.key /etc/ssl/private/apps.key /etc/relayd.conf /etc/pf.conf
@@ -100,19 +165,37 @@ check() {
 	expect vm:crontab [ "$(block_of)" = "$(cat $g/gen/crontab.block)" ]
 	expect vm:syslog-alert-once [ "$(grep -c ssh-alert /etc/syslog.conf)" -eq 1 ]
 	expect vm:admin-wheel is_wheel
+	expect vm:services-run rcctl check httpd relayd smtpd unbound sshd cron
+	expect vm:private-origin-403 private_blocked 'Origin: https://evil.example\r\n'
+	expect vm:private-cross-site-403 private_blocked 'Sec-Fetch-Site: cross-site\r\n'
+	expect vm:private-403-page private_block_page
+	expect vm:private-acme acme_on_private_name
 	expect vm:tunnel-shell [ "$(shell_of tunnel)" = /usr/local/sbin/tunnel-wait ]
 	installed_all
 	finish
 }
 
+pending_after_exit() {
+	[ -e /etc/hostname.wg0.new ] && [ "$(conf_hash)" = "$1" ]
+}
+
 wgchange() {
 	before=$(secret_hash wg)
+	conf=$(conf_hash)
 	peers=$(ifconfig wg0 | grep -c wgpeer)
 	cp local.conf "$state/local.conf.kept"
 	sed "s#^WG_PEERS='#WG_PEERS='extra:10.8.0.9:$(openssl rand -base64 32) #" "$state/local.conf.kept" > local.conf
-	out=$(sh install.sh 2>&1); status=$?
+	watch_start
+	out=$(sh install.sh 2>&1)
+	status=$?
+	pending=1
+	pending_after_exit "$conf" || pending=0
+	watch_stop
 	expect vm:wg-change-install [ "$status" -eq 0 ]
 	expect vm:wg-change-detached is_detached "$out"
+	expect vm:wg-change-untouched-until-exit never_gone
+	expect vm:wg-change-peers-until-exit peers_stayed "$peers"
+	expect vm:wg-change-pending-after-exit [ "$pending" -eq 1 ]
 	sleep 8
 	expect vm:wg-change-key-kept [ "$(secret_hash wg)" = "$before" ]
 	expect vm:wg-change-applied [ "$(ifconfig wg0 | grep -c wgpeer)" -eq $((peers + 1)) ]

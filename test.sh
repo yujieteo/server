@@ -4,6 +4,7 @@ cd "$(dirname "$0")" || exit 1
 . ./local.conf
 fails=0
 t() {
+	if [ -n "${KEPT_ONLY:-}" ] && printf '%s\n' "$1" | grep -qEf evals/removed-checks; then echo "skip $1"; return; fi
 	if eval "$2" >/dev/null 2>&1; then echo "ok   $1"; else echo "FAIL $1"; fails=$((fails + 1)); fi
 }
 web() {
