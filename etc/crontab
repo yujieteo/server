@@ -4,4 +4,4 @@
 ~	*	*	*	*	/usr/local/sbin/private-cert
 0	3	*	*	0	/usr/local/sbin/blocklist-update
 *	*	*	*	*	-s su deploy -c /usr/local/sbin/site-update
-*	*	*	*	find /var/www/files/f -mindepth 1 -maxdepth 1 -mmin +43200 -exec rm -rf {} +
+*	*	*	*	*	find /var/www/files/f -mindepth 1 -maxdepth 1 -mmin +43200 -exec rm -rf {} +
