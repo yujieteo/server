@@ -1,0 +1,6 @@
+wgkey KEY
+wgport 51820
+inet 10.8.0.1/24
+wgpeer LhKtpXWoWMpryX+dR8AiL21BsFczQXP0WAqAqjIBNRY= wgaip 10.8.0.2/32 wgdescr mac
+wgpeer MK3g2jdrlmHM+HbLiO/ZWudGiWXb41XDSrQt7YNZZSw= wgaip 10.8.0.3/32 wgdescr phone
+up

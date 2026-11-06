@@ -33,6 +33,10 @@ const NO_COMMENT_SYNTAX = new Set([
   "www/.well-known/openpgpkey/hu/dj3498u4hyyarh35rkjfnghbjxug6b19",
   "package.json",
   "knip.json",
+  "REQUIREMENTS.md",
+  "evals/baseline.tsv",
+  "evals/removed-paths",
+  "evals/removed-checks",
 ]);
 
 const SHELL_FILES = new Set([
@@ -47,7 +51,9 @@ const SHELL_FILES = new Set([
 ]);
 
 function syntaxOf(path: string): CommentSyntax | "unclassified" {
-  if (NO_COMMENT_SYNTAX.has(path)) return "none";
+  if (NO_COMMENT_SYNTAX.has(path) || path.startsWith("evals/golden/")) return "none";
+  if (path.startsWith("evals/") && path.endsWith(".sh")) return "shell";
+  if (path === "evals/keep.awk") return "line-hash";
   if (SHELL_FILES.has(path) || path.startsWith("bin/") || path.startsWith("etc/rc.d/")) return "shell";
   if (path.startsWith("etc/") || path === ".gitignore" || path === ".gitleaks.toml" || path.endsWith(".yml")) return "line-hash";
   if (path.endsWith(".ts") || path.endsWith(".c") || path.endsWith(".h") || path === "tsconfig.json") return "c-like";

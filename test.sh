@@ -4,6 +4,7 @@ cd "$(dirname "$0")" || exit 1
 . ./local.conf
 fails=0
 t() {
+	if [ -n "${KEPT_ONLY:-}" ] && printf '%s\n' "$1" | grep -qEf evals/removed-checks; then echo "skip $1"; return; fi
 	if eval "$2" >/dev/null 2>&1; then echo "ok   $1"; else echo "FAIL $1"; fails=$((fails + 1)); fi
 }
 web() {
@@ -43,6 +44,7 @@ if [ -n "${1:-}" ]; then
 	rm -rf "$p"
 fi
 
+if [ -z "${KEPT_ONLY:-}" ]; then
 site() {
 	c=$(echo "$1 $$" | sha1)
 	rm -rf $p/x && mkdir -p $p/x/site-$c
@@ -65,6 +67,7 @@ if [ -n "${1:-}" ]; then
 fi
 if [ -e $p/last ]; then cp $p/last /home/deploy/site-commit; else rm /home/deploy/site-commit; fi
 rm -rf $p
+fi
 
 for u in / /lullapixie/privacy.html /lullapixie/support.html /marklove/privacy.html /marklove/support.html \
 	/play/beamdiag/ /.well-known/security.txt /contact.gpg /.well-known/openpgpkey/hu/dj3498u4hyyarh35rkjfnghbjxug6b19; do
@@ -85,6 +88,7 @@ t "web: no file list" "[ \"\$(web 443 teoyujie.org /f/)\" != '200 ' ]"
 t "web: a 403 is the site error page" "[ \"\$(errpage /f/)\" = '<h1>403 Forbidden</h1>' ]"
 rm -r /var/www/files/f/$d
 
+if [ -z "${KEPT_ONLY:-}" ]; then
 post() {
 	{ printf 'POST %s HTTP/1.0\r\nHost: teoyujie.org\r\nContent-Length: %s\r\nSignature: %s\r\n\r\n' \
 		"${3:-/pond/entry}" "$(wc -c < "$1" | tr -d ' ')" "$2"; cat "$1"; } |
@@ -247,6 +251,7 @@ a=$(date +%s); fcgi 8792 $p/poll-a >/dev/null; b=$(date +%s)
 t "rooms: a slow request holds the relay for 2 s at most" "[ $((b - a)) -le 2 ]"
 kill $q1 $q2 $q3 2>/dev/null
 rm -r $p
+fi
 
 m="smtp -C -s smtp://$(ifconfig egress | awk '$1 == "inet" { print $2; exit }') -F test@example.org"
 msg='From: test@example.org\nSubject: test.sh\n\ntest\n'
@@ -296,29 +301,32 @@ front() {
 	openssl s_client -quiet -connect 10.8.0.1:443 -servername $1 >/dev/null 2>&1 & f=$!
 	sleep 2; kill $f 2>/dev/null; wait $f
 }
+fhonly() { [ -z "${KEPT_ONLY:-}" ] || return 0; "$@"; }
+apps=6; fhfwd="-R 10.8.0.1:8790:127.0.0.1:9472"
+if [ -n "${KEPT_ONLY:-}" ]; then apps=4; fhfwd=; fi
 listen() { netstat -an -p tcp | awk '$NF == "LISTEN" && $4 ~ /\.(4387|4388|8790)$/ { print $4 }' | sort | tr '\n' ' '; }
 if netstat -an -p tcp | awk '$NF == "LISTEN" { print $4 }' | grep -qE '^10\.8\.0\.1\.(4387|4388|8790)$'; then
 	echo "skip the test tunnels and the tests of relayd to the apps: a real tunnel is open"
 	l=$(listen)
 else
 	nc -dlk 127.0.0.1 9471 > $p/mac & n1=$!
-	nc -dlk 127.0.0.1 9472 > $p/fh & n2=$!
+	if [ -n "${KEPT_ONLY:-}" ]; then : > $p/fh; n2=; else nc -dlk 127.0.0.1 9472 > $p/fh & n2=$!; fi
 	nc -dlk 127.0.0.1 9473 > $p/desk & n3=$!
-	$s -N -R 10.8.0.1:4387:127.0.0.1:9471 -R 10.8.0.1:4388:127.0.0.1:9473 -R 10.8.0.1:8790:127.0.0.1:9472 </dev/null >/dev/null 2>&1 & q=$!
+	$s -N -R 10.8.0.1:4387:127.0.0.1:9471 -R 10.8.0.1:4388:127.0.0.1:9473 $fhfwd </dev/null >/dev/null 2>&1 & q=$!
 	sleep 3
 	l=$(listen)
 	front teoyujie.org ''
 	front mac.lavish.teoyujie.org ''
 	front desk.lavish.teoyujie.org '' /x ''
-	front fh.teoyujie.org 'Authorization: Bearer wrong\r\n' /x ''
-	front fh.teoyujie.org 'Origin: https://evil.example\r\n' /evil ''
+	fhonly front fh.teoyujie.org 'Authorization: Bearer wrong\r\n' /x ''
+	fhonly front fh.teoyujie.org 'Origin: https://evil.example\r\n' /evil ''
 	front mac.lavish.teoyujie.org 'Origin: https://evil.example\r\n' /evil ''
 	front mac.lavish.teoyujie.org 'Origin: https://desk.lavish.teoyujie.org\r\n' /evil ''
 	front desk.lavish.teoyujie.org 'Origin: https://fh.teoyujie.org\r\n' /evil ''
-	front fh.teoyujie.org 'Sec-Fetch-Site: cross-site\r\n' /cross
+	fhonly front fh.teoyujie.org 'Sec-Fetch-Site: cross-site\r\n' /cross
 	front mac.lavish.teoyujie.org '' /plain ''
 	front desk.lavish.teoyujie.org '' /same
-	front fh.teoyujie.org '' /same
+	fhonly front fh.teoyujie.org '' /same
 	kill -9 $q; wait $q 2>/dev/null
 	kill $n1 $n2 $n3
 	tr -d '\r' < $p/mac > $p/m
@@ -339,11 +347,12 @@ else
 	t "relayd: Lavish on the Mac gets a request with no Origin" "grep -q '^GET /plain' $p/m"
 	t "relayd: desk.lavish.teoyujie.org passes its own Origin" "grep -q '^GET /same' $p/k"
 	t "relayd: fh.teoyujie.org passes its own Origin" "grep -q '^GET /same' $p/f"
-	t "relayd: another name goes to no app" "[ \"\$(cat $p/m $p/k $p/f | grep -c '^GET ')\" = 6 ]"
+	t "relayd: another name goes to no app" "[ \"\$(cat $p/m $p/k $p/f | grep -c '^GET ')\" = $apps ]"
 fi
 t "tunnel: the ports listen only on 10.8.0.1 (127.0.0.1.8790 is the room relay)" "echo '$l' | grep -q 10.8.0.1 && [ -z \"\$(echo $l | tr ' ' '\n' | grep -vxE '10\.8\.0\.1\.(4387|4388|8790)|127\.0\.0\.1\.8790')\" ]"
 cp $p/keys $a
 rm -r $p
+if [ -z "${KEPT_ONLY:-}" ]; then
 p=$(mktemp -d)
 ssh-keygen -q -t ed25519 -N '' -f $p/key
 a=/home/fleet/.ssh/authorized_keys
@@ -379,6 +388,7 @@ for n in mac desk; do
 done
 cp $p/keys $a
 rm -r $p
+fi
 t "pf: the internet reaches only the public services on the public addresses" "! pfctl -sr | grep '^pass' | grep -v '^pass out' | grep -v '^pass on wg0 ' | grep -vE '^pass in on egress .*to \(egress\) port = (22|25|80|443|51820)( |\$)|^pass in on egress .*proto [a-z0-9-]*icmp'"
 ip4=$(ifconfig egress | awk '$1 == "inet" { print $2; exit }')
 pub() {

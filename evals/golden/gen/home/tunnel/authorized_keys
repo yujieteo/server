@@ -1,0 +1,2 @@
+from="10.8.0.0/24,127.0.0.1" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIK6HiekzW/ld/c/Db1MgfSbGU3e7HEvqYY4JrXp1oTfx test-mac-tunnel
+from="10.8.0.0/24,127.0.0.1" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHgFT6FPlQhAbIST8RRFHBhg74v6t67cGoZbNn5g0Gbu test-desktop-tunnel
