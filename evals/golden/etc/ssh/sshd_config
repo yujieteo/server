@@ -1,0 +1,13 @@
+PermitRootLogin no
+AuthenticationMethods publickey
+AuthorizedKeysFile .ssh/authorized_keys
+Subsystem sftp /usr/libexec/sftp-server
+
+Match User tunnel
+	AllowTcpForwarding remote
+	AllowStreamLocalForwarding no
+	GatewayPorts clientspecified
+	PermitListen 10.8.0.1:4387 10.8.0.1:4388
+	PermitTTY no
+	AllowAgentForwarding no
+	X11Forwarding no

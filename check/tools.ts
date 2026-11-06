@@ -93,7 +93,7 @@ function excludedFor(file: string): string {
   return SHELLCHECK_EXCLUDED.filter((exclusion) => exclusion.files === null || exclusion.files.test(file)).map((exclusion) => exclusion.code).sort().join(",");
 }
 
-const SHELL_FILES = /^(apply|share|mail-alias|private-setup|install\.sh|test\.sh|bin\/.*|\.githooks\/pre-commit)$/;
+const SHELL_FILES = /^(apply|share|mail-alias|private-setup|install\.sh|test\.sh|bin\/.*|evals\/[a-z-]+\.sh|\.githooks\/pre-commit)$/;
 const KSH_FILES = /^etc\/rc\.d\/.*$/;
 
 export async function shellcheck(): Promise<readonly Finding[]> {
