@@ -18,18 +18,38 @@ within() {
 	expect "bench:$1" at_most "$2" "$(column "$1" 3)"
 }
 
-payload_bytes() {
-	dir=$(mktemp -d)
-	git ls-files -co --exclude-standard -z | tar --null -T - -cf - | tar -xf - -C "${dir}"
-	cp local.conf.example "${dir}/local.conf"
-	pack=$(sed -n 's/^\(tar [^|]*\) | ssh.*/\1/p' apply)
-	bytes=$(cd "${dir}" && { sh -c "${pack}" 2> /dev/null || sh -c "$(echo "${pack}" | sed 's/--no-mac-metadata //')"; } | wc -c | tr -d ' ')
+pack_command() {
+	sed -n 's/^\(tar [^|]*\) | ssh.*/\1/p' apply
+}
+
+stage() {
+	git ls-files -co --exclude-standard -z > "$1/list" &&
+		tar --null -T "$1/list" -cf "$1/stage.tar" &&
+		mkdir "$1/tree" &&
+		tar -xf "$1/stage.tar" -C "$1/tree" &&
+		cp local.conf.example "$1/tree/local.conf"
+}
+
+pack() {
+	(cd "$1/tree" && sh -c "$2" > "$1/payload.tgz" 2> /dev/null) ||
+		(cd "$1/tree" && sh -c "$(echo "$2" | sed 's/--no-mac-metadata //')" > "$1/payload.tgz")
+}
+
+payload_ok() {
+	dir=$(mktemp -d) || return 1
+	cmd=$(pack_command)
+	[ -n "${cmd}" ] && stage "${dir}" && pack "${dir}" "${cmd}" && [ -s "${dir}/payload.tgz" ] && tar -tzf "${dir}/payload.tgz" > /dev/null
+	status=$?
+	[ "${status}" -ne 0 ] || wc -c < "${dir}/payload.tgz" | tr -d ' ' > "${work}/bytes"
 	rm -rf "${dir}"
-	echo "${bytes}"
+	return "${status}"
 }
 
 local_bench() {
-	within apply_bytes "$(payload_bytes)"
+	work=$(mktemp -d)
+	expect bench:apply_payload_built payload_ok
+	[ -s "${work}/bytes" ] && within apply_bytes "$(cat "${work}/bytes")"
+	rm -rf "${work}"
 }
 
 vm_bench() {

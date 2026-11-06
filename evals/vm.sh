@@ -72,11 +72,15 @@ watch_stop() {
 }
 
 never_gone() {
-	[ -s "$state/samples" ] && ! grep -qx gone "$state/samples"
+	[ -s "$1" ] && ! grep -qx gone "$1"
 }
 
 peers_stayed() {
-	[ "$(sort -u "$state/samples" | tr '\n' ' ')" = "up $1 " ]
+	[ "$(sort -u "$2" | tr '\n' ' ')" = "up $1 " ]
+}
+
+waited_before_change() {
+	[ "$(awk -v same="up $1" '$0 == same { n++; next } { exit } END { print n + 0 }' "$2")" -ge 15 ]
 }
 
 conf_hash() {
@@ -144,7 +148,7 @@ second() {
 }
 
 second_was_quiet() {
-	never_gone && peers_stayed "$2" && [ "$(conf_hash)" = "$1" ] && [ ! -e /etc/hostname.wg0.new ]
+	never_gone "$state/samples" && peers_stayed "$2" "$state/samples" && [ "$(conf_hash)" = "$1" ] && [ ! -e /etc/hostname.wg0.new ]
 }
 
 check() {
@@ -188,15 +192,19 @@ wgchange() {
 	watch_start
 	out=$(sh install.sh 2>&1)
 	status=$?
+	exit_at=$(wc -l < "$state/samples" | tr -d ' ')
 	pending=1
 	pending_after_exit "$conf" || pending=0
+	sleep 8
 	watch_stop
+	head -n "$exit_at" "$state/samples" > "$state/during"
+	tail -n +"$((exit_at + 1))" "$state/samples" > "$state/after"
 	expect vm:wg-change-install [ "$status" -eq 0 ]
 	expect vm:wg-change-detached is_detached "$out"
-	expect vm:wg-change-untouched-until-exit never_gone
-	expect vm:wg-change-peers-until-exit peers_stayed "$peers"
+	expect vm:wg-change-untouched-until-exit never_gone "$state/during"
+	expect vm:wg-change-peers-until-exit peers_stayed "$peers" "$state/during"
 	expect vm:wg-change-pending-after-exit [ "$pending" -eq 1 ]
-	sleep 8
+	expect vm:wg-change-waits-after-exit waited_before_change "$peers" "$state/after"
 	expect vm:wg-change-key-kept [ "$(secret_hash wg)" = "$before" ]
 	expect vm:wg-change-applied [ "$(ifconfig wg0 | grep -c wgpeer)" -eq $((peers + 1)) ]
 	expect vm:wg-change-mode wg_conf_settled
