@@ -17,7 +17,7 @@ private values. No value in it gives access to the server.
 | `apply` | Runs on the Mac. Copies this repo and `local.conf` to the server, then runs `install.sh`. |
 | `private-setup` | Runs on the Mac. The one-time setup of the private names of Lavish, femahoy and the fleet view (below). |
 | `mail-alias` | Runs on the Mac. `./mail-alias add NAME` or `./mail-alias del NAME`. |
-| `share` | Runs on the Mac. `./share FILE` prints a link to FILE that works for 30 days. |
+| `share` | Runs on the Mac. `./share FILE` prints a link to FILE. A job checks every minute and removes files more than 30 days old. If the job cannot run, removal is delayed. |
 | `local.conf.example` | The private values, with test values. CI uses it. `CONF_KEYS` in `check/conf.ts` gives the meaning and the format of each key. |
 | `etc/` | The configs: httpd, relayd, acme-client, smtpd, pf, sshd, unbound, doas, sysctl, crontab, and `rc.d/neurons_room`. |
 | `bin/` | The jobs: health-check, ssh-alert, blocklist-update, site-update (below) and private-cert (below). deploy-only is the forced command of the deploy user. tunnel-wait is the login shell of the tunnel user. fleet-upload is the forced command of the fleet user (below). |
