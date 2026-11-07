@@ -1,6 +1,32 @@
 #!/bin/sh
 set -eu
 cd "$(dirname "$0")"
-host=${1:?usage: ./apply root@NEW_IP (the first time) or ./apply ADMIN_USER@10.8.0.1 (after that); it copies this repo and local.conf to the server and runs install.sh there}
-tar --no-mac-metadata -czf - install.sh test.sh local.conf sbin etc www | ssh "$host" 'rm -rf server && mkdir server && tar -xzf - -C server'
-case $host in root@*) ssh -t "$host" sh server/install.sh ;; *) ssh -t "$host" doas sh server/install.sh ;; esac
+mode=--check
+checkpoint=
+case ${1-} in
+--install) mode=--live; checkpoint=${2:?name the full offline checkpoint}; shift 2 ;;
+--bootstrap) mode=--bootstrap; shift ;;
+--check) shift ;;
+*) ;;
+esac
+host=${1:?usage: ./apply [--check | --install CHECKPOINT | --bootstrap] USER@HOST}
+[ "$#" -eq 1 ] || exit 2
+case ${host} in -*) exit 2 ;; *) ;; esac
+case ${checkpoint} in *[!A-Za-z0-9._-]*) echo 'Use a plain checkpoint id.' >&2; exit 2 ;; *) ;; esac
+work=$(mktemp -d)
+trap 'rm -rf "${work}"' EXIT HUP INT TERM
+umask 077
+sh ./pack > "${work}/payload.tgz"
+stage=$(ssh "${host}" 'set -eu; umask 077; stage=$(mktemp -d server-stage.XXXXXXXXXX); trap '\''rm -rf "${stage}"'\'' EXIT HUP INT TERM; tar -xpzf - -C "${stage}"; chmod 600 "${stage}/local.conf"; printf "%s\n" "${stage}"; trap - EXIT HUP INT TERM' < "${work}/payload.tgz")
+case ${stage} in
+*[!A-Za-z0-9.-]*) echo 'Bad stage path; no install.' >&2; exit 1 ;;
+server-stage.*) ;;
+*) echo 'Bad stage path; no install.' >&2; exit 1 ;;
+esac
+privilege=doas
+case ${host} in root@*) privilege= ;; *) ;; esac
+if [ "${mode}" = --live ]; then
+	printf 'Offline checkpoint acknowledged: %s. Restore it from the provider console if needed.\n' "${checkpoint}"
+fi
+remote="status=0; ${privilege} sh '${stage}/install.sh' '${mode}' || status=\$?; rm -rf '${stage}' || exit 1; exit \"\$status\""
+ssh -t "${host}" "${remote}"

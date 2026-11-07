@@ -20,7 +20,7 @@ file_of() {
 }
 
 identities() {
-	grep -ohE 'expect (vm|replay|conf|secrets|wkd):[A-Za-z0-9_./-]+' evals/*.sh | sed 's/^expect //'
+	grep -ohE 'expect (vm|replay|conf|secrets|wkd|deploy):[A-Za-z0-9_./-]+' evals/*.sh | sed 's/^expect //'
 	grep -ohE "\"vm:[a-z]+-[$]\(" evals/vm.sh | tr -d '"[$]('
 	sed 's#^/#replay:#; s/\t.*//' evals/golden/modes.tsv
 	cut -f1 evals/baseline.tsv | sed 's/^/bench:/'

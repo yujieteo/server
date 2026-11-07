@@ -4,24 +4,6 @@ cd "${ROOT}" || exit 1
 . ./evals/lib.sh
 state=/root/eval-state
 
-plant() {
-	printf '%s\n' '#!/bin/sh' 'sleep 100000' > /usr/local/sbin/neurons_room
-	chmod 755 /usr/local/sbin/neurons_room
-	printf '%s\n' '#!/bin/ksh' 'daemon="/usr/local/sbin/neurons_room"' '. /etc/rc.d/rc.subr' 'pexp="/bin/sh /usr/local/sbin/neurons_room"' 'rc_bg=YES' "rc_cmd \$1" > /etc/rc.d/neurons_room
-	chmod 555 /etc/rc.d/neurons_room
-	printf '%s\n' '#!/bin/sh' 'cat > /dev/null' > /usr/local/sbin/fleet-upload
-	chmod 755 /usr/local/sbin/fleet-upload
-	useradd -d /home/fleet -s /usr/local/sbin/fleet-upload fleet
-	install -d -m 755 /home/fleet /home/fleet/.ssh /var/www/fleet /var/www/pond/entries
-	echo "ssh-ed25519 AAAAold fleet-test-key" > /home/fleet/.ssh/authorized_keys
-	echo "ssh-ed25519 AAAAarchive fleet-archive-key" > /home/fleet/.ssh/authorized_keys.disabled
-	echo "ssh-ed25519 AAAAarchive1 fleet-archive-one-key" > /home/fleet/.ssh/authorized_keys.disabled.1
-	echo page > /var/www/fleet/mac.html
-	echo entry > /var/www/pond/entries/one.json
-	rcctl enable slowcgi neurons_room
-	rcctl start slowcgi neurons_room
-}
-
 pieces_were_planted() {
 	rcctl check slowcgi neurons_room && id fleet && [ -s /home/fleet/.ssh/authorized_keys ]
 }
@@ -36,7 +18,15 @@ fleet_is_locked() {
 }
 
 keys_are_off() {
-	[ ! -e /home/fleet/.ssh/authorized_keys ] && grep -q fleet-archive-key /home/fleet/.ssh/authorized_keys.disabled && grep -q fleet-archive-one-key /home/fleet/.ssh/authorized_keys.disabled.1 && cat /home/fleet/.ssh/authorized_keys.disabled* | grep -q fleet-test-key
+	[ ! -e /home/fleet/.ssh/authorized_keys ] || return 1
+	while IFS= read -r archive; do sha256 "${archive}"; done < "${state}/fleet-archive-paths" > "${state}/fleet-archives-now"
+	cmp -s "${state}/fleet-archive-hashes" "${state}/fleet-archives-now" || return 1
+	find /home/fleet/.ssh -name 'authorized_keys.disabled*' -type f | sort > "${state}/fleet-current-paths"
+	comm -13 "${state}/fleet-archive-paths" "${state}/fleet-current-paths" > "${state}/fleet-new-paths"
+	count=$(wc -l < "${state}/fleet-new-paths")
+	[ "${count}" -eq 1 ] || return 1
+	IFS= read -r archive < "${state}/fleet-new-paths"
+	cmp -s "${archive}" "${state}/fleet-key"
 }
 
 upload_is_off() {
@@ -45,7 +35,7 @@ upload_is_off() {
 }
 
 files_remain() {
-	[ -s /var/www/fleet/mac.html ] && [ -s /var/www/pond/entries/one.json ] && [ -e /etc/rc.d/neurons_room ] && [ -e /usr/local/sbin/neurons_room ]
+	cmp -s /var/www/fleet/mac.html "${state}/fleet-page" && cmp -s /var/www/pond/entries/one.json "${state}/pond-entry" && [ -e /etc/rc.d/neurons_room ] && [ -e /usr/local/sbin/neurons_room ]
 }
 
 wg_key_same() {
@@ -80,7 +70,7 @@ retired_again() {
 	expect vm:retire-others-run-again others_run
 }
 
-plant
+sh evals/legacy-plant.sh
 expect vm:retire-planted pieces_were_planted
 sh install.sh > "${state}/retire-1.log" 2>&1
 expect vm:retire-install-ok [ $? -eq 0 ]

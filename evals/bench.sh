@@ -20,10 +20,6 @@ within() {
 	expect "bench:$1" at_most "$2" "${max_value}"
 }
 
-pack_command() {
-	sed -n 's/^\(tar [^|]*\) | ssh.*/\1/p' apply
-}
-
 stage() {
 	git ls-files -co --exclude-standard -z > "$1/list" &&
 		tar --null -T "$1/list" -cf "$1/stage.tar" &&
@@ -33,15 +29,12 @@ stage() {
 }
 
 pack() {
-	plain=$(echo "$2" | sed 's/--no-mac-metadata //')
-	(cd "$1/tree" && sh -c "$2" > "$1/payload.tgz" 2> /dev/null) ||
-		(cd "$1/tree" && sh -c "${plain}" > "$1/payload.tgz")
+	(cd "$1/tree" && sh ./pack > "$1/payload.tgz")
 }
 
 payload_ok() {
 	dir=$(mktemp -d) || return 1
-	cmd=$(pack_command)
-	[ -n "${cmd}" ] && stage "${dir}" && pack "${dir}" "${cmd}" && [ -s "${dir}/payload.tgz" ] && tar -tzf "${dir}/payload.tgz" > /dev/null
+	stage "${dir}" && pack "${dir}" && [ -s "${dir}/payload.tgz" ] && tar -tzf "${dir}/payload.tgz" > /dev/null
 	status=$?
 	[ "${status}" -ne 0 ] || wc -c < "${dir}/payload.tgz" | tr -d ' ' > "${work}/bytes"
 	rm -rf "${dir}"

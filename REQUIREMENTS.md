@@ -21,7 +21,7 @@ A rewrite that has none of the removed parts passes the same evals.
 - **WG-1** wg0 has 10.8.0.1/24 and port 51820, with one peer for each item of `WG_PEERS`. Evals: `vm:wg-conf` `vm:wg-up` `test.sh:VPN`
 - **WG-2** A second install keeps the key of the server. The key is the only secret of wg0. Evals: `vm:wg-key-kept` `vm:second-install-ok` `vm:wg-second-install-quiet`. The last one watches wg0 every 0.1 s during the second install: it never goes away, the peers do not change, and `hostname.wg0` has the same hash.
 - **WG-3** `/etc/hostname.wg0` has mode 640. Evals: `vm:wg-conf-mode`
-- **WG-4** A change of the peers restarts wg0 last, two seconds after `install.sh` ends, detached. The key stays. Evals: `vm:wg-change-install` `vm:wg-change-detached` `vm:wg-change-untouched-until-exit` `vm:wg-change-peers-until-exit` `vm:wg-change-pending-after-exit` `vm:wg-change-waits-after-exit` `vm:wg-change-key-kept` `vm:wg-change-applied` `vm:wg-change-mode`. wg0 is watched during the install: it stays, with the old peers, until the install ends. Then `hostname.wg0.new` waits, wg0 keeps the old peers for at least 15 more samples (about 1.5 s of the 2 s delay), and eight seconds after the exit the new peer is there.
+- **WG-4** A change of the peers in a direct, plain install restarts wg0 last, two seconds after `install.sh` ends, detached. The key stays. Evals: `vm:wg-change-install` `vm:wg-change-detached` `vm:wg-change-untouched-until-exit` `vm:wg-change-peers-until-exit` `vm:wg-change-pending-after-exit` `vm:wg-change-waits-after-exit` `vm:wg-change-key-kept` `vm:wg-change-applied` `vm:wg-change-mode`. wg0 is watched during the install: it stays, with the old peers, until the install ends. Then `hostname.wg0.new` waits, wg0 keeps the old peers for at least 15 more samples (about 1.5 s of the 2 s delay), and eight seconds after the exit the new peer is there.
 - **WG-5** The server forwards packets. Evals: `replay:etc/sysctl.conf` `vm:forwarding`
 
 ## Firewall
@@ -83,10 +83,17 @@ A rewrite that has none of the removed parts passes the same evals.
 - **DEP-1** `install.sh` is safe to run twice. A second run changes no key and no file. Evals: `vm:installed` `vm:second-install-ok` `vm:wg-second-install-quiet` `bench:second_install_seconds`
 - **DEP-2** `deploy-only` puts `site` or `apps/NAME` in place as one step, removes old files, and refuses all else. Evals: `test.sh:deploy`
 - **DEP-3** `install.sh` has `mv -f` everywhere, so no question stops the run. Evals: `test.sh:install.sh`
-- **DEP-4** `apply`, `private-setup`, `mail-alias` and `share` run on the Mac. Evals: `manual:they need the Mac, the live server and a password`
-- **DEP-5** The apply sends as few bytes as it did. `bench:apply_bytes` packs a clean copy of the repo with the `tar` line of `apply` and counts the bytes. Evals: `bench:apply_bytes`
+- **DEP-4** `apply` runs on the desktop and the Mac. Its tar pack uses no Mac-only flag. Its stage keeps public file modes but locks the stage and local.conf. The other tools run on the Mac. Evals: `deploy:default-check` `deploy:stage-modes` `manual:the other tools need the Mac and live access`
+- **DEP-5** The apply sends as few bytes as it did. `bench:apply_bytes` packs a clean copy of the repo with `pack`, as `apply` does, and counts the bytes. Evals: `bench:apply_bytes`
 - **DEP-6** The checks fail with an error rate of 0. Evals: `bench:error_rate`
 - **DEP-7** A fresh OpenBSD 8.0 builds from `local.conf.example` with `install.sh`, and `test.sh` passes. Evals: `vm:installed` `test.sh:configs`
+
+- **DEP-8** Apply packs the full archive before SSH. It unpacks to a new, private stage. A bad pack or transfer never deletes the old server tree or runs the install. Evals: `deploy:pack-failure` `deploy:transfer-failure` `deploy:install-failure` `deploy:stage-validation`
+- **DEP-9** Apply checks by default. A live install needs an explicit mode and a full disk checkpoint id. The id is a receipt, not proof of a host backup. Evals: `deploy:default-check` `deploy:explicit-install` `deploy:checkpoint-required`
+- **DEP-10** Live mode checks wg0 before any file or service change. It needs the same config bytes, a running wg0, and no pending change. It never writes or restarts wg0. Evals: `vm:live-match` `vm:live-mismatch` `vm:live-pending` `vm:live-down` `vm:live-stopped` `vm:live-install-quiet`
+- **DEP-11** Rollback uses a full disk checkpoint, as set out in `ROLLBACK.md`. It restores the whole disk, not just old source. The live run must first check all disks and console access. A restore loses later writes and boots the server. Evals: `manual:the host checkpoint and console need consent and live access`
+
+- **DEP-12** Check mode prints real diffs of all rendered files and the web tree, plus mode, owner and service actions. It names private and generated file updates, with no secret dump or guess at new bytes. It changes no installed file or service. The same render calls feed the install. Each file diff prints once. Evals: `vm:preview-read-only` `vm:preview-files` `vm:preview-services` `vm:preview-private` `vm:preview-generated` `vm:preview-render-failure` `vm:preview-installed`
 
 ## Secrets
 
