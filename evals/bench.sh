@@ -14,8 +14,10 @@ at_most() {
 }
 
 within() {
-	echo "bench $1 value=$2 baseline=$(column "$1" 2) max=$(column "$1" 3)"
-	expect "bench:$1" at_most "$2" "$(column "$1" 3)"
+	base_value=$(column "$1" 2)
+	max_value=$(column "$1" 3)
+	echo "bench $1 value=$2 baseline=${base_value} max=${max_value}"
+	expect "bench:$1" at_most "$2" "${max_value}"
 }
 
 pack_command() {
@@ -31,8 +33,9 @@ stage() {
 }
 
 pack() {
+	plain=$(echo "$2" | sed 's/--no-mac-metadata //')
 	(cd "$1/tree" && sh -c "$2" > "$1/payload.tgz" 2> /dev/null) ||
-		(cd "$1/tree" && sh -c "$(echo "$2" | sed 's/--no-mac-metadata //')" > "$1/payload.tgz")
+		(cd "$1/tree" && sh -c "${plain}" > "$1/payload.tgz")
 }
 
 payload_ok() {
@@ -48,15 +51,20 @@ payload_ok() {
 local_bench() {
 	work=$(mktemp -d)
 	expect bench:apply_payload_built payload_ok
-	[ -s "${work}/bytes" ] && within apply_bytes "$(cat "${work}/bytes")"
+	if [ -s "${work}/bytes" ]; then
+		bytes=$(cat "${work}/bytes")
+		within apply_bytes "${bytes}"
+	fi
 	rm -rf "${work}"
 }
 
 vm_bench() {
-	within second_install_seconds "$(cat /root/second-install-seconds)"
+	seconds=$(cat /root/second-install-seconds)
+	within second_install_seconds "${seconds}"
 	pass=$(grep -c '^ok  ' /root/test.log)
 	bad=$(grep -c '^FAIL' /root/test.log)
-	within error_rate "$(awk -v p="${pass}" -v b="${bad}" 'BEGIN { printf "%.3f", b / (p + b) }')"
+	rate=$(awk -v p="${pass}" -v b="${bad}" 'BEGIN { printf "%.3f", b / (p + b) }')
+	within error_rate "${rate}"
 }
 
 case ${1:-local} in

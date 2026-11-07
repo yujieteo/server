@@ -64,7 +64,8 @@ group_used() {
 }
 
 unique_ids() {
-	[ "$(ids_of | sort | uniq -d | wc -l | tr -d ' ')" -eq 0 ]
+	dups=$(ids_of | sort | uniq -d | wc -l | tr -d ' ')
+	[ "${dups}" -eq 0 ]
 }
 
 identities | sort -u > "${work}/identities"
@@ -80,5 +81,6 @@ done < "${work}/groups"
 while IFS= read -r id; do
 	expect "trace:eval-${id}-has-a-requirement" identity_used "${id}"
 done < "${work}/identities"
-echo "trace: $(wc -l < "${work}/kept" | tr -d ' ') requirements with evals"
+count=$(wc -l < "${work}/kept" | tr -d ' ')
+echo "trace: ${count} requirements with evals"
 finish

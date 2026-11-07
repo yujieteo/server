@@ -1,7 +1,8 @@
+#!/bin/sh
 ROOT=${ROOT:-$(pwd)}
 
 mode_of() {
-	if [ "$(uname)" = Linux ]; then stat -c %a "$1"; else stat -f %Lp "$1"; fi
+	stat -c %a "$1" 2> /dev/null || stat -f %Lp "$1"
 }
 
 keep() {

@@ -2,5 +2,5 @@
 set -eu
 cd "$(dirname "$0")"
 host=${1:?usage: ./apply root@NEW_IP (the first time) or ./apply ADMIN_USER@10.8.0.1 (after that); it copies this repo and local.conf to the server and runs install.sh there}
-tar --no-mac-metadata --exclude .git -czf - . | ssh "$host" 'rm -rf server && mkdir server && tar -xzf - -C server'
+tar --no-mac-metadata -czf - install.sh test.sh local.conf sbin etc www | ssh "$host" 'rm -rf server && mkdir server && tar -xzf - -C server'
 case $host in root@*) ssh -t "$host" sh server/install.sh ;; *) ssh -t "$host" doas sh server/install.sh ;; esac

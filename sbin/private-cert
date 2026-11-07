@@ -1,0 +1,10 @@
+#!/bin/sh
+d=teoyujie.org
+ip4=$(ifconfig egress | awk '$1 == "inet" { print $2; exit }')
+for n in mac.lavish desk.lavish; do [ "$(dig +short @9.9.9.9 $n.$d A)" = "$ip4" ] || exit 0; done
+acme-client mac.lavish.$d
+case $? in
+0) rcctl reload httpd >/dev/null && rcctl restart relayd >/dev/null ;;
+2) ;;
+*) exit 1 ;;
+esac

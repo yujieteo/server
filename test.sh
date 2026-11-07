@@ -4,8 +4,18 @@ cd "$(dirname "$0")" || exit 1
 . ./local.conf
 fails=0
 t() {
-	if [ -n "${KEPT_ONLY:-}" ] && printf '%s\n' "$1" | grep -qEf evals/removed-checks; then echo "skip $1"; return; fi
-	if eval "$2" >/dev/null 2>&1; then echo "ok   $1"; else echo "FAIL $1"; fails=$((fails + 1)); fi
+	label=$1
+	shift
+	if "$@" >/dev/null 2>&1; then echo "ok   ${label}"; else echo "FAIL ${label}"; fails=$((fails + 1)); fi
+}
+not() {
+	! "$@"
+}
+is_eq() {
+	want=$1
+	shift
+	got=$("$@")
+	[ "${got}" = "${want}" ]
 }
 web() {
 	printf 'GET %s HTTP/1.0\r\nHost: %s\r\n\r\n' "$3" "$2" |
@@ -16,396 +26,270 @@ get() {
 	printf 'GET %s HTTP/1.0\r\nHost: teoyujie.org\r\n\r\n' "$1" |
 	openssl s_client -quiet -connect 127.0.0.1:443 -servername teoyujie.org 2>/dev/null | tr -d '\r'
 }
-
-t "configs: sshd" "sshd -t"
-t "configs: httpd" "httpd -n"
-t "configs: smtpd" "smtpd -n"
-t "configs: unbound" "unbound-checkconf"
-t "configs: relayd" "relayd -n"
-t "configs: pf" "pfctl -nf /etc/pf.conf"
-t "services run" "rcctl check slowcgi neurons_room httpd relayd smtpd unbound sshd cron"
-t "install.sh: each mv has -f, so no file question can stop the run" "! grep -E '(^|[;|&]|sh -c .)[[:space:]]*mv [^-]' install.sh"
-t "sshd: no root login" "sshd -T | grep -qix 'permitrootlogin no'"
-t "sshd: keys only" "sshd -T | grep -qix 'authenticationmethods publickey'"
-t "admin keys: VPN only" "! grep -qv '^from=\"10.8.0.0/24,127.0.0.1\" ssh-' /home/$ADMIN_USER/.ssh/authorized_keys"
-t "jobs in crontab" "crontab -l | grep -q health-check"
-
-if [ -n "${1:-}" ]; then
-	k="ssh -i $1 -o StrictHostKeyChecking=accept-new -o BatchMode=yes deploy@127.0.0.1"
-	p=$(mktemp -d)
-	mkdir -p "$p/play/beamdiag" "$p/lullapixie" "$p/marklove"
-	for f in index.html play/beamdiag/index.html lullapixie/privacy.html lullapixie/support.html \
-		marklove/privacy.html marklove/support.html; do echo test > "$p/$f"; done
-	t "deploy: site" "tar -czf - -C $p index.html play lullapixie marklove | $k site"
-	t "deploy: app" "tar -czf - -C $p index.html | $k apps/test"
-	t "deploy: old files go away" "touch /var/www/web/site/old.html && tar -czf - -C $p index.html play lullapixie marklove | $k site && [ ! -e /var/www/web/site/old.html ]"
-	t "deploy: no shell" "! $k sh </dev/null"
-	t "deploy: no other folder" "! $k apps/../x </dev/null"
-	rm -rf "$p"
-fi
-
-if [ -z "${KEPT_ONLY:-}" ]; then
-site() {
-	c=$(echo "$1 $$" | sha1)
-	rm -rf $p/x && mkdir -p $p/x/site-$c
-	cp -R /var/www/web/site $p/x/site-$c/public
-	echo test > $p/x/site-$c/public/site-update-test.html
-	echo "$2" > $p/x/site-$c/fixed-urls.txt
-	tar -czf $p/site.tgz -C $p/x .
-	printf '#!/bin/sh\ncase $3 in *info/refs*) printf "003d%s refs/heads/main\\n" ;; *) cp %s/site.tgz "$2" ;; esac\n' $c $p > $p/ftp
+errpage() {
+	get "$1" | grep -q '^<link rel="stylesheet" href="/style.css">$' && get "$1" | grep '^<h1>'
 }
-p=$(mktemp -d) && chmod 755 $p && cp /home/deploy/site-commit $p/last 2>/dev/null
-u="su deploy -c 'PATH=$p:\$PATH /usr/local/sbin/site-update'"
-site bad /no-such-page && chmod 755 $p/ftp && chmod 644 $p/site.tgz
-o=$(eval "$u" 2>&1)
-t "site-update: a failed check puts the previous site back" "[ ! -e /var/www/web/site/site-update-test.html ]"
-t "site-update: a failed check sends an alert" "echo '$o' | grep -qx 'site: $c gave 404 for /no-such-page, so the previous site is back. The next commit on main deploys again.'"
-t "site-update: a failed commit is not deployed again" "[ -z \"\$(eval \"$u\" 2>&1)\" ] && [ \"\$(cat /home/deploy/site-commit)\" = $c ]"
+sshd_has() {
+	sshd -T | grep -qix "$1"
+}
+has_job() {
+	crontab -l | grep -q health-check
+}
+error_page_has_chrome() {
+	get /old.html | grep -qx '<span class="tagline">Mechanical Engineer</span>' && get /old.html | grep -qx '<footer class="wrap">'
+}
+
+t "configs: sshd" sshd -t
+t "configs: httpd" httpd -n
+t "configs: smtpd" smtpd -n
+t "configs: unbound" unbound-checkconf
+t "configs: relayd" relayd -n
+t "configs: pf" pfctl -nf /etc/pf.conf
+t "install.sh: each mv has -f, so no file question can stop the run" not grep -E '(^|[;|&]|sh -c .)[[:space:]]*mv [^-]' install.sh
+t "sshd: no root login" sshd_has 'permitrootlogin no'
+t "sshd: keys only" sshd_has 'authenticationmethods publickey'
+t "admin keys: VPN only" not grep -qv '^from="10.8.0.0/24,127.0.0.1" ssh-' "/home/${ADMIN_USER:?}/.ssh/authorized_keys"
+t "jobs in crontab" has_job
+
+deploy_ssh() {
+	ssh -i "$1" -o StrictHostKeyChecking=accept-new -o BatchMode=yes deploy@127.0.0.1 "$2"
+}
+deploy_pages() {
+	tar -czf - -C "${p}" index.html play lullapixie marklove | deploy_ssh "$1" site
+}
+deploy_app() {
+	tar -czf - -C "${p}" index.html | deploy_ssh "$1" apps/test
+}
+deploy_replaces() {
+	touch /var/www/web/site/old.html && deploy_pages "$1" && [ ! -e /var/www/web/site/old.html ]
+}
+deploy_refuses() {
+	! deploy_ssh "$1" "$2" </dev/null
+}
 if [ -n "${1:-}" ]; then
-	site good / && chmod 755 $p/ftp && chmod 644 $p/site.tgz
-	t "site-update: a new commit on main is deployed" "[ -z \"\$(eval \"$u\" 2>&1)\" ] && [ -e /var/www/web/site/site-update-test.html ]"
-fi
-if [ -e $p/last ]; then cp $p/last /home/deploy/site-commit; else rm /home/deploy/site-commit; fi
-rm -rf $p
+	p=$(mktemp -d)
+	mkdir -p "${p}/play/beamdiag" "${p}/lullapixie" "${p}/marklove"
+	for f in index.html play/beamdiag/index.html lullapixie/privacy.html lullapixie/support.html \
+		marklove/privacy.html marklove/support.html; do echo test > "${p}/${f}"; done
+	t "deploy: site" deploy_pages "$1"
+	t "deploy: app" deploy_app "$1"
+	t "deploy: old files go away" deploy_replaces "$1"
+	t "deploy: no shell" deploy_refuses "$1" sh
+	t "deploy: no other folder" deploy_refuses "$1" apps/../x
+	rm -rf "${p}"
 fi
 
 for u in / /lullapixie/privacy.html /lullapixie/support.html /marklove/privacy.html /marklove/support.html \
 	/play/beamdiag/ /.well-known/security.txt /contact.gpg /.well-known/openpgpkey/hu/dj3498u4hyyarh35rkjfnghbjxug6b19; do
-	t "web: $u" "[ \"\$(web 443 teoyujie.org $u)\" = '200 ' ]"
+	t "web: ${u}" is_eq '200 ' web 443 teoyujie.org "${u}"
 done
-t "web: old URL is 404" "[ \"\$(web 443 teoyujie.org /old.html)\" = '404 ' ]"
-errpage() { get "$1" | grep -q '^<link rel="stylesheet" href="/style.css">$' && get "$1" | grep '^<h1>'; }
-t "web: a 404 is the site error page" "[ \"\$(errpage /old.html)\" = '<h1>404 Not Found</h1>' ]"
-t "web: the error page has the header and footer of the home page" "get /old.html | grep -qx '<span class=\"tagline\">Mechanical Engineer</span>' && get /old.html | grep -qx '<footer class=\"wrap\">'"
-t "web: www to bare" "[ \"\$(web 443 www.teoyujie.org /a)\" = '301 https://teoyujie.org/a' ]"
-t "web: HTTP to HTTPS" "[ \"\$(web 80 teoyujie.org /a)\" = '301 https://teoyujie.org/a' ]"
-t "web: ACME on HTTP" "[ \"\$(web 80 teoyujie.org /.well-known/acme-challenge/x)\" = '404 ' ]"
-t "web: MTA-STS policy" "[ \"\$(web 443 mta-sts.teoyujie.org /.well-known/mta-sts.txt)\" = '200 ' ]"
+t "web: old URL is 404" is_eq '404 ' web 443 teoyujie.org /old.html
+t "web: a 404 is the site error page" is_eq '<h1>404 Not Found</h1>' errpage /old.html
+t "web: the error page has the header and footer of the home page" error_page_has_chrome
+t "web: www to bare" is_eq '301 https://teoyujie.org/a' web 443 www.teoyujie.org /a
+t "web: HTTP to HTTPS" is_eq '301 https://teoyujie.org/a' web 80 teoyujie.org /a
+t "web: ACME on HTTP" is_eq '404 ' web 80 teoyujie.org /.well-known/acme-challenge/x
+t "web: MTA-STS policy" is_eq '200 ' web 443 mta-sts.teoyujie.org /.well-known/mta-sts.txt
 d=$(openssl rand -hex 16)
-mkdir /var/www/files/f/$d && echo test > /var/www/files/f/$d/a.txt
-t "web: file link" "[ \"\$(web 443 teoyujie.org /f/$d/a.txt)\" = '200 ' ]"
-t "web: no file list" "[ \"\$(web 443 teoyujie.org /f/)\" != '200 ' ]"
-t "web: a 403 is the site error page" "[ \"\$(errpage /f/)\" = '<h1>403 Forbidden</h1>' ]"
-rm -r /var/www/files/f/$d
+mkdir "/var/www/files/f/${d}" && echo test > "/var/www/files/f/${d}/a.txt"
+t "web: file link" is_eq '200 ' web 443 teoyujie.org "/f/${d}/a.txt"
+t "web: no file list" not is_eq '200 ' web 443 teoyujie.org /f/
+t "web: a 403 is the site error page" is_eq '<h1>403 Forbidden</h1>' errpage /f/
+rm -r "/var/www/files/f/${d}"
 
-if [ -z "${KEPT_ONLY:-}" ]; then
-post() {
-	{ printf 'POST %s HTTP/1.0\r\nHost: teoyujie.org\r\nContent-Length: %s\r\nSignature: %s\r\n\r\n' \
-		"${3:-/pond/entry}" "$(wc -c < "$1" | tr -d ' ')" "$2"; cat "$1"; } |
-	openssl s_client -quiet -connect 127.0.0.1:443 -servername teoyujie.org 2>/dev/null | tr -d '\r' | awk 'NR == 1 { print $2 }'
+egress_ip=$(ifconfig egress | awk '$1 == "inet" { print $2; exit }')
+mail_to() {
+	printf 'From: test@example.org\nSubject: test.sh\n\ntest\n' | smtp -C -s "smtp://$1" -F test@example.org "$2" 2>&1 | grep -q "$3"
 }
-p=$(mktemp -d)
-openssl ecparam -name prime256v1 -genkey -noout -out $p/key.pem
-openssl pkey -in $p/key.pem -pubout -outform DER | openssl base64 -A > /var/www/pond/keys/test-$d.pub
-for r in 1 2 3; do
-	printf '{"entry":{"date":"2026-10-28","title":"test.sh"},"id":"test-%s","key":"test-%s","op":"put","rev":%s,"v":1}' $d $d $r > $p/$r
-	openssl dgst -sha256 -sign $p/key.pem < $p/$r | openssl base64 -A > $p/$r.sig
+for a in contact postmaster ${ALIASES-}; do
+	t "mail: ${a}@ is accepted" mail_to "${egress_ip}" "${a}@teoyujie.org" ' 250 '
 done
-printf '%8193s' '' > $p/big
-t "pond: new entry is saved" "[ \"\$(post $p/2 \$(cat $p/2.sig))\" = 201 ] && cmp $p/2 /var/www/pond/entries/test-$d.json"
-t "pond: replay changes nothing" "[ \"\$(post $p/2 \$(cat $p/2.sig))\" = 200 ]"
-t "pond: lower rev is refused" "[ \"\$(post $p/1 \$(cat $p/1.sig))\" = 409 ]"
-t "pond: bad signature is refused" "[ \"\$(post $p/3 \$(cat $p/2.sig))\" = 403 ]"
-t "pond: body over 8192 bytes is refused" "[ \"\$(post $p/big '')\" = 413 ]"
-t "pond: refused requests change nothing" "cmp $p/2 /var/www/pond/entries/test-$d.json"
-rm -r $p /var/www/pond/keys/test-$d.pub /var/www/pond/entries/test-$d.json
-
-entry() {
-	printf '{"entry":%s,"id":"test-%s-%s","key":"phone","op":"put","rev":1,"v":1}' "$3" $d $1 > /var/www/pond/entries/test-$d-$1.json
-	touch -t $2 /var/www/pond/entries/test-$d-$1.json
-}
-p=$(mktemp -d)
-tp=/var/www/web/site/log/template.html
-tl=; [ -e $tp ] || { tl=$tp; [ -d ${tp%/*} ] || tl="$tp ${tp%/*}"; }
-if ! (set -- /var/www/pond/entries/*.json; [ -e "$1" ]); then
-	get /pond/entries.json > $p/json
-	get /log/ > $p/log
-	get /log/feed.xml > $p/feed
-	t "pond: an empty store gives no entries" "[ \"\$(tail -n 1 $p/json)\" = '{\"entries\":[]}' ]"
-	t "pond: an empty store gives a page" "head -n 1 $p/log | grep -q ' 200 '"
-	t "pond: an empty store gives a feed" "grep -q '</channel>' $p/feed"
-fi
-[ -z "$tl" ] || t "pond: a missing template gives a plain page" "get /log/ | grep -qF '<h1>Log</h1>'"
-[ -z "$tl" ] || { mkdir -p ${tp%/*}; printf '<html>\n<main>\n  <!-- pond:entries -->\n</main>\n<footer>end</footer>\n</html>\n' > $tp; }
-entry old 202610270900 "{\"date\":\"2026-10-27\",\"title\":\"test-$d-old\"}"
-entry morning 202610280800 "{\"date\":\"2026-10-28\",\"title\":\"test-$d-morning\"}"
-entry evening 202610282000 "{\"date\":\"2026-10-28\",\"title\":\"test-$d-evening\"}"
-entry esc 202610281000 "{\"date\":\"2026-10-28\",\"link\":\"https://example.org/?a=1&b=\\\"2\\\"\",\"made\":\"it's <i>\",\"title\":\"<script>test-$d</script> & co\"}"
-entry js 202610280900 "{\"date\":\"2026-10-28\",\"link\":\"javascript:alert(1)\",\"title\":\"test-$d-js\"}"
-entry neg 202610280600 "{\"date\":\"-999-10-28\",\"title\":\"test-$d-neg\\u0001ctl\"}"
-entry private 202610281100 "{\"date\":\"2026-10-28\",\"fun\":\"test-$d-fun\",\"notice\":\"test-$d-notice\",\"title\":\"test-$d-private\"}"
-printf '{"id":"test-%s-gone","key":"phone","op":"remove","rev":2,"v":1}' $d > /var/www/pond/entries/test-$d-gone.json
-get /pond/entries.json > $p/json
-get /log/ > $p/log
-get /log/feed.xml > $p/feed
-get /log/%66eed.xml > $p/other
-: > $p/empty
-printf '%s\n' "<h2><a href=\"https://example.org/?a=1&amp;b=&quot;2&quot;\">&lt;script&gt;test-$d&lt;/script&gt; &amp; co</a></h2>" > $p/html-link
-printf '%s\n' '<p>it&#39;s &lt;i&gt;</p>' > $p/html-made
-printf '%s\n' '<link>https://example.org/?a=1&amp;b=&quot;2&quot;</link>' > $p/xml-link
-item() { sed -n "/<title>test-$d-$1</,/<\/item>/p" $p/feed; }
-order() { grep -oE "test-$d-(old|morning|evening)" $1 | uniq | tr '\n' ' '; }
-o="test-$d-evening test-$d-morning test-$d-old "
-t "pond: entries.json is JSON" "head -n 1 $p/json | grep -q ' 200 ' && grep -qi '^Content-Type: application/json' $p/json"
-t "pond: /log/ is HTML" "head -n 1 $p/log | grep -q ' 200 ' && grep -qi '^Content-Type: text/html' $p/log"
-t "pond: the feed is RSS" "head -n 1 $p/feed | grep -q ' 200 ' && grep -qi '^Content-Type: application/rss+xml' $p/feed"
-t "pond: entries.json is newest first" "[ \"\$(order $p/json)\" = '$o' ]"
-t "pond: /log/ is newest first" "[ \"\$(order $p/log)\" = '$o' ]"
-t "pond: the feed is newest first" "[ \"\$(order $p/feed)\" = '$o' ]"
-t "pond: an entry date is in a time element" "[ \"\$(grep -B1 -xF '<h2>test-$d-old</h2>' $p/log | head -n 1)\" = '<time datetime=\"2026-10-27\">2026-10-27</time>' ]"
-t "pond: an item has an RFC 822 date" "item morning | grep -qF '<pubDate>Wed, 28 Oct 2026 00:00:00 +0000</pubDate>'"
-t "pond: a removed entry is not served" "! grep -q test-$d-gone $p/json $p/log $p/feed"
-t "pond: no private field is served" "! grep -qE 'test-$d-(fun|notice)' $p/json $p/log $p/feed"
-t "pond: a title is escaped for HTML" "grep -qF '&lt;script&gt;test-$d&lt;/script&gt; &amp; co' $p/log && ! grep -qF '<script>test-' $p/log"
-t "pond: a link is escaped for HTML" "grep -qFf $p/html-link $p/log"
-t "pond: made is escaped for HTML" "grep -qFf $p/html-made $p/log"
-t "pond: a title is escaped for XML" "grep -qF '<title>&lt;script&gt;test-$d&lt;/script&gt; &amp; co</title>' $p/feed"
-t "pond: a link is escaped for XML" "grep -qFf $p/xml-link $p/feed"
-t "pond: a link that is not a web link is not a link" "grep -q test-$d-js $p/log && ! grep -q 'javascript:' $p/log"
-t "pond: a feed with a bad date is served" "item negctl | grep -q ."
-t "pond: a bad date gives no pubDate" "! item negctl | grep -q pubDate"
-t "pond: a control character is not in the feed" "! tr -d '\t\n\r' < $p/feed | LC_ALL=C grep -q '[[:cntrl:]]'"
-t "pond: /log/ uses the template" "! grep -q pond:entries $p/log && [ -z \"\$(grep -v pond:entries $tp | grep -vxFf $p/log)\" ]"
-[ -z "$tl" ] || t "pond: the entries are in place of the marker" "[ \"\$(grep -A1 -x '<main>' $p/log | sed -n 2p)\" = '<article>' ]"
-t "pond: an unknown path is not found" "head -n 1 $p/other | grep -q ' 404 ' && grep -qx 'not found' $p/other"
-t "pond: a POST to the read service is refused" "[ \"\$(post $p/empty '' /log/)\" = 405 ]"
-rm -r $p /var/www/pond/entries/test-$d-*.json $tl
-
-room() {
-	{ printf 'POST /play/neurons/room HTTP/1.0\r\nHost: teoyujie.org\r\nContent-Type: application/json\r\nContent-Length: %s\r\n\r\n' \
-		"$(wc -c < "$1" | tr -d ' ')"; cat "$1"; } |
-	openssl s_client -quiet -connect 127.0.0.1:443 -servername teoyujie.org 2>/dev/null | tr -d '\r' |
-	awk 'NR == 1 { print $2 } b { print } /^$/ { b = 1 }'
-}
-p=$(mktemp -d)
-r=$(openssl rand -hex 11)
-body() { printf '{"op":"%s","room":"%s","member":"%s","name":"test","since":-1%s}' "$2" "$r" "$3" "${4:-}" > $p/$1; }
-body create create member-a
-body poll-a poll member-a
-body poll-b poll member-b
-body view view member-a ',"view":"{\"layer\":16,\"index\":1275}"'
-body list view member-a ',"view":"[16]"'
-body note note member-a ',"neuron":"16.1275","text":"test note","base":0'
-body old note member-b ',"neuron":"16.1275","text":"old base","base":0'
-k=sk-or-v1-$(jot -b 0 -s '' 64)
-body key note member-a ',"neuron":"16.1275","text":"'$k'","base":0'
-body key-view view member-a ',"view":"{\"layer\":\"\\u0073'${k#s}'\"}"'
-body words note member-a ',"neuron":"3.7","text":"risk-or-reward","base":0'
-body gone poll member-a '' && sed -i "s/$r/0000000000000000000000/" $p/gone
-for m in c d e f; do body poll-$m poll member-$m; body leave-$m leave member-$m; done
-body leave-a leave member-a
-body leave-b leave member-b
-printf '{"op":"poll","room":"%s","member":"member-a","name":"%8193s"}' $r '' > $p/big
-t "rooms: a new room" "room $p/create | head -1 | grep -qx 200"
-t "rooms: a room is made once" "room $p/create | head -1 | grep -qx 409"
-t "rooms: a member comes in" "room $p/poll-b | grep -qF '{\"name\":\"test\"},{\"name\":\"test\",\"you\":true}'"
-t "rooms: a reply names no member id" "! room $p/poll-b | grep -q member-"
-t "rooms: a view goes to the others" "room $p/view | head -1 | grep -qx 200 && room $p/poll-b | grep -q '\"view\":\"{.\"layer.\":16'"
-t "rooms: a view that is not an object is refused" "room $p/list | head -1 | grep -qx 400"
-t "rooms: a note is saved" "room $p/note | head -1 | grep -qx 200"
-t "rooms: a note from an old version is a conflict" "room $p/old | head -1 | grep -qx 409 && room $p/poll-b | grep -qF '\"text\":\"test note\"'"
-t "rooms: an OpenRouter key is refused" "room $p/key | head -1 | grep -qx 400 && ! room $p/poll-b | grep -q sk-or-v1-"
-t "rooms: an escaped OpenRouter key in a view is refused" "room $p/key-view | head -1 | grep -qx 400"
-t "rooms: a note with risk-or-reward is saved" "room $p/words | head -1 | grep -qx 200"
-t "rooms: a body over 8192 bytes is refused" "room $p/big | head -1 | grep -qx 413"
-t "rooms: GET is refused" "[ \"\$(web 443 teoyujie.org /play/neurons/room)\" = '405 ' ]"
-t "rooms: an unknown room is not found" "room $p/gone | head -1 | grep -qx 404"
-for m in c d e; do room $p/poll-$m >/dev/null; done
-t "rooms: a sixth member is refused" "room $p/poll-f | head -1 | grep -qx 403"
-t "rooms: a member that leaves makes a place" "room $p/leave-e | head -1 | grep -qx 200 && room $p/poll-f | head -1 | grep -qx 200"
-room $p/poll-e >/dev/null
-sleep 16
-t "rooms: a member that is away for 15 s is not in the room" "room $p/poll-f | grep -qF '\"members\":[{\"name\":\"test\",\"you\":true}]'"
-for m in a b c d e f; do room $p/leave-$m >/dev/null; done
-
-fcgi() {
-	n=$(wc -c < "$2" | tr -d ' ')
-	ip=${3:-127.0.0.1}
-	{ printf '\001\001\000\001\000\010\000\000\000\001\000\000\000\000\000\000'
-		printf "\\001\\004\\000\\001\\000\\$(printf %03o $((33 + ${#ip})))\\000\\000\\016\\004REQUEST_METHODPOST\\013\\$(printf %03o ${#ip})REMOTE_ADDR%s" "$ip"
-		printf '\001\004\000\001\000\000\000\000\001\005\000\001'
-		printf "\\$(printf %03o $((n / 256)))\\$(printf %03o $((n % 256)))\\000\\000"
-		cat "$2"
-		printf '\001\005\000\001\000\000\000\000'
-	} | nc -N 127.0.0.1 $1 | tr -c '[:print:]' '\n' | sed -n 's/^Status: \([0-9]*\).*/\1/p'
-}
-/usr/local/sbin/neurons_room --port 8791 & q1=$!
-/usr/local/sbin/neurons_room --port 8792 --ttl 2 & q2=$!
-sleep 1
-t "rooms: a room ends after its time" "[ \$(fcgi 8792 $p/create) = 200 ] && sleep 3 && [ \$(fcgi 8792 $p/poll-a) = 404 ]"
-s=
-for i in 1 2 3 4 5 6 7; do body new$i create member-a; sed -i "s/$r/$(openssl rand -hex 11)/" $p/new$i; s="$s $(fcgi 8791 $p/new$i)"; done
-t "rooms: 6 new rooms in an hour from 1 address" "[ '$s' = ' 200 200 200 200 200 200 429' ]"
-s=
-for i in 1 2 3 4 5 6 7; do sed "s/$r/$(openssl rand -hex 11)/" $p/create > $p/v6; s="$s $(fcgi 8791 $p/v6 2001:db8:1:2::$i)"; done
-t "rooms: 6 new rooms in an hour from 1 IPv6 /64" "[ '$s' = ' 200 200 200 200 200 200 429' ]"
-cp $p/new1 $p/room1 && sed -i 's/"create"/"view"/; s/}$/,"view":"{}"}/' $p/room1
-s=; for i in $(jot 121); do s=$(fcgi 8791 $p/room1); [ $s = 200 ] || break; done
-t "rooms: 120 views and notes in a minute in a room" "[ $i = 121 ] && [ $s = 429 ]"
-sed 's/"view","/"poll","/; s/,"view":"{}"//' $p/room1 > $p/poll1
-s=; for i in $(jot 480); do s=$(fcgi 8791 $p/poll1); [ $s = 200 ] || break; done
-t "rooms: 600 requests in a minute from 1 address" "[ $i = 473 ] && [ $s = 429 ]"
-{ printf '\001\001\000\001\000\010\000\000'; sleep 5; } | nc -N 127.0.0.1 8792 >/dev/null & q3=$!
-sleep 1
-a=$(date +%s); fcgi 8792 $p/poll-a >/dev/null; b=$(date +%s)
-t "rooms: a slow request holds the relay for 2 s at most" "[ $((b - a)) -le 2 ]"
-kill $q1 $q2 $q3 2>/dev/null
-rm -r $p
-fi
-
-m="smtp -C -s smtp://$(ifconfig egress | awk '$1 == "inet" { print $2; exit }') -F test@example.org"
-msg='From: test@example.org\nSubject: test.sh\n\ntest\n'
-for a in contact postmaster $ALIASES; do
-	t "mail: $a@ is accepted" "printf '$msg' | $m $a@teoyujie.org 2>&1 | grep -q ' 250 '"
+for a in root "nobody-${d}"; do
+	t "mail: ${a}@ is refused" mail_to "${egress_ip}" "${a}@teoyujie.org" 'RCPT: 550'
 done
-for a in root nobody-$d; do
-	t "mail: $a@ is refused" "printf '$msg' | $m $a@teoyujie.org 2>&1 | grep -q 'RCPT: 550'"
-done
-v="smtp -C -s smtp://10.8.0.1 -F test@example.org"
-t "mail: VPN to contact@ is accepted" "printf '$msg' | $v contact@teoyujie.org 2>&1 | grep -q ' 250 '"
-t "mail: VPN to another domain is refused" "printf '$msg' | $v test@example.net 2>&1 | grep -q 'RCPT: 550'"
+t "mail: VPN to contact@ is accepted" mail_to 10.8.0.1 contact@teoyujie.org ' 250 '
+t "mail: VPN to another domain is refused" mail_to 10.8.0.1 test@example.net 'RCPT: 550'
 sleep 2
-t "mail: forwarded to the mailbox" "grep -q 'to=<$FORWARD_TO> rcpt=<contact@teoyujie.org>' /var/log/maillog"
+t "mail: forwarded to the mailbox" grep -q "to=<${FORWARD_TO:?}> rcpt=<contact@teoyujie.org>" /var/log/maillog
 
+alert_mails_exceed() {
+	count=$(grep -c 'from=<_syslogd@' /var/log/maillog)
+	[ "${count}" -gt "$1" ]
+}
 before=$(grep -c 'from=<_syslogd@' /var/log/maillog)
 logger -p auth.info -t sshd "Accepted publickey for test from 192.0.2.1 port 1 ssh2"
 sleep 2
-t "SSH alert for an unknown address" "[ \$(grep -c 'from=<_syslogd@' /var/log/maillog) -gt $before ]"
+t "SSH alert for an unknown address" alert_mails_exceed "${before}"
 p=$(mktemp -d)
-printf '#!/bin/sh\necho "$2" >> %s/sent\ncat > /dev/null\n' $p > $p/mail && chmod +x $p/mail
-for l in 'Invalid user x: Accepted y from 203.0.113.9 port 4000' \
+printf '%s\n' '#!/bin/sh' "echo \"\$2\" >> ${p}/sent" 'cat > /dev/null' > "${p}/mail"
+chmod +x "${p}/mail"
+for log_line in 'Invalid user x: Accepted y from 203.0.113.9 port 4000' \
 	'Failed password for invalid user x: Accepted y from 203.0.113.9 port 4000 ssh2' \
 	'Connection closed by invalid user x]: Accepted y from 203.0.113.9 port 4000 [preauth]' \
 	'Disconnected from invalid user x]: Accepted y from 203.0.113.9 port 4000 [preauth]' \
 	'Accepted publickey for test from 192.0.2.1 port 1 ssh2'; do
-	echo "Oct 29 12:00:00 server sshd-session[1]: $l"
-done | PATH=$p:$PATH /usr/local/sbin/ssh-alert
-t "SSH alert: a user name cannot make a false alert" "[ \"\$(cat $p/sent)\" = 'SSH login from 192.0.2.1' ]"
-rm -r $p
+	echo "Oct 29 12:00:00 server sshd-session[1]: ${log_line}"
+done | PATH="${p}:${PATH}" /usr/local/sbin/ssh-alert
+t "SSH alert: a user name cannot make a false alert" is_eq 'SSH login from 192.0.2.1' cat "${p}/sent"
+rm -r "${p}"
 
 p=$(mktemp -d)
-ssh-keygen -q -t ed25519 -N '' -f $p/key
+ssh-keygen -q -t ed25519 -N '' -f "${p}/key"
 a=/home/tunnel/.ssh/authorized_keys
-cp $a $p/keys
-echo "from=\"10.8.0.0/24,127.0.0.1\" $(cat $p/key.pub)" >> $a
-s="ssh -i $p/key -o UserKnownHostsFile=$p/known -o StrictHostKeyChecking=accept-new -o BatchMode=yes -o ExitOnForwardFailure=yes tunnel@127.0.0.1"
-tunnel() { $s "$@" </dev/null >/dev/null 2>&1 & q=$!; sleep 3; kill -9 $q 2>/dev/null; wait $q; }
-t "tunnel: a login runs no command and only waits" "tunnel touch /tmp/tunnel-$d; [ \$? = 137 ] && [ ! -e /tmp/tunnel-$d ]"
-t "tunnel: no tunnel on a public address" "tunnel -N -R 0.0.0.0:4387:127.0.0.1:80; [ \$? = 255 ]"
-t "tunnel: no tunnel on 127.0.0.1" "tunnel -N -R 127.0.0.1:4387:127.0.0.1:80; [ \$? = 255 ]"
-t "tunnel: no tunnel on another port" "tunnel -N -R 10.8.0.1:4389:127.0.0.1:80; [ \$? = 255 ]"
-t "tunnel: no connection from the server" "! $s -W 127.0.0.1:22 </dev/null 2>/dev/null | grep -q SSH-"
+cp "${a}" "${p}/keys"
+tunnel_pub=$(cat "${p}/key.pub")
+echo "from=\"10.8.0.0/24,127.0.0.1\" ${tunnel_pub}" >> "${a}"
+tunnel_up() {
+	ssh -i "${p}/key" -o UserKnownHostsFile="${p}/known" -o StrictHostKeyChecking=accept-new -o BatchMode=yes -o ExitOnForwardFailure=yes tunnel@127.0.0.1 "$@" </dev/null >/dev/null 2>&1 & q=$!
+}
+tunnel() {
+	tunnel_up "$@"
+	sleep 3
+	kill -9 "${q}" 2>/dev/null
+	wait "${q}"
+}
+tunnel_waits() {
+	tunnel touch "/tmp/tunnel-${d}"
+	status=$?
+	[ "${status}" = 137 ] && [ ! -e "/tmp/tunnel-${d}" ]
+}
+tunnel_refused() {
+	tunnel -N -R "$1"
+	status=$?
+	[ "${status}" = 255 ]
+}
+no_server_connection() {
+	! ssh -i "${p}/key" -o UserKnownHostsFile="${p}/known" -o StrictHostKeyChecking=accept-new -o BatchMode=yes -o ExitOnForwardFailure=yes tunnel@127.0.0.1 -W 127.0.0.1:22 </dev/null 2>/dev/null | grep -q SSH-
+}
+t "tunnel: a login runs no command and only waits" tunnel_waits
+t "tunnel: no tunnel on a public address" tunnel_refused 0.0.0.0:4387:127.0.0.1:80
+t "tunnel: no tunnel on 127.0.0.1" tunnel_refused 127.0.0.1:4387:127.0.0.1:80
+t "tunnel: no tunnel on another port" tunnel_refused 10.8.0.1:4389:127.0.0.1:80
+t "tunnel: no connection from the server" no_server_connection
+
 front() {
 	if [ $# -ge 4 ]; then o=$4; else o="Origin: https://$1\r\n"; fi
-	printf 'GET %s HTTP/1.1\r\nHost: %s\r\n%b%b\r\n' "${3:-/x}" $1 "$o" "$2" |
-	openssl s_client -quiet -connect 10.8.0.1:443 -servername $1 >/dev/null 2>&1 & f=$!
-	sleep 2; kill $f 2>/dev/null; wait $f
+	printf 'GET %s HTTP/1.1\r\nHost: %s\r\n%b%b\r\n' "${3:-/x}" "$1" "${o}" "$2" |
+	openssl s_client -quiet -connect 10.8.0.1:443 -servername "$1" >/dev/null 2>&1 & f=$!
+	sleep 2
+	kill "${f}" 2>/dev/null
+	wait "${f}"
 }
-fhonly() { [ -z "${KEPT_ONLY:-}" ] || return 0; "$@"; }
-apps=6; fhfwd="-R 10.8.0.1:8790:127.0.0.1:9472"
-if [ -n "${KEPT_ONLY:-}" ]; then apps=4; fhfwd=; fi
-listen() { netstat -an -p tcp | awk '$NF == "LISTEN" && $4 ~ /\.(4387|4388|8790)$/ { print $4 }' | sort | tr '\n' ' '; }
-if netstat -an -p tcp | awk '$NF == "LISTEN" { print $4 }' | grep -qE '^10\.8\.0\.1\.(4387|4388|8790)$'; then
+listen() {
+	netstat -an -p tcp | awk '$NF == "LISTEN" && $4 ~ /\.(4387|4388)$/ { print $4 }' | sort | tr '\n' ' '
+}
+real_tunnel_open() {
+	netstat -an -p tcp | awk '$NF == "LISTEN" { print $4 }' | grep -qE '^10\.8\.0\.1\.(4387|4388)$'
+}
+headers_match() {
+	with_header=$(grep -ci "^$2:" "$1")
+	requests=$(grep -c '^GET ' "$1")
+	[ "${with_header}" = "${requests}" ] && ! grep -i "^$2:" "$1" | grep -vqix "$2: $3"
+}
+desk_gets_host() {
+	headers_match "${p}/k" Host 127.0.0.1:4387 && grep -q '^GET /x' "${p}/k"
+}
+reaches_no_app() {
+	! cat "${p}/m" "${p}/k" | grep -qE '^GET /(evil|cross)' && ! grep -q evil "${p}/m" "${p}/k"
+}
+blocked_reply() {
+	(printf 'GET /x HTTP/1.1\r\nHost: mac.lavish.teoyujie.org\r\n%b\r\n' "$1"; sleep 2) |
+	openssl s_client -quiet -connect 10.8.0.1:443 -servername mac.lavish.teoyujie.org 2>/dev/null
+}
+blocked_status() {
+	blocked_reply "$1" | head -n 1 | cut -d' ' -f2
+}
+blocked_page() {
+	blocked_reply 'Origin: https://evil.example\r\n' > "${p}/blk"
+	head -n 1 "${p}/blk" | grep -q ' 403 ' && grep -q 'Mechanical Engineer' "${p}/blk"
+}
+get_count() {
+	cat "${p}/m" "${p}/k" | grep -c '^GET '
+}
+listens_only_on_vpn() {
+	echo "${l}" | grep -q 10.8.0.1 || return 1
+	others=$(echo "${l}" | tr ' ' '\n' | grep -vxE '10\.8\.0\.1\.(4387|4388)')
+	[ -z "${others}" ]
+}
+if real_tunnel_open; then
 	echo "skip the test tunnels and the tests of relayd to the apps: a real tunnel is open"
 	l=$(listen)
 else
-	nc -dlk 127.0.0.1 9471 > $p/mac & n1=$!
-	if [ -n "${KEPT_ONLY:-}" ]; then : > $p/fh; n2=; else nc -dlk 127.0.0.1 9472 > $p/fh & n2=$!; fi
-	nc -dlk 127.0.0.1 9473 > $p/desk & n3=$!
-	$s -N -R 10.8.0.1:4387:127.0.0.1:9471 -R 10.8.0.1:4388:127.0.0.1:9473 $fhfwd </dev/null >/dev/null 2>&1 & q=$!
+	nc -dlk 127.0.0.1 9471 > "${p}/mac" & n1=$!
+	nc -dlk 127.0.0.1 9473 > "${p}/desk" & n3=$!
+	tunnel_up -N -R 10.8.0.1:4387:127.0.0.1:9471 -R 10.8.0.1:4388:127.0.0.1:9473
 	sleep 3
 	l=$(listen)
 	front teoyujie.org ''
 	front mac.lavish.teoyujie.org ''
 	front desk.lavish.teoyujie.org '' /x ''
-	fhonly front fh.teoyujie.org 'Authorization: Bearer wrong\r\n' /x ''
-	fhonly front fh.teoyujie.org 'Origin: https://evil.example\r\n' /evil ''
 	front mac.lavish.teoyujie.org 'Origin: https://evil.example\r\n' /evil ''
 	front mac.lavish.teoyujie.org 'Origin: https://desk.lavish.teoyujie.org\r\n' /evil ''
-	front desk.lavish.teoyujie.org 'Origin: https://fh.teoyujie.org\r\n' /evil ''
-	fhonly front fh.teoyujie.org 'Sec-Fetch-Site: cross-site\r\n' /cross
+	front desk.lavish.teoyujie.org 'Origin: https://mac.lavish.teoyujie.org\r\n' /evil ''
 	front mac.lavish.teoyujie.org '' /plain ''
 	front desk.lavish.teoyujie.org '' /same
-	fhonly front fh.teoyujie.org '' /same
-	kill -9 $q; wait $q 2>/dev/null
-	kill $n1 $n2 $n3
-	tr -d '\r' < $p/mac > $p/m
-	tr -d '\r' < $p/desk > $p/k
-	tr -d '\r' < $p/fh > $p/f
-	t "relayd: mac.lavish.teoyujie.org goes to Lavish on the Mac with Host 127.0.0.1:4387" "[ \"\$(grep -ci '^Host:' $p/m)\" = \"\$(grep -c '^GET ' $p/m)\" ] && ! grep -i '^Host:' $p/m | grep -vqix 'Host: 127.0.0.1:4387'"
-	t "relayd: Lavish on the Mac gets Origin http://127.0.0.1:4387" "[ \"\$(grep -ci '^Origin:' $p/m)\" = \"\$(grep -c '^GET ' $p/m)\" ] && ! grep -i '^Origin:' $p/m | grep -vqix 'Origin: http://127.0.0.1:4387'"
-	t "relayd: desk.lavish.teoyujie.org goes to Lavish on the desktop with Host 127.0.0.1:4387" "[ \"\$(grep -ci '^Host:' $p/k)\" = \"\$(grep -c '^GET ' $p/k)\" ] && ! grep -i '^Host:' $p/k | grep -vqix 'Host: 127.0.0.1:4387' && grep -q '^GET /x' $p/k"
-	t "relayd: Lavish on the desktop gets Origin http://127.0.0.1:4387" "grep -qix 'Origin: http://127.0.0.1:4387' $p/k"
-	t "relayd: fh.teoyujie.org goes to femahoy with Host 127.0.0.1:8790" "[ \"\$(grep -ci '^Host:' $p/f)\" = \"\$(grep -c '^GET ' $p/f)\" ] && ! grep -i '^Host:' $p/f | grep -vqix 'Host: 127.0.0.1:8790'"
-	t "relayd: femahoy gets Origin http://127.0.0.1:8790" "[ \"\$(grep -ci '^Origin:' $p/f)\" = \"\$(grep -c '^GET ' $p/f)\" ] && ! grep -i '^Origin:' $p/f | grep -vqix 'Origin: http://127.0.0.1:8790'"
-	t "relayd: femahoy gets only the token of local.conf" "[ \"\$(grep -ci '^Authorization:' $p/f)\" = \"\$(grep -c '^GET ' $p/f)\" ] && ! grep -i '^Authorization:' $p/f | grep -vqix 'Authorization: Bearer $FH_TOKEN'"
-	t "relayd: a request with no Origin passes" "grep -q '^GET /x' $p/f"
-	t "relayd: another Origin or a cross-site request reaches no app" "! cat $p/m $p/k $p/f | grep -qE '^GET /(evil|cross)' && ! grep -q evil $p/m $p/k $p/f"
-	t "relayd: another Origin gets 403" "[ \"\$( (printf 'GET /x HTTP/1.1\r\nHost: fh.teoyujie.org\r\nOrigin: https://evil.example\r\n\r\n'; sleep 2) | openssl s_client -quiet -connect 10.8.0.1:443 -servername fh.teoyujie.org 2>/dev/null | head -n 1 | cut -d' ' -f2)\" = 403 ]"
-	t "relayd: Sec-Fetch-Site cross-site gets 403" "[ \"\$( (printf 'GET /x HTTP/1.1\r\nHost: fh.teoyujie.org\r\nSec-Fetch-Site: cross-site\r\n\r\n'; sleep 2) | openssl s_client -quiet -connect 10.8.0.1:443 -servername fh.teoyujie.org 2>/dev/null | head -n 1 | cut -d' ' -f2)\" = 403 ]"
-	t "relayd: the 403 has the style of the site error page" "(printf 'GET /x HTTP/1.1\r\nHost: fh.teoyujie.org\r\nOrigin: https://evil.example\r\n\r\n'; sleep 2) | openssl s_client -quiet -connect 10.8.0.1:443 -servername fh.teoyujie.org 2>/dev/null > $p/blk; head -n 1 $p/blk | grep -q ' 403 ' && grep -q 'Mechanical Engineer' $p/blk"
-	t "relayd: Lavish on the Mac gets a request with no Origin" "grep -q '^GET /plain' $p/m"
-	t "relayd: desk.lavish.teoyujie.org passes its own Origin" "grep -q '^GET /same' $p/k"
-	t "relayd: fh.teoyujie.org passes its own Origin" "grep -q '^GET /same' $p/f"
-	t "relayd: another name goes to no app" "[ \"\$(cat $p/m $p/k $p/f | grep -c '^GET ')\" = $apps ]"
+	kill -9 "${q}"
+	wait "${q}" 2>/dev/null
+	kill "${n1}" "${n3}"
+	tr -d '\r' < "${p}/mac" > "${p}/m"
+	tr -d '\r' < "${p}/desk" > "${p}/k"
+	t "relayd: mac.lavish.teoyujie.org goes to Lavish on the Mac with Host 127.0.0.1:4387" headers_match "${p}/m" Host 127.0.0.1:4387
+	t "relayd: Lavish on the Mac gets Origin http://127.0.0.1:4387" headers_match "${p}/m" Origin http://127.0.0.1:4387
+	t "relayd: desk.lavish.teoyujie.org goes to Lavish on the desktop with Host 127.0.0.1:4387" desk_gets_host
+	t "relayd: Lavish on the desktop gets Origin http://127.0.0.1:4387" grep -qix 'Origin: http://127.0.0.1:4387' "${p}/k"
+	t "relayd: another Origin or a cross-site request reaches no app" reaches_no_app
+	t "relayd: another Origin gets 403" is_eq 403 blocked_status 'Origin: https://evil.example\r\n'
+	t "relayd: Sec-Fetch-Site cross-site gets 403" is_eq 403 blocked_status 'Sec-Fetch-Site: cross-site\r\n'
+	t "relayd: the 403 has the style of the site error page" blocked_page
+	t "relayd: Lavish on the Mac gets a request with no Origin" grep -q '^GET /plain' "${p}/m"
+	t "relayd: desk.lavish.teoyujie.org passes its own Origin" grep -q '^GET /same' "${p}/k"
+	t "relayd: another name goes to no app" is_eq 4 get_count
 fi
-t "tunnel: the ports listen only on 10.8.0.1 (127.0.0.1.8790 is the room relay)" "echo '$l' | grep -q 10.8.0.1 && [ -z \"\$(echo $l | tr ' ' '\n' | grep -vxE '10\.8\.0\.1\.(4387|4388|8790)|127\.0\.0\.1\.8790')\" ]"
-cp $p/keys $a
-rm -r $p
-if [ -z "${KEPT_ONLY:-}" ]; then
-p=$(mktemp -d)
-ssh-keygen -q -t ed25519 -N '' -f $p/key
-a=/home/fleet/.ssh/authorized_keys
-w=/var/www/fleet
-cp $a $p/keys
-for n in mac desk; do [ ! -e $w/$n.html ] || cp -p $w/$n.html $p/$n.saved; done
-echo "from=\"10.8.0.0/24,127.0.0.1\",restrict,command=\"/usr/local/sbin/fleet-upload\" $(cat $p/key.pub)" >> $a
-s="ssh -i $p/key -o UserKnownHostsFile=$p/known -o StrictHostKeyChecking=accept-new -o BatchMode=yes fleet@127.0.0.1"
-fleet() {
-	(printf 'GET %s HTTP/1.1\r\nHost: fleet.teoyujie.org\r\n%b\r\n' "$1" "${2:-}"; sleep 2) |
-	openssl s_client -quiet -connect 10.8.0.1:443 -servername fleet.teoyujie.org 2>/dev/null | tr -d '\r'
+t "tunnel: the ports listen only on 10.8.0.1" listens_only_on_vpn
+cp "${p}/keys" "${a}"
+rm -r "${p}"
+
+pf_public_only() {
+	! pfctl -sr | grep '^pass' | grep -v '^pass out' | grep -v '^pass on wg0 ' | grep -vE '^pass in on egress .*to \(egress\) port = (22|25|80|443|51820)( |$)|^pass in on egress .*proto [a-z0-9-]*icmp'
 }
-echo "test-$d-old" > $p/old
-t "fleet: upload of mac" "$s mac < $p/old && cmp $p/old $w/mac.html"
-t "fleet: upload of desk" "echo test-$d-desk | $s desk && grep -qx test-$d-desk $w/desk.html"
-t "fleet: another name fails" "! echo x | $s index && ! echo x | $s ../x && ! echo x | $s 'mac; touch /tmp/fleet-$d' && ! echo x | $s && [ ! -e /tmp/fleet-$d ] && [ \"\$(ls -A $w | tr '\n' ' ')\" = 'desk.html index.html mac.html ' ]"
-t "fleet: a page of 1 MiB passes" "dd if=/dev/zero bs=1048576 count=1 2>/dev/null | $s mac && [ \$(wc -c < $w/mac.html) -eq 1048576 ]"
-$s mac < $p/old
-t "fleet: a page larger than 1 MiB fails, and the old page stays" "! dd if=/dev/zero bs=1048577 count=1 2>/dev/null | $s mac && cmp $p/old $w/mac.html"
-t "fleet: no connection from the server" "! $s -W 127.0.0.1:22 </dev/null 2>/dev/null | grep -q SSH-"
-{ echo test-$d-new1; sleep 5; echo test-$d-new2; } | $s mac & q=$!
-sleep 2
-t "fleet: during an upload, the old page stays complete" "cmp $p/old $w/mac.html && ls -A $w | grep -q '^\.mac\.'"
-wait $q
-printf 'test-%s-new1\ntest-%s-new2\n' $d $d > $p/new
-t "fleet: after the upload, the new page is complete and no temp file stays" "cmp $p/new $w/mac.html && ! ls -A $w | grep -q '^\.'"
-t "fleet: relayd serves the index on 10.8.0.1" "fleet / | grep -qi '<title>Fleet</title>'"
-t "fleet: relayd serves the page with its time" "fleet /mac.html > $p/got && grep -q '^Last-Modified: ' $p/got && grep -qx test-$d-new2 $p/got"
-t "fleet: httpd does not serve a temp file" "fleet /.mac.x | head -n 1 | grep -q ' 404 '"
-t "fleet: another Origin gets 403" "fleet / 'Origin: https://evil.example\r\n' | head -n 1 | grep -q ' 403 '"
-for n in mac desk; do
-	if [ -e $p/$n.saved ]; then cp -p $p/$n.saved $w/.$n.saved && mv $w/.$n.saved $w/$n.html; else rm -f $w/$n.html; fi
-done
-cp $p/keys $a
-rm -r $p
-fi
-t "pf: the internet reaches only the public services on the public addresses" "! pfctl -sr | grep '^pass' | grep -v '^pass out' | grep -v '^pass on wg0 ' | grep -vE '^pass in on egress .*to \(egress\) port = (22|25|80|443|51820)( |\$)|^pass in on egress .*proto [a-z0-9-]*icmp'"
-ip4=$(ifconfig egress | awk '$1 == "inet" { print $2; exit }')
 pub() {
 	printf 'GET %s HTTP/1.0\r\nHost: %s\r\n\r\n' "$3" "$2" |
-	if [ "$1" = 80 ]; then nc -w 3 $ip4 80; else openssl s_client -quiet -connect $ip4:443 -servername "$2"; fi 2>/dev/null | head -n 1
+	if [ "$1" = 80 ]; then nc -w 3 "${egress_ip}" 80; else openssl s_client -quiet -connect "${egress_ip}:443" -servername "$2"; fi 2>/dev/null | head -n 1
 }
-for n in mac.lavish desk.lavish fh fleet; do
-	t "private names: $n.teoyujie.org is 10.8.0.1 on the VPN" "[ \"\$(dig +short @10.8.0.1 $n.teoyujie.org A)\" = 10.8.0.1 ] && [ -z \"\$(dig +short @10.8.0.1 $n.teoyujie.org AAAA)\" ]"
-	t "private names: https://$n.teoyujie.org gives nothing on the public address" "[ -z \"\$(pub 443 $n.teoyujie.org /)\" ]"
-	t "private names: http://$n.teoyujie.org gives nothing on the public address" "[ -z \"\$(pub 80 $n.teoyujie.org /)\" ]"
-	t "private names: http://$n.teoyujie.org on the VPN goes to HTTPS" "printf 'GET /a HTTP/1.0\r\nHost: $n.teoyujie.org\r\n\r\n' | nc -w 3 10.8.0.1 80 | tr -d '\r' | grep -qx 'Location: https://$n.teoyujie.org/a'"
+vpn_resolves() {
+	a_record=$(dig +short @10.8.0.1 "$1.teoyujie.org" A)
+	aaaa_record=$(dig +short @10.8.0.1 "$1.teoyujie.org" AAAA)
+	[ "${a_record}" = 10.8.0.1 ] && [ -z "${aaaa_record}" ]
+}
+vpn_http_redirects() {
+	printf 'GET /a HTTP/1.0\r\nHost: %s.teoyujie.org\r\n\r\n' "$1" | nc -w 3 10.8.0.1 80 | tr -d '\r' | grep -qx "Location: https://$1.teoyujie.org/a"
+}
+acme_on_private_name() {
+	pub 80 mac.lavish.teoyujie.org /.well-known/acme-challenge/x | grep -q ' 404 '
+}
+wg_has_all_peers() {
+	have=$(ifconfig wg0 | grep -c wgpeer)
+	want=$(echo "${WG_PEERS:?}" | wc -w | tr -d ' ')
+	[ "${have}" -eq "${want}" ]
+}
+blocklist_loaded() {
+	[ -n "${blocked_name}" ] && dig @10.8.0.1 "${blocked_name}" | grep -q NXDOMAIN
+}
+other_names_resolve() {
+	dig +short @10.8.0.1 openbsd.org | grep -q .
+}
+t "pf: the internet reaches only the public services on the public addresses" pf_public_only
+for n in mac.lavish desk.lavish; do
+	t "private names: ${n}.teoyujie.org is 10.8.0.1 on the VPN" vpn_resolves "${n}"
+	t "private names: https://${n}.teoyujie.org gives nothing on the public address" is_eq '' pub 443 "${n}.teoyujie.org" /
+	t "private names: http://${n}.teoyujie.org gives nothing on the public address" is_eq '' pub 80 "${n}.teoyujie.org" /
+	t "private names: http://${n}.teoyujie.org on the VPN goes to HTTPS" vpn_http_redirects "${n}"
 done
-t "private names: the public address answers the ACME challenge" "pub 80 fh.teoyujie.org /.well-known/acme-challenge/x | grep -q ' 404 '"
-t "VPN: wg0 has all peers" "[ \$(ifconfig wg0 | grep -c wgpeer) -eq $(echo $WG_PEERS | wc -w) ]"
-b=$(sed -n '1s/^local-zone: "\(.*\)" always_nxdomain$/\1/p' /var/unbound/etc/blocklist.conf)
-t "DNS: blocklist loaded" "[ -n '$b' ] && dig @10.8.0.1 '$b' | grep -q NXDOMAIN"
-t "DNS: other names resolve" "dig +short @10.8.0.1 openbsd.org | grep -q ."
-t "health-check runs" "/usr/local/sbin/health-check"
+t "private names: the public address answers the ACME challenge" acme_on_private_name
+t "VPN: wg0 has all peers" wg_has_all_peers
+blocked_name=$(sed -n '1s/^local-zone: "\(.*\)" always_nxdomain$/\1/p' /var/unbound/etc/blocklist.conf)
+t "DNS: blocklist loaded" blocklist_loaded
+t "DNS: other names resolve" other_names_resolve
+t "health-check runs" /usr/local/sbin/health-check
 
-if [ $fails -eq 0 ]; then echo "all tests passed"; else echo "$fails tests failed"; exit 1; fi
+if [ "${fails}" -eq 0 ]; then echo "all tests passed"; else echo "${fails} tests failed"; exit 1; fi

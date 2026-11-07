@@ -12,7 +12,7 @@ Eval names:
 - `manual:WHY` has no eval, and says why.
 
 The golden files and the VM checks leave out what the author chose to remove (section Removed).
-`evals/keep.awk` cuts it from the golden files. The VM run is `KEPT_ONLY=1 sh test.sh`: it skips the checks that `evals/removed-checks` lists, and prints `skip` for each.
+`evals/keep.awk` cuts it from the golden files. The rewrite has none of the removed parts, so the cut changes nothing. The VM run is `sh test.sh`.
 A rewrite that has none of the removed parts passes the same evals.
 `sh evals/trace.sh` checks both ways: each id has evals that exist, and each eval is named by an id.
 
@@ -104,7 +104,7 @@ The author chose to remove these. They have no eval, and `evals/keep.awk` cuts t
 - **GONE-1** The pond save and read services and the `/log/` page. Was: `test.sh:pond`
 - **GONE-2** The room relay of the neuron explorer, `neurons_room` and its user. Was: `test.sh:rooms`
 - **GONE-3** The fleet view: the `fleet` user, `fleet-upload`, the page, and `fleet.teoyujie.org`. Was: `test.sh:fleet`
-- **GONE-4** femahoy: `fh.teoyujie.org`, `FH_TOKEN` and the token in `relayd.conf`. The fh checks of `relayd` and `private names` in `test.sh` are skipped in the kept path (`evals/removed-checks`).
+- **GONE-4** femahoy: `fh.teoyujie.org`, `FH_TOKEN` and the token in `relayd.conf`. The rewrite has no fh check in `test.sh`.
 - **GONE-5** The job that runs `site-update` each minute. The site deploys from the Mac with `deploy-only`. Was: `test.sh:site-update`
 - **GONE-6** The `services run` check of `test.sh` also asks for `slowcgi` and `neurons_room`, which go with the pond and the room. The kept path uses `vm:services-run`. Was: `test.sh:services run`
 

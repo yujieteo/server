@@ -1,0 +1,6 @@
+from rdkit.Chem import Mol
+
+def _set_prefer_coord_gen(val: bool) -> None: ...
+SetPreferCoordGen = _set_prefer_coord_gen
+def _compute2_d_coords(mol: Mol) -> int: ...
+Compute2DCoords = _compute2_d_coords

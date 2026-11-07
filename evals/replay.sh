@@ -23,7 +23,8 @@ render_call() {
 	grep -qxF "${dest}" evals/removed-paths && return 0
 	mkdir -p "${work}/raw$(dirname "${dest}")" "${work}/out$(dirname "${dest}")"
 	put_one "${src}" "${work}/raw${dest}" ${mode:+"${mode}"}
-	printf '%s\t%s\n' "${dest}" "$(mode_of "${work}/raw${dest}")" >> "${work}/modes"
+	raw_mode=$(mode_of "${work}/raw${dest}")
+	printf '%s\t%s\n' "${dest}" "${raw_mode}" >> "${work}/modes"
 	keep "${work}/raw${dest}" > "${work}/out${dest}"
 }
 
@@ -39,7 +40,8 @@ golden_mode() {
 }
 
 same_as_golden() {
-	cmp -s "${work}/out$1" "evals/golden$1" && [ "$2" = "$(golden_mode "$1")" ]
+	want=$(golden_mode "$1")
+	cmp -s "${work}/out$1" "evals/golden$1" && [ "$2" = "${want}" ]
 }
 
 compare() {

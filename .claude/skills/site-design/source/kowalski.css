@@ -1,0 +1,54 @@
+/* The Kowalski look: the tokens of emilkowal.ski (light only) and his interaction rules. Each page that
+   links this file gets them. One rule per line, with its source:
+   1. Press: scale(0.97) on :active, 150 ms ease-out (a micro-interaction is 100-150 ms). https://github.com/emilkowalski/skills/blob/a81dbca07f2217b7103e510c0f13f8d5b017afc9/skills/review-animations/STANDARDS.md#physicality
+   2. Ease-out is the strong curve cubic-bezier(0.23, 1, 0.32, 1). Never ease-in on UI. https://github.com/emilkowalski/skills/blob/a81dbca07f2217b7103e510c0f13f8d5b017afc9/skills/review-animations/STANDARDS.md#easing
+   3. UI animations stay under 300 ms. https://emilkowal.ski/ui/7-practical-animation-tips
+   4. Hover styles only under (hover: hover) and (pointer: fine): a tap leaves a fake hover. https://github.com/emilkowalski/skills/blob/a81dbca07f2217b7103e510c0f13f8d5b017afc9/skills/mobile-native/SKILL.md#1-hover-state-stuck-after-tap
+   5. Link hover colour changes are instant, with no transition. Measured on emilkowal.ski: https://emilkowal.ski/_next/static/css/747876a3d8c444e8.css
+   6. Reduced motion is fewer and gentler, not zero: keep opacity and colour, drop transform. https://github.com/emilkowalski/skills/blob/a81dbca07f2217b7103e510c0f13f8d5b017afc9/skills/emil-design-eng/SKILL.md#prefers-reduced-motion
+   7. Touch baseline: no tap highlight, no text inflation, touch-action: manipulation, user-select: none and no long-press callout on controls only. https://github.com/emilkowalski/skills/blob/a81dbca07f2217b7103e510c0f13f8d5b017afc9/skills/mobile-native/SKILL.md#baseline
+   8. Tap areas are 44 px or more (WCAG 2.5.5, not one of his files). https://www.w3.org/WAI/WCAG22/Understanding/target-size-enhanced
+   9. .button: the look of Sonner's .button, with the light gray scale of its site. The hover background and border fade
+       over 150 ms. [data-active=true] is the selected state. :focus-visible gets his layered ring at once: a keyboard action
+       has no animation. Measured on
+       https://sonner.emilkowal.ski/ and https://animations.dev/. Skills: https://github.com/emilkowalski/skills/tree/a81dbca07f2217b7103e510c0f13f8d5b017afc9
+   10. Disabled: one look for every button, opacity 0.45 and cursor not-allowed, with no hover and no press. The references use
+       disabled:opacity-50 or -60 with disabled:cursor-not-allowed and enabled:active:scale-[0.97]: https://animations.dev/ and https://aiforui.dev/ */
+@font-face { font-family: "Inter"; src: url(/fonts/inter.woff2) format("woff2"); font-weight: 100 900; font-display: swap; }
+/* Arial with the metrics of Inter, so the text does not move when Inter loads. Values from next/font. */
+@font-face { font-family: "Inter Fallback"; src: local("Arial"); size-adjust: 107.12%; ascent-override: 90.44%; descent-override: 22.52%; line-gap-override: 0%; }
+@font-face { font-family: "IBM Plex Mono"; src: url(/fonts/ibm-plex-mono.woff2) format("woff2"); font-weight: 400; font-display: swap; }
+/* Values from emilkowal.ski (light only: the site keeps html.light under a dark system setting). */
+:root { --bg: #fdfdfc; --chip: #f9f9f8; --line: #e9e9e7; --select: #e2e1de; --underline: #bcbbb5; --underline-hover: #8d8d86;
+  --muted: #63635e; --ink: #21201c; --hover: #f5f4f4; --card: #fff; --card-edge: rgba(0,0,0,.08); --shadow: 0 4px 12px rgba(0,0,0,.1); --accent: var(--muted);
+  --sans: "Inter", "Inter Fallback", Arial, sans-serif; --mono: "IBM Plex Mono", ui-monospace, monospace;
+  --text: 1rem; --small: 0.875rem; --code: 0.8125rem; --leading: 1.5; --leading-prose: 1.65; --column: 692px; --gutter: 24px; --radius: 6px;
+  --press: 0.97; --press-duration: 150ms; --tap: 44px;
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --gray1: #fcfcfc; --gray2: #f8f8f8; --gray3: #f3f3f3; --gray4: #ededed; --gray7: #dbdbdb; --fade-duration: 150ms;
+  --focus-ring: 0 0 0 1px rgba(0,0,0,.06), 0 1px 0 0 rgba(0,0,0,.08), 0 2px 2px 0 rgba(0,0,0,.04), 0 3px 3px 0 rgba(0,0,0,.02),
+    0 4px 4px 0 rgba(0,0,0,.01), 0 0 0 2px rgba(0,0,0,.15); }
+* { box-sizing: border-box; outline-color: var(--muted); }
+::selection { background: var(--select); }
+html { -webkit-text-size-adjust: 100%; -webkit-tap-highlight-color: transparent; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: var(--text)/var(--leading) var(--sans); font-feature-settings: "liga" 1, "calt" 1, "cv01", "ss03";
+  -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+a { color: inherit; text-decoration: underline 0.08em var(--underline); text-underline-position: from-font; }
+a, button, [role="button"] { touch-action: manipulation; }
+button, [role="button"] { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+/* Purpose of the press: feedback that the control took the click. */
+button, [role="button"], .press { transition: transform var(--press-duration) var(--ease-out); }
+button:enabled:active, [role="button"]:not([aria-disabled=true]):active, .press:active { transform: scale(var(--press)); }
+button:disabled { opacity: 0.45; cursor: not-allowed; }
+/* The ::after hit area is absolute: it is a layer over the control, out of the flow. */
+button, [role="button"], .tap { position: relative; }
+button::after, [role="button"]::after, .tap::after { content: ""; position: absolute; left: 50%; top: 50%;
+  width: max(100%, var(--tap)); height: max(100%, var(--tap)); transform: translate(-50%, -50%); }
+@media (hover: hover) and (pointer: fine) { a:hover { text-decoration-color: var(--underline-hover); } }
+.button { margin: 0; padding: 8px 12px; background: var(--gray1); border: 1px solid var(--gray3); border-radius: var(--radius);
+  color: var(--ink); font: 500 0.8125rem/var(--leading) var(--sans); white-space: nowrap; cursor: pointer;
+  transition: transform var(--press-duration) var(--ease-out), background-color var(--fade-duration), border-color var(--fade-duration); }
+@media (hover: hover) and (pointer: fine) { .button:not([data-active=true]):hover:not(:disabled) { background: var(--gray2); border-color: var(--gray4); } }
+.button[data-active=true] { background: var(--gray3); border-color: var(--gray7); }
+.button:focus-visible { outline: 2px solid transparent; box-shadow: var(--focus-ring); }
+@media (prefers-reduced-motion: reduce) { :root { --press: 1; } }

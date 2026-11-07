@@ -17,8 +17,10 @@ clean() {
 }
 
 mkdir "${work}/wg" "${work}/srs" "${work}/clean"
-printf 'wgkey %s=\nwgport 51820\n' "$(head -c 43 /dev/zero | tr '\0' A)" > "${work}/wg/hostname.wg0"
-printf 'srs key %s\n' "$(openssl rand -hex 32)" > "${work}/srs/srs.conf"
+wg_key=$(head -c 43 /dev/zero | tr '\0' A)
+srs_key=$(openssl rand -hex 32)
+printf 'wgkey %s=\nwgport 51820\n' "${wg_key}" > "${work}/wg/hostname.wg0"
+printf 'srs key %s\n' "${srs_key}" > "${work}/srs/srs.conf"
 printf 'wgkey KEY\n' > "${work}/clean/hostname.wg0"
 expect secrets:wireguard leaks "${work}/wg"
 expect secrets:srs leaks "${work}/srs"

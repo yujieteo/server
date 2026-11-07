@@ -1,0 +1,5 @@
+vision                     https://github.com/kunchenguid/vision 7a20c38181151ec67efdf8fa2cb03a60123a7b83 (MIT)
+site-design/source         author site repository f91dd42e194192662c0bffa95a5a77954eaeeada (REQUIREMENTS.md, public/shared/kowalski.css, public/style.css, public/fonts)
+emil skills                https://github.com/emilkowalski/skills (main c8a79627b59d72d764d6ab6f2c87c09a48169833 on 2026-11-06); copied from the author's installed skills, not re-fetched
+schematic-figure           https://github.com/lgwrightlab/schematic-figure 09d8b6e98d04b91de6e8b6632b3356b9fc237417 (MIT), copied from the author's installed skill; ported to strict TypeScript here, MIT licence in schematic-figure/LICENSE
+schematic-emil, ste100     the author's installed skills

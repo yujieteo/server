@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+set -u
+small=${HOTRUN_SMALL:-200}
+large=${HOTRUN_LARGE:-20000}
+
+count_gc() {
+  local kind=$1 n=$2 log
+  log=$(mktemp)
+  shift 2
+  case "${kind}" in
+    go) GODEBUG=gctrace=1 "$@" "${n}" > /dev/null 2> "${log}" || return 3
+      grep -c '^gc [0-9]' "${log}" || [[ "$?" -eq 1 ]] ;;
+    node) node --trace-gc "$@" "${n}" > "${log}" 2> /dev/null || return 3
+      grep -cE 'Scavenge|Mark-Compact|Mark-sweep' "${log}" || [[ "$?" -eq 1 ]] ;;
+    *) echo "hotrun: kind must be go or node" >&2; return 2 ;;
+  esac
+  local rc=$?
+  rm -f "${log}"
+  return "${rc}"
+}
+
+extreme() {
+  local pick=$1 kind=$2 n=$3 best c
+  shift 3
+  best=$(count_gc "${kind}" "${n}" "$@") || return 3
+  for _ in 2 3; do
+    c=$(count_gc "${kind}" "${n}" "$@") || return 3
+    if [[ "${pick}" = max ]] && [[ "${c}" -gt "${best}" ]]; then best=${c}; fi
+    if [[ "${pick}" = min ]] && [[ "${c}" -lt "${best}" ]]; then best=${c}; fi
+  done
+  echo "${best}"
+}
+
+main() {
+  local kind=${1:-} a b
+  [[ "$#" -ge 2 ]] || { echo "usage: bin/hotrun go|node program [args]" >&2; exit 2; }
+  shift
+  a=$(extreme max "${kind}" "${small}" "$@") || { echo "hotrun: the program failed, so nothing was proved" >&2; exit 3; }
+  b=$(extreme min "${kind}" "${large}" "$@") || { echo "hotrun: the program failed, so nothing was proved" >&2; exit 3; }
+  echo "gc cycles: at most ${a} at n=${small}, at least ${b} at n=${large} (3 runs each)"
+  if [[ "${b}" -le "${a}" ]]; then
+    echo "hotrun: the GC count did not grow with the work. This holds for this program and these inputs only. It does not prove zero GC."
+  else
+    echo "hotrun: the GC count grew with the work: the hot path allocates"
+    exit 1
+  fi
+}
+
+main "$@"
