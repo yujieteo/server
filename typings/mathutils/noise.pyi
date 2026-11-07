@@ -1,3 +1,0 @@
-from mathutils import Vector
-
-def noise(position: Vector, *, noise_basis: str = ...) -> float: ...

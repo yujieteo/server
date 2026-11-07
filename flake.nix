@@ -9,11 +9,7 @@
       devShells = each (pkgs: {
         default = pkgs.mkShell {
           packages = with pkgs; [
-            bashInteractive git jq shellcheck gnutar
-            go golangci-lint
-            bun nodejs
-            python3 ruff basedpyright
-            rustc cargo clippy rustfmt
+            bashInteractive git gnutar jq nodejs shellcheck
           ];
         };
       });
