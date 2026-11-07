@@ -3,4 +3,5 @@
 ~	*	*	*	*	acme-client teoyujie.org && rcctl reload httpd >/dev/null && rcctl restart smtpd >/dev/null
 ~	*	*	*	*	/usr/local/sbin/private-cert
 0	3	*	*	0	/usr/local/sbin/blocklist-update
+*	*	*	*	*	-s su deploy -c /usr/local/sbin/site-update
 0	4	*	*	*	find /var/www/files/f -mindepth 1 -maxdepth 1 -mtime +30 -exec rm -rf {} +

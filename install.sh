@@ -285,6 +285,7 @@ run rcctl restart sshd syslogd httpd relayd smtpd unbound >/dev/null
 if [ "${mode}" != --live ] && [ "${mode}" != --check ]; then
 	/usr/local/sbin/private-cert || echo "private-cert failed: cron tries again each hour"
 	[ -s /var/unbound/etc/blocklist.conf ] || /usr/local/sbin/blocklist-update
+	su deploy -c /usr/local/sbin/site-update || echo "site-update failed: cron tries again each minute"
 fi
 
 if [ "${mode}" = --check ]; then

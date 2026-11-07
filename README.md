@@ -48,7 +48,7 @@ On each test VM, run `sh evals/vm-isolate.sh` before any install or eval. CI doe
 4. Put that key in the WireGuard configs of the Mac and the iPhone (below). Turn on the tunnel, then test: `ssh ADMIN_USER@10.8.0.1`. If the VPN breaks, log in as ADMIN_USER with the doas password in the Vultr web console.
 5. In Gandi LiveDNS, set the records of the next section.
 6. When `dig +short teoyujie.org` shows the new address, run `ssh -t ADMIN_USER@10.8.0.1 'doas acme-client -v teoyujie.org && doas rcctl reload httpd && doas rcctl restart smtpd'`.
-7. Deploy the site from the Mac with `scripts/deploy.sh` of the site repo. The server does not fetch the site by itself.
+7. Deploy the site from the Mac with `scripts/deploy.sh` of the site repo. The server also fetches the site by itself, each minute, with `sbin/site-update`.
 8. Run `test.sh` as root on the server from a copy of the source. `apply` removes its stage when it ends.
 
 After a change, run `./apply --check ADMIN_USER@10.8.0.1` from the desktop or the Mac.
@@ -67,7 +67,7 @@ For a live install, follow [the full checkpoint and rollback plan](ROLLBACK.md).
 Then run `./apply --install CHECKPOINT_ID ADMIN_USER@10.8.0.1`.
 The id records your checkpoint receipt; the script cannot check the host backup.
 The install refuses a WireGuard config change, a missing wg0, or a pending change.
-It restarts other core services. It does not fetch a cert or a blocklist in live mode.
+It restarts other core services. The site update stays as it is. It does not fetch a cert or a blocklist in live mode.
 It leaves an unused femahoy token in local.conf alone; remove that token as a separate, approved secret edit.
 
 ## DNS records
@@ -112,7 +112,7 @@ The iPhone uses `Address = 10.8.0.3/32`. Only traffic to 10.8.0.0/24 goes throug
 
 ## Site deploys
 
-The Mac deploys the site with `scripts/deploy.sh` of the [site repo](https://github.com/yujieteo/site). It sends a tarball over SSH to the deploy user. The only command of that user is `sbin/deploy-only`. It takes `site` or `apps/NAME`, writes the files to a new folder, then renames it. Thus httpd always serves a complete site. The server does not fetch the site by itself.
+The Mac deploys the site with `scripts/deploy.sh` of the [site repo](https://github.com/yujieteo/site). It sends a tarball over SSH to the deploy user. The only command of that user is `sbin/deploy-only`. It takes `site` or `apps/NAME`, writes the files to a new folder, then renames it. Thus httpd always serves a complete site. `sbin/site-update` runs each minute from cron. It fetches a new commit of the site, deploys it the same way, and puts the old site back when a page fails.
 
 ## Private names of Lavish
 

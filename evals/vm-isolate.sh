@@ -18,3 +18,10 @@ for tab in /var/cron/tabs/*; do
 	crontab -u "${user}" "${work}/next"
 done
 rcctl start cron >/dev/null
+mkdir -p /root/eval-state /var/unbound/etc
+route add -inet 0.0.0.0/1 127.0.0.1 -reject > /dev/null
+route add -inet 128.0.0.0/1 127.0.0.1 -reject > /dev/null
+route add -inet6 ::/1 ::1 -reject > /dev/null
+route add -inet6 8000::/1 ::1 -reject > /dev/null
+echo 'local-zone: "blocked.example." always_nxdomain' > /var/unbound/etc/blocklist.conf
+: > /root/eval-state/offline

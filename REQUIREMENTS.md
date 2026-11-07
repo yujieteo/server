@@ -12,8 +12,7 @@ Eval names:
 - `manual:WHY` has no eval, and says why.
 
 The golden files and the VM checks leave out what the author chose to remove (section Removed).
-`evals/keep.awk` cuts it from the golden files. The rewrite has none of the removed parts, so the cut changes nothing. The VM run is `sh test.sh`.
-A rewrite that has none of the removed parts passes the same evals.
+`evals/keep.awk` cuts them from the golden files. The site update stays in the golden files. The VM run is `sh test.sh`.
 `sh evals/trace.sh` checks both ways: each id has evals that exist, and each eval is named by an id.
 
 ## WireGuard
@@ -77,11 +76,12 @@ A rewrite that has none of the removed parts passes the same evals.
 - **JOB-4** The blocklist updates each week. Evals: `vm:crontab` `test.sh:DNS`
 - **JOB-5** The private certificate job runs each hour. Evals: `vm:crontab`
 - **JOB-6** A service that is down is found by `rcctl`. Evals: `vm:services-run` `test.sh:configs`
+- **JOB-7** Each minute, one `site-update` run fetches the site, puts it in place and records its commit, and puts the old site back when a page fails. With no network it does nothing and exits 0. Evals: `vm:crontab` `vm:kept-site-update-restores` `vm:kept-site-update-deploys` `vm:kept-site-update-offline`
 
 ## Deploy
 
 - **DEP-1** `install.sh` is safe to run twice. A second run changes no key and no file. Evals: `vm:installed` `vm:second-install-ok` `vm:wg-second-install-quiet` `bench:second_install_seconds`
-- **DEP-2** `deploy-only` puts `site` or `apps/NAME` in place as one step, removes old files, and refuses all else. Evals: `test.sh:deploy`
+- **DEP-2** `deploy-only` puts `site` or `apps/NAME` in place as one step, removes old files, and refuses all else. It checks the name as the live script does. Evals: `test.sh:deploy` `deploy:only-accepts-site-and-apps` `deploy:only-refuses-all-else`
 - **DEP-3** `install.sh` has `mv -f` everywhere, so no question stops the run. Evals: `test.sh:install.sh`
 - **DEP-4** `apply` runs on the desktop and the Mac. Its tar pack uses no Mac-only flag. Its stage keeps public file modes but locks the stage and local.conf. The other tools run on the Mac. Evals: `deploy:default-check` `deploy:stage-modes` `manual:the other tools need the Mac and live access`
 - **DEP-5** The apply sends as few bytes as it did. `bench:apply_bytes` packs a clean copy of the repo with `pack`, as `apply` does, and counts the bytes. Evals: `bench:apply_bytes`
@@ -108,6 +108,12 @@ A rewrite that has none of the removed parts passes the same evals.
 
 - **OLD-1** An install over a host that still has the room relay, slowcgi and the fleet account switches the two services off and stops them, locks the fleet account, and moves its authorized keys to `authorized_keys.disabled`. It sets the mode of `fleet-upload` to 000. It deletes no file or stored data, and leaves WireGuard and every other service alone. A second install changes nothing more. Evals: `vm:retire-planted` `vm:retire-install-ok` `vm:retire-install-again-ok` `vm:retire-room-stopped-first` `vm:retire-room-stopped-again` `vm:retire-slowcgi-stopped-first` `vm:retire-slowcgi-stopped-again` `vm:retire-fleet-locked-first` `vm:retire-fleet-locked-again` `vm:retire-fleet-keys-off-first` `vm:retire-fleet-keys-off-again` `vm:retire-fleet-upload-off-first` `vm:retire-fleet-upload-off-again` `vm:retire-files-remain-first` `vm:retire-files-remain-again` `vm:retire-wireguard-untouched-first` `vm:retire-wireguard-untouched-again` `vm:retire-others-run-first` `vm:retire-others-run-again`
 
+## Kept on an existing host
+
+The live preview showed the first rewrite dropping the site update. The author wants it kept.
+
+- **KEEP-1** The VM journey runs with outbound IPv4 and IPv6 networking blocked and with cron isolated, so no eval reaches the internet or runs a job by itself. The check that other names resolve is skipped then. Evals: `vm:kept-outbound-blocked` `vm:kept-cron-isolated`
+
 ## Removed
 
 The author chose to remove these. They have no eval, and `evals/keep.awk` cuts them from the golden files.
@@ -115,8 +121,7 @@ The author chose to remove these. They have no eval, and `evals/keep.awk` cuts t
 - **GONE-1** The pond save and read services and the `/log/` page. Was: `test.sh:pond`
 - **GONE-2** The room relay of the neuron explorer, `neurons_room` and its user. Was: `test.sh:rooms`
 - **GONE-3** The fleet view: the `fleet` user, `fleet-upload`, the page, and `fleet.teoyujie.org`. Was: `test.sh:fleet`
-- **GONE-4** femahoy: `fh.teoyujie.org`, `FH_TOKEN` and the token in `relayd.conf`. The rewrite has no fh check in `test.sh`.
-- **GONE-5** The job that runs `site-update` each minute. The site deploys from the Mac with `deploy-only`. Was: `test.sh:site-update`
+- **GONE-4** femahoy: `fh.teoyujie.org`, `FH_TOKEN` and the token in `relayd.conf`. The rewrite has no fh check in `test.sh`. The unused token in the server `local.conf` stays as it is.
 - **GONE-6** The `services run` check of `test.sh` also asks for `slowcgi` and `neurons_room`, which go with the pond and the room. The kept path uses `vm:services-run`. Was: `test.sh:services run`
 
 ## Known failing on today's code

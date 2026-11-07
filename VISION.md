@@ -19,7 +19,6 @@ One person, the author. The server serves the site and a few app pages, forwards
 
 - It does not run the pond save and read services, the room relay of the neuron explorer, or the fleet view. They are removed.
 - It does not run femahoy. Its name and token are removed.
-- The server does not fetch the site by itself. The Mac deploys it.
 - It does not manage a second server.
 
 ## How we know it works
