@@ -76,7 +76,7 @@ The golden files and the VM checks leave out what the author chose to remove (se
 - **JOB-4** The blocklist updates each week. Evals: `vm:crontab` `test.sh:DNS`
 - **JOB-5** The private certificate job runs each hour. Evals: `vm:crontab`
 - **JOB-6** A service that is down is found by `rcctl`. This includes `slowcgi` and `neurons_room`. Evals: `vm:services-run` `test.sh:configs`
-- **JOB-7** Each minute, one `site-update` run fetches the site, puts it in place, and puts the old site back when a page fails. With no network it does nothing and exits 0. Evals: `vm:crontab` `vm:kept-site-update-restores` `vm:kept-site-update-offline`
+- **JOB-7** Each minute, one `site-update` run fetches the site, puts it in place and records its commit, and puts the old site back when a page fails. With no network it does nothing and exits 0. Evals: `vm:crontab` `vm:kept-site-update-restores` `vm:kept-site-update-deploys` `vm:kept-site-update-offline`
 
 ## Deploy
 

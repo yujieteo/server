@@ -97,23 +97,38 @@ room_works() {
 }
 
 site_stub() {
-	mkdir -p "${work}/stub/x/site-bad/public" "${work}/bin"
-	cp -R /var/www/web/site/. "${work}/stub/x/site-bad/public"
-	echo test > "${work}/stub/x/site-bad/public/site-update-test.html"
-	echo /no-such-page > "${work}/stub/x/site-bad/fixed-urls.txt"
+	rm -rf "${work}/stub"
+	mkdir -p "${work}/stub/x/site-new/public" "${work}/bin"
+	cp -R /var/www/web/site/. "${work}/stub/x/site-new/public"
+	echo test > "${work}/stub/x/site-new/public/site-update-test.html"
+	echo "$1" > "${work}/stub/x/site-new/fixed-urls.txt"
 	tar -czf "${work}/site.tgz" -C "${work}/stub/x" .
 	cp evals/fixtures/fake-ftp "${work}/bin/ftp"
 	chmod 755 "${work}/bin/ftp"
 	chmod 644 "${work}/site.tgz"
 }
 
-site_update_restores() {
-	site_stub
+run_site_update() {
 	saved=$(cat /home/deploy/site-commit 2>/dev/null)
-	commit=$(echo bad | sha1)
+	commit=$(echo "$1" | sha1)
 	out=$(su deploy -c "PATH=${work}/bin:\$PATH STUB_COMMIT=${commit} STUB_TGZ=${work}/site.tgz /usr/local/sbin/site-update" 2>&1)
+	written=$(cat /home/deploy/site-commit 2>/dev/null)
 	if [ -n "${saved}" ]; then echo "${saved}" > /home/deploy/site-commit; else rm -f /home/deploy/site-commit; fi
+}
+
+site_update_restores() {
+	site_stub /no-such-page
+	run_site_update bad
 	[ ! -e /var/www/web/site/site-update-test.html ] && echo "${out}" | grep -q 'gave 404 for /no-such-page, so the previous site is back'
+}
+
+site_update_deploys() {
+	site_stub /site-update-test.html
+	run_site_update good
+	is_eq 200 status_of /site-update-test.html && is_eq "${commit}" echo "${written}" && [ -z "${out}" ]
+	result=$?
+	rm -f /var/www/web/site/site-update-test.html
+	return "${result}"
 }
 
 site_update_offline() {
@@ -140,6 +155,7 @@ expect vm:kept-pond-refusals pond_refusals
 expect vm:kept-pond-reads pond_reads
 expect vm:kept-room room_works
 expect vm:kept-site-update-restores site_update_restores
+expect vm:kept-site-update-deploys site_update_deploys
 expect vm:kept-site-update-offline site_update_offline
 expect vm:kept-cron-isolated cron_isolated
 expect vm:kept-outbound-blocked outbound_blocked
