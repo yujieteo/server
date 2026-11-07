@@ -7,7 +7,7 @@ state=/root/eval-state
 plant() {
 	printf '%s\n' '#!/bin/sh' 'sleep 100000' > /usr/local/sbin/neurons_room
 	chmod 755 /usr/local/sbin/neurons_room
-	printf '%s\n' '#!/bin/ksh' 'daemon="/usr/local/sbin/neurons_room"' 'pexp="/bin/sh /usr/local/sbin/neurons_room"' '. /etc/rc.d/rc.subr' 'rc_bg=YES' "rc_cmd \$1" > /etc/rc.d/neurons_room
+	printf '%s\n' '#!/bin/ksh' 'daemon="/usr/local/sbin/neurons_room"' '. /etc/rc.d/rc.subr' 'pexp="/bin/sh /usr/local/sbin/neurons_room"' 'rc_bg=YES' "rc_cmd \$1" > /etc/rc.d/neurons_room
 	chmod 555 /etc/rc.d/neurons_room
 	printf '%s\n' '#!/bin/sh' 'cat > /dev/null' > /usr/local/sbin/fleet-upload
 	chmod 755 /usr/local/sbin/fleet-upload
@@ -15,6 +15,7 @@ plant() {
 	install -d -m 755 /home/fleet /home/fleet/.ssh /var/www/fleet /var/www/pond/entries
 	echo "ssh-ed25519 AAAAold fleet-test-key" > /home/fleet/.ssh/authorized_keys
 	echo "ssh-ed25519 AAAAarchive fleet-archive-key" > /home/fleet/.ssh/authorized_keys.disabled
+	echo "ssh-ed25519 AAAAarchive1 fleet-archive-one-key" > /home/fleet/.ssh/authorized_keys.disabled.1
 	echo page > /var/www/fleet/mac.html
 	echo entry > /var/www/pond/entries/one.json
 	rcctl enable slowcgi neurons_room
@@ -35,7 +36,7 @@ fleet_is_locked() {
 }
 
 keys_are_off() {
-	[ ! -e /home/fleet/.ssh/authorized_keys ] && grep -q fleet-archive-key /home/fleet/.ssh/authorized_keys.disabled && cat /home/fleet/.ssh/authorized_keys.disabled* | grep -q fleet-test-key
+	[ ! -e /home/fleet/.ssh/authorized_keys ] && grep -q fleet-archive-key /home/fleet/.ssh/authorized_keys.disabled && grep -q fleet-archive-one-key /home/fleet/.ssh/authorized_keys.disabled.1 && cat /home/fleet/.ssh/authorized_keys.disabled* | grep -q fleet-test-key
 }
 
 upload_is_off() {

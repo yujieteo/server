@@ -120,7 +120,8 @@ if id fleet >/dev/null 2>&1; then
 	usermod -p '*' -s /sbin/nologin fleet
 	keys=/home/fleet/.ssh/authorized_keys
 	archive=${keys}.disabled
-	if [ -e "${archive}" ]; then archive=${archive}.$(date +%s); fi
+	n=0
+	while [ -e "${archive}" ]; do n=$((n + 1)); archive=${keys}.disabled.${n}; done
 	if [ -e "${keys}" ]; then mv "${keys}" "${archive}"; fi
 	if [ -e /usr/local/sbin/fleet-upload ]; then chmod 000 /usr/local/sbin/fleet-upload; fi
 fi
