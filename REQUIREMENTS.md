@@ -83,15 +83,17 @@ A rewrite that has none of the removed parts passes the same evals.
 - **DEP-1** `install.sh` is safe to run twice. A second run changes no key and no file. Evals: `vm:installed` `vm:second-install-ok` `vm:wg-second-install-quiet` `bench:second_install_seconds`
 - **DEP-2** `deploy-only` puts `site` or `apps/NAME` in place as one step, removes old files, and refuses all else. Evals: `test.sh:deploy`
 - **DEP-3** `install.sh` has `mv -f` everywhere, so no question stops the run. Evals: `test.sh:install.sh`
-- **DEP-4** `apply` runs on the desktop and the Mac. Its tar pack uses no Mac-only flag. The other tools run on the Mac. Evals: `deploy:default-check` `manual:the other tools need the Mac and live access`
+- **DEP-4** `apply` runs on the desktop and the Mac. Its tar pack uses no Mac-only flag. Its stage keeps public file modes but locks the stage and local.conf. The other tools run on the Mac. Evals: `deploy:default-check` `deploy:stage-modes` `manual:the other tools need the Mac and live access`
 - **DEP-5** The apply sends as few bytes as it did. `bench:apply_bytes` packs a clean copy of the repo with `pack`, as `apply` does, and counts the bytes. Evals: `bench:apply_bytes`
 - **DEP-6** The checks fail with an error rate of 0. Evals: `bench:error_rate`
 - **DEP-7** A fresh OpenBSD 8.0 builds from `local.conf.example` with `install.sh`, and `test.sh` passes. Evals: `vm:installed` `test.sh:configs`
 
-- **DEP-8** Apply packs the full archive before SSH. It unpacks to a new, private stage. A bad pack or transfer never deletes the old server tree or runs the install. Evals: `deploy:pack-failure` `deploy:transfer-failure` `deploy:install-failure`
+- **DEP-8** Apply packs the full archive before SSH. It unpacks to a new, private stage. A bad pack or transfer never deletes the old server tree or runs the install. Evals: `deploy:pack-failure` `deploy:transfer-failure` `deploy:install-failure` `deploy:stage-validation`
 - **DEP-9** Apply checks by default. A live install needs an explicit mode and a full disk checkpoint id. The id is a receipt, not proof of a host backup. Evals: `deploy:default-check` `deploy:explicit-install` `deploy:checkpoint-required`
 - **DEP-10** Live mode checks wg0 before any file or service change. It needs the same config bytes, a running wg0, and no pending change. It never writes or restarts wg0. Evals: `vm:live-match` `vm:live-mismatch` `vm:live-pending` `vm:live-down` `vm:live-stopped` `vm:live-install-quiet`
 - **DEP-11** Rollback uses a full disk checkpoint, as set out in `ROLLBACK.md`. It restores the whole disk, not just old source. The live run must first check all disks and console access. A restore loses later writes and boots the server. Evals: `manual:the host checkpoint and console need consent and live access`
+
+- **DEP-12** Check mode prints real diffs of all rendered files and the web tree, plus mode, owner and service actions. It names private and generated file updates, with no secret dump or guess at new bytes. It changes no installed file or service. The same render calls feed the install. Evals: `vm:preview-read-only` `vm:preview-files` `vm:preview-services` `vm:preview-private` `vm:preview-generated` `vm:preview-render-failure` `vm:preview-installed`
 
 ## Secrets
 

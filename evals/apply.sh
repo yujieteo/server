@@ -16,6 +16,7 @@ cat > "${work}/bin/ssh" <<'EOF'
 set -eu
 if [ "$1" = -t ]; then shift; fi
 printf '%s\n' "$*" >> "${REMOTE}/transport"
+if [ "${BANNER:-0}" = 1 ]; then echo 'SSH login notice'; fi
 cd "${REMOTE}"
 if [ "${BREAK_TRANSFER:-0}" = 1 ]; then
 	head -c 100 > broken.tgz
@@ -26,12 +27,16 @@ fi
 EOF
 cat > "${work}/bin/doas" <<'EOF'
 printf '%s\n' "$*" >> "${REMOTE}/calls"
+. "${EVAL_LIB}"
+stage=${2%/*}
+for file in "${stage}/www/contact.gpg" "${stage}/local.conf" "${stage}"; do mode_of "${file}" || exit 1; done > "${REMOTE}/modes"
 exit "${INSTALL_STATUS:-0}"
 EOF
 chmod 755 "${work}/bin/ssh" "${work}/bin/doas"
 PATH=${work}/bin:${PATH}
 REMOTE=${work}/remote
-export PATH REMOTE
+EVAL_LIB=${ROOT}/evals/lib.sh
+export PATH REMOTE EVAL_LIB
 
 run_apply() {
 	(cd "${work}/tree" && sh ./apply "$@")
@@ -78,10 +83,24 @@ checkpoint_required() {
 	[ ! -e "${REMOTE}/transport" ]
 }
 
+stage_modes() {
+	mode=$(mode_of "${work}/tree/www/contact.gpg")
+	printf '%s\n600\n700\n' "${mode}" > "${work}/wanted-modes"
+	cmp -s "${work}/wanted-modes" "${REMOTE}/modes"
+}
+
+stage_validation() {
+	rm "${REMOTE}/calls"
+	if BANNER=1 run_apply admin@guest; then return 1; fi
+	[ ! -e "${REMOTE}/calls" ] && prior_kept
+}
+
 expect deploy:default-check check_only
+expect deploy:stage-modes stage_modes
 expect deploy:pack-failure archive_failure
 expect deploy:transfer-failure transfer_failure
 expect deploy:explicit-install explicit_install
 expect deploy:install-failure install_failure
+expect deploy:stage-validation stage_validation
 expect deploy:checkpoint-required checkpoint_required
 finish

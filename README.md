@@ -14,7 +14,7 @@ This repo is public and has no secret. The server makes its own secrets. They ar
 |---|---|
 | `install.sh` | Runs on the server as root. Makes a fresh OpenBSD 8.0 server into teoyujie.org. Safe to run again. |
 | `test.sh` | Runs on the server as root after `install.sh`. Tests the services. |
-| `apply` | Runs on the desktop or Mac. Stages a full pack, then checks WireGuard. Install needs an explicit mode and a checkpoint id. |
+| `apply` | Runs on the desktop or Mac. Stages a full pack, then shows file diffs and service actions after a WireGuard check. Install needs an explicit mode and a checkpoint id. |
 | `private-setup` | Runs on the Mac. Sets up the tunnel keys of the private names (below). |
 | `mail-alias` | Runs on the Mac. `./mail-alias add NAME` or `./mail-alias del NAME`. |
 | `share` | Runs on the Mac. `./share FILE` prints a link to FILE that works for 30 days. |
@@ -50,7 +50,13 @@ The VM evals need OpenBSD. CI runs them on a fresh OpenBSD 8.0 VM. This job runs
 8. Run `test.sh` as root on the server from a copy of the source. `apply` removes its stage when it ends.
 
 After a change, run `./apply --check ADMIN_USER@10.8.0.1` from the desktop or the Mac.
-This sends a private stage and checks WireGuard; it does not run the install.
+This sends a private stage and checks WireGuard. It then shows file diffs and service actions, not an install.
+The preview covers config, keys, scripts, web files, cron, modes and account changes.
+It hides secret values in old Authorization headers.
+It names private and generated file updates but does not invent their future bytes.
+A binary file gets a diff notice, not a text dump.
+Keep the preview private: it can show mail and key settings.
+The check still makes a private stage and the usual SSH and cron audit logs.
 A failed pack or transfer leaves the old server tree as it was.
 The stage is removed when the check or install ends.
 The old `server` folder is not the new install source.

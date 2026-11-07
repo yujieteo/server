@@ -7,13 +7,7 @@ work=$(mktemp -d) || exit 1
 cp local.conf "${work}/local.conf"
 trap 'cp "${work}/local.conf" local.conf; rm -rf "${work}"' EXIT
 
-state() {
-	find /etc /home /usr/local/sbin /var/cron -type f -exec sha256 -q {} \;
-	find /etc /home /usr/local/sbin /var/cron -exec stat -f '%N %p %u %g %m' {} \;
-	hostname
-	sysctl -n net.inet.ip.forwarding
-	rcctl ls started
-}
+. ./evals/installed-state.sh
 
 refuses_without_change() {
 	state > "${work}/before"

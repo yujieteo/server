@@ -13,7 +13,7 @@ definition=$(awk '/^put\(\) \{/,/^\}/' install.sh)
 : > "${work}/modes"
 
 put_one() {
-	sh -c "set -eu; ${definition}; put \"\$@\"" put "$@"
+	sh -c "set -eu; mode=legacy; ${definition}; put \"\$@\"" put "$@"
 }
 
 render_call() {
