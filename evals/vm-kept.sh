@@ -121,7 +121,7 @@ site_update_offline() {
 }
 
 outbound_blocked() {
-	! nc -z -w 3 1.1.1.1 443 && nc -z -w 3 127.0.0.1 443
+	! nc -z -w 3 1.1.1.1 443 && ! nc -z -w 3 2606:4700:4700::1111 443 && nc -z -w 3 127.0.0.1 443
 }
 
 cron_isolated() {

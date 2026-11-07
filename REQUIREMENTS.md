@@ -116,7 +116,7 @@ The first rewrite dropped these. The live preview showed it, and the author want
 - **KEEP-2** The room relay stays. `neurons_room` is built from `room/`, runs as `_neuronsroom` on 127.0.0.1:8790, and httpd sends `/play/neurons/room` to it. An install keeps both services on and running. Evals: `replay:etc/httpd.conf` `replay:etc/rc.d/neurons_room` `vm:kept-services-run` `vm:kept-room` `vm:retire-room-kept-first` `vm:retire-room-kept-again` `vm:retire-slowcgi-kept-first` `vm:retire-slowcgi-kept-again`
 - **KEEP-3** The preview names the build and restart of these services, and never a disable or a stop of them. Evals: `vm:preview-services`
 - **KEEP-4** The health check and the SSH alert act as the live scripts do. The live preview showed only comment and name changes in them, so they differ from the live bytes in comments only. Evals: `vm:syslog-alert-once` `test.sh:SSH alert` `test.sh:SSH alert for an unknown address` `test.sh:health-check runs`
-- **KEEP-5** The VM journey runs with outbound networking blocked and with cron isolated, so no eval reaches the internet or runs a job by itself. The check that other names resolve is skipped then. Evals: `vm:kept-outbound-blocked` `vm:kept-cron-isolated`
+- **KEEP-5** The VM journey runs with outbound IPv4 and IPv6 networking blocked and with cron isolated, so no eval reaches the internet or runs a job by itself. The check that other names resolve is skipped then. Evals: `vm:kept-outbound-blocked` `vm:kept-cron-isolated`
 
 ## Removed
 
