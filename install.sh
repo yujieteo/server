@@ -139,27 +139,6 @@ cron_file() {
 	fi
 }
 
-build_static() {
-	out=$1
-	src=$2
-	shift 2
-	run cc -O2 -static -DGS_STACK_RESERVE='(16ull<<20)' -o "${out}.new" "${src}" "$@" -lm -pthread
-	run mv -f "${out}.new" "${out}"
-}
-
-build_pond() {
-	run install -d -m 755 /var/www/pond /var/www/pond/keys
-	run install -d -o www -m 755 /var/www/pond/entries
-	build_static /var/www/cgi-bin/pond_save pond/main.c -lcrypto
-	build_static /var/www/cgi-bin/pond_read pond/pond_read.c
-}
-
-build_room() {
-	id _neuronsroom >/dev/null 2>&1 || run useradd -L daemon -c 'neurons room relay' -d /var/empty -s /sbin/nologin _neuronsroom
-	run cc -O2 -DGS_STACK_RESERVE='(16ull<<20)' -o /usr/local/sbin/neurons_room.new room/room.c -lm -pthread
-	run mv -f /usr/local/sbin/neurons_room.new /usr/local/sbin/neurons_room
-}
-
 put() {
 	case ${KNOWN_IPS-} in *[\#\&\\]*) echo "put: KNOWN_IPS must not have #, & or a backslash, because sed would write other text" >&2; exit 1 ;; *) ;; esac
 	out=$2.new
@@ -200,14 +179,12 @@ put etc/smtpd.conf /etc/mail/smtpd.conf
 put etc/unbound.conf /var/unbound/etc/unbound.conf
 put etc/pf.conf /etc/pf.conf 600
 put etc/relayd.conf /etc/relayd.conf 600
-put etc/rc.d/neurons_room /etc/rc.d/neurons_room 555
 run sysctl -q net.inet.ip.forwarding=1
 
 run install -d -o deploy -m 755 /var/www/web /var/www/web/site /var/www/web/apps
 run install -d -o "${ADMIN_USER}" -m 755 /var/www/files/f
 web_files
-build_pond
-build_room
+
 
 if [ ! -e /etc/ssl/"${d}".fullchain.pem ]; then certificate /etc/ssl/"${d}".fullchain.pem /etc/ssl/private/"${d}".key "${d}"; fi
 if [ ! -e /etc/ssl/apps.crt ]; then certificate /etc/ssl/apps.crt /etc/ssl/private/apps.key mac.lavish."${d}"; fi
@@ -280,6 +257,11 @@ run acme-client -n >/dev/null
 run relayd -n >/dev/null
 run pfctl -nf /etc/pf.conf
 run pfctl -f /etc/pf.conf
+for s in neurons_room slowcgi; do
+	[ -x /etc/rc.d/"${s}" ] || continue
+	run rcctl disable "${s}" >/dev/null
+	if rcctl check "${s}" >/dev/null 2>&1; then run rcctl stop "${s}" >/dev/null; fi
+done
 if id fleet >/dev/null 2>&1; then
 	run usermod -p '*' -s /sbin/nologin fleet
 	keys=/home/fleet/.ssh/authorized_keys
@@ -298,8 +280,8 @@ if id fleet >/dev/null 2>&1; then
 		run chmod 000 /usr/local/sbin/fleet-upload
 	fi
 fi
-run rcctl enable slowcgi neurons_room httpd relayd smtpd unbound >/dev/null
-run rcctl restart sshd syslogd slowcgi neurons_room httpd relayd smtpd unbound >/dev/null
+run rcctl enable httpd relayd smtpd unbound >/dev/null
+run rcctl restart sshd syslogd httpd relayd smtpd unbound >/dev/null
 if [ "${mode}" != --live ] && [ "${mode}" != --check ]; then
 	/usr/local/sbin/private-cert || echo "private-cert failed: cron tries again each hour"
 	[ -s /var/unbound/etc/blocklist.conf ] || /usr/local/sbin/blocklist-update

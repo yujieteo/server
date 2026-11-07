@@ -3,7 +3,6 @@
 /etc/httpd.conf	644
 /etc/mail/smtpd.conf	644
 /etc/pf.conf	600
-/etc/rc.d/neurons_room	555
 /etc/relayd.conf	600
 /etc/ssh/sshd_config	644
 /etc/sysctl.conf	644

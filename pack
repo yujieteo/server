@@ -2,4 +2,4 @@
 set -eu
 cd "$(dirname "$0")"
 export COPYFILE_DISABLE=1
-tar -czf - install.sh test.sh wg-config wg-preflight local.conf sbin etc www pond room
+tar -czf - install.sh test.sh wg-config wg-preflight local.conf sbin etc www

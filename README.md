@@ -67,7 +67,7 @@ For a live install, follow [the full checkpoint and rollback plan](ROLLBACK.md).
 Then run `./apply --install CHECKPOINT_ID ADMIN_USER@10.8.0.1`.
 The id records your checkpoint receipt; the script cannot check the host backup.
 The install refuses a WireGuard config change, a missing wg0, or a pending change.
-It restarts other core services, and builds the pond and room programs from `pond/` and `room/`. The pond, the room relay and the site update stay as they are. It does not fetch a cert or a blocklist in live mode.
+It restarts other core services. The site update stays as it is. It does not fetch a cert or a blocklist in live mode.
 It leaves an unused femahoy token in local.conf alone; remove that token as a separate, approved secret edit.
 
 ## DNS records

@@ -3,6 +3,10 @@ set -eu
 cd "$(dirname "$0")/.."
 state=/root/eval-state
 mkdir -p "${state}"
+printf '%s\n' '#!/bin/sh' 'sleep 100000' > /usr/local/sbin/neurons_room
+chmod 755 /usr/local/sbin/neurons_room
+printf '%s\n' '#!/bin/ksh' 'daemon="/usr/local/sbin/neurons_room"' '. /etc/rc.d/rc.subr' 'pexp="/bin/sh /usr/local/sbin/neurons_room"' 'rc_bg=YES' "rc_cmd \$1" > /etc/rc.d/neurons_room
+chmod 555 /etc/rc.d/neurons_room
 printf '%s\n' '#!/bin/sh' 'cat > /dev/null' > /usr/local/sbin/fleet-upload
 chmod 755 /usr/local/sbin/fleet-upload
 id fleet >/dev/null 2>&1 || useradd -d /home/fleet -s /usr/local/sbin/fleet-upload fleet
@@ -16,6 +20,8 @@ host=$(hostname)
 printf '{"host":"%s"}\n' "${host}" > /var/www/pond/entries/one.json
 cp /var/www/fleet/mac.html "${state}/fleet-page"
 cp /var/www/pond/entries/one.json "${state}/pond-entry"
+rcctl enable slowcgi neurons_room
+rcctl start slowcgi neurons_room
 find /home/fleet/.ssh -name 'authorized_keys.disabled*' -type f | sort > "${state}/fleet-archive-paths"
 while IFS= read -r archive; do sha256 "${archive}"; done < "${state}/fleet-archive-paths" > "${state}/fleet-archive-hashes"
 cp /home/fleet/.ssh/authorized_keys "${state}/fleet-key"

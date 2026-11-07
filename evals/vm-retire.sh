@@ -8,8 +8,8 @@ pieces_were_planted() {
 	rcctl check slowcgi neurons_room && id fleet && [ -s /home/fleet/.ssh/authorized_keys ]
 }
 
-is_running_and_on() {
-	rcctl check "$1" && rcctl ls on | grep -qx "$1"
+is_stopped_and_off() {
+	! rcctl check "$1" && ! rcctl ls on | grep -qx "$1"
 }
 
 fleet_is_locked() {
@@ -35,7 +35,7 @@ upload_is_off() {
 }
 
 files_remain() {
-	cmp -s /var/www/fleet/mac.html "${state}/fleet-page" && cmp -s /var/www/pond/entries/one.json "${state}/pond-entry"
+	cmp -s /var/www/fleet/mac.html "${state}/fleet-page" && cmp -s /var/www/pond/entries/one.json "${state}/pond-entry" && [ -e /etc/rc.d/neurons_room ] && [ -e /usr/local/sbin/neurons_room ]
 }
 
 wg_key_same() {
@@ -49,8 +49,8 @@ others_run() {
 }
 
 retired_first() {
-	expect vm:retire-room-kept-first is_running_and_on neurons_room
-	expect vm:retire-slowcgi-kept-first is_running_and_on slowcgi
+	expect vm:retire-room-stopped-first is_stopped_and_off neurons_room
+	expect vm:retire-slowcgi-stopped-first is_stopped_and_off slowcgi
 	expect vm:retire-fleet-locked-first fleet_is_locked
 	expect vm:retire-fleet-keys-off-first keys_are_off
 	expect vm:retire-fleet-upload-off-first upload_is_off
@@ -60,8 +60,8 @@ retired_first() {
 }
 
 retired_again() {
-	expect vm:retire-room-kept-again is_running_and_on neurons_room
-	expect vm:retire-slowcgi-kept-again is_running_and_on slowcgi
+	expect vm:retire-room-stopped-again is_stopped_and_off neurons_room
+	expect vm:retire-slowcgi-stopped-again is_stopped_and_off slowcgi
 	expect vm:retire-fleet-locked-again fleet_is_locked
 	expect vm:retire-fleet-keys-off-again keys_are_off
 	expect vm:retire-fleet-upload-off-again upload_is_off
