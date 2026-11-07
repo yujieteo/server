@@ -9,7 +9,7 @@
       devShells = each (pkgs: {
         default = pkgs.mkShell {
           packages = with pkgs; [
-            bashInteractive git gnutar jq shellcheck
+            bashInteractive git gnutar jq nodejs shellcheck
           ];
         };
       });

@@ -58,6 +58,7 @@
     "git": "Lists the files the scanner and the gate check.",
     "gnutar": "Packs the deploy payload that evals/bench.sh measures.",
     "jq": "Read by the rule scanner.",
+    "nodejs": "Runs npx for the vision skill's review board launch and poll commands.",
     "shellcheck": "Checks every shell file in the gate."
   }
 }
