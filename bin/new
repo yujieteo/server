@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+set -u
+root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+target=${1:-}
+lang=${2:-}
+
+usage() {
+  echo "usage: bin/new TARGET go|typescript|python|rust" >&2
+  exit 2
+}
+
+short_of() {
+  case "$1" in
+    go) echo go ;;
+    typescript) echo ts ;;
+    python) echo py ;;
+    rust) echo rs ;;
+    *) usage ;;
+  esac
+}
+
+copy_starter() {
+  mkdir -p "${target}"
+  local listed
+  listed=$(git -C "${root}" ls-files -co --exclude-standard)
+  while IFS= read -r f; do
+    case "${f}" in SPEC.md|EXPIRY|langs/*) continue ;; *) ;; esac
+    mkdir -p "${target}/$(dirname "${f}")"
+    cp "${root}/${f}" "${target}/${f}"
+  done <<< "${listed}"
+  [[ -d "${root}/langs/${lang}" ]] && cp -R "${root}/langs/${lang}/." "${target}/"
+  return 0
+}
+
+main() {
+  local short
+  [[ -n "${target}" ]] && [[ -n "${lang}" ]] || usage
+  short=$(short_of "${lang}")
+  [[ ! -e "${target}/rules.conf" ]] || { echo "new: ${target} already has a starter" >&2; exit 1; }
+  copy_starter
+  sed -i.bak "s/^lang=.*/lang=${short}/" "${target}/rules.conf" && rm -f "${target}/rules.conf.bak"
+  "${target}/bin/expiry" create > /dev/null
+  git -C "${target}" init -q 2> /dev/null
+  local expiry
+  expiry=$(< "${target}/EXPIRY")
+  echo "new: started ${target} for ${lang}. Expiry: ${expiry}. Run ./gate there."
+}
+
+main

@@ -1,4 +1,0 @@
-{
-  "entry": ["check/*.test.ts"],
-  "project": ["check/**/*.ts"]
-}

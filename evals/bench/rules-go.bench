@@ -1,0 +1,3 @@
+cmd="bin/rules evals/lint/fixtures/go/good.go evals/lint/fixtures/go/hot_good.hot.go"
+runs=20
+units=2

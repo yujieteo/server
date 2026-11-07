@@ -1,2 +1,4 @@
+.DS_Store
+node_modules/
 local.conf
-node_modules
+evals/model/results/

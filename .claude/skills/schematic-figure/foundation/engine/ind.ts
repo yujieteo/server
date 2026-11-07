@@ -1,0 +1,25 @@
+// Source: https://github.com/lgwrightlab/schematic-figure (MIT), foundation/engine/ind.js
+export { arcPoints, offsetPoints, portOf, userGradient } from './ind-base.ts';
+export type { Dir, Part } from './ind-base.ts';
+export { PIPE_STYLES, pipe } from './ind-pipe.ts';
+export type { PipeArrow, PipeOpts, PipeResult, PipeStyle, PipeStyleName } from './ind-pipe.ts';
+export { instrument, valve } from './ind-instr.ts';
+export type { Actuator, InstrumentDisplay, InstrumentLocation, InstrumentOpts, ValveKind, ValveOpts } from './ind-instr.ts';
+export { column, tap, vessel } from './ind-vessel.ts';
+export type { ColumnFill, ColumnOpts, ColumnResult, ColumnTap, TapOpts, TapResult, VesselOpts, VesselShape } from './ind-vessel.ts';
+export { compressor, flowLabel, inlineFilter, pump, rotaryFeeder, streamArrow } from './ind-flow.ts';
+export type { CompressorKind, CompressorOpts, FlowLabelOpts, InlineFilterOpts, PumpKind, PumpOpts, RotaryFeederOpts, StreamArrowOpts } from './ind-flow.ts';
+export { electrolyserStack, heatExchanger, plateHX, scale } from './ind-hx.ts';
+export type { CellSpan, ElectrolyserOpts, ElectrolyserResult, HeatExchangerOpts, PlateHXOpts, ScaleOpts } from './ind-hx.ts';
+export { MATERIALS, layerStack } from './ind-layer.ts';
+export type { FrameSpec, LayerGap, LayerOut, LayerSpec, LayerStackOpts, LayerStackResult } from './ind-layer.ts';
+export { badge, battery, ion, materialKey, sectionMark } from './ind-cell.ts';
+export type { BadgeOpts, BatteryOpts, IonOpts, KeyItem, MaterialKeyOpts, SectionMarkOpts } from './ind-cell.ts';
+export { fibres, packing } from './ind-pack.ts';
+export type { FibresOpts, PackingOpts, PackingResult, Point3 } from './ind-pack.ts';
+export { calloutBox, pinLabel, textOnPath } from './ind-note.ts';
+export type { CalloutBoxOpts, PinLabelOpts, TextOnPathOpts } from './ind-note.ts';
+export { bulb } from './ind-bulb.ts';
+export type { BulbOpts } from './ind-bulb.ts';
+export { flowFieldPlate, quadAt } from './ind-plate.ts';
+export type { FlowFieldPlateOpts, FlowFieldPlateResult, Quad } from './ind-plate.ts';

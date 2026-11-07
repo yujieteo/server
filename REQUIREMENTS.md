@@ -12,7 +12,7 @@ Eval names:
 - `manual:WHY` has no eval, and says why.
 
 The golden files and the VM checks leave out what the author chose to remove (section Removed).
-`evals/keep.awk` cuts it from the golden files. The VM run is `KEPT_ONLY=1 sh test.sh`: it skips the checks that `evals/removed-checks` lists, and prints `skip` for each.
+`evals/keep.awk` cuts it from the golden files. The rewrite has none of the removed parts, so the cut changes nothing. The VM run is `sh test.sh`.
 A rewrite that has none of the removed parts passes the same evals.
 `sh evals/trace.sh` checks both ways: each id has evals that exist, and each eval is named by an id.
 
@@ -97,6 +97,10 @@ A rewrite that has none of the removed parts passes the same evals.
 - **SEC-5** `put` refuses a value that sed would change. Evals: `replay:put-refuses-sed-characters` `replay:file-list`
 - **SEC-6** gitleaks finds a WireGuard key and an SRS key, in the hook and in CI. Evals: `secrets:wireguard` `secrets:srs` `secrets:clean`
 
+## Old services on an existing host
+
+- **OLD-1** An install over a host that still has the room relay, slowcgi and the fleet account switches the two services off and stops them, locks the fleet account, and moves its authorized keys to `authorized_keys.disabled`. It sets the mode of `fleet-upload` to 000. It deletes no file or stored data, and leaves WireGuard and every other service alone. A second install changes nothing more. Evals: `vm:retire-planted` `vm:retire-install-ok` `vm:retire-install-again-ok` `vm:retire-room-stopped-first` `vm:retire-room-stopped-again` `vm:retire-slowcgi-stopped-first` `vm:retire-slowcgi-stopped-again` `vm:retire-fleet-locked-first` `vm:retire-fleet-locked-again` `vm:retire-fleet-keys-off-first` `vm:retire-fleet-keys-off-again` `vm:retire-fleet-upload-off-first` `vm:retire-fleet-upload-off-again` `vm:retire-files-remain-first` `vm:retire-files-remain-again` `vm:retire-wireguard-untouched-first` `vm:retire-wireguard-untouched-again` `vm:retire-others-run-first` `vm:retire-others-run-again`
+
 ## Removed
 
 The author chose to remove these. They have no eval, and `evals/keep.awk` cuts them from the golden files.
@@ -104,7 +108,7 @@ The author chose to remove these. They have no eval, and `evals/keep.awk` cuts t
 - **GONE-1** The pond save and read services and the `/log/` page. Was: `test.sh:pond`
 - **GONE-2** The room relay of the neuron explorer, `neurons_room` and its user. Was: `test.sh:rooms`
 - **GONE-3** The fleet view: the `fleet` user, `fleet-upload`, the page, and `fleet.teoyujie.org`. Was: `test.sh:fleet`
-- **GONE-4** femahoy: `fh.teoyujie.org`, `FH_TOKEN` and the token in `relayd.conf`. The fh checks of `relayd` and `private names` in `test.sh` are skipped in the kept path (`evals/removed-checks`).
+- **GONE-4** femahoy: `fh.teoyujie.org`, `FH_TOKEN` and the token in `relayd.conf`. The rewrite has no fh check in `test.sh`.
 - **GONE-5** The job that runs `site-update` each minute. The site deploys from the Mac with `deploy-only`. Was: `test.sh:site-update`
 - **GONE-6** The `services run` check of `test.sh` also asks for `slowcgi` and `neurons_room`, which go with the pond and the room. The kept path uses `vm:services-run`. Was: `test.sh:services run`
 

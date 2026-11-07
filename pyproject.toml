@@ -1,0 +1,18 @@
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+extend-exclude = ["evals/lint", "typings"]
+
+[tool.ruff.lint]
+select = ["ALL"]
+ignore = ["D", "COM812", "ISC001", "CPY001"]
+
+[tool.basedpyright]
+typeCheckingMode = "all"
+pythonVersion = "3.12"
+failOnWarnings = true
+include = [".", "sfig"]
+stubPath = "typings"
+extraPaths = ["sfig/foundation/blender", "sfig/foundation/tools", "sfig/foundation/demo"]
+exclude = ["evals/lint", "**/node_modules", "**/.venv", "**/__pycache__"]
+reportMissingModuleSource = false

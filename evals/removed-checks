@@ -1,6 +1,0 @@
-^(pond|rooms|fleet|site-update):
-femahoy
-^private names: .*(fh|fleet)\.teoyujie\.org
-^private names: the public address answers the ACME challenge
-^relayd: (another Origin gets 403|Sec-Fetch-Site cross-site gets 403|the 403 has the style of the site error page|a request with no Origin passes|fh\.teoyujie\.org passes its own Origin)$
-^services run$

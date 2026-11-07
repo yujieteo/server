@@ -1,0 +1,3 @@
+from lxml.etree import Element
+
+def parse_xml(xml: str) -> Element: ...
