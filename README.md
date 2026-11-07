@@ -14,7 +14,7 @@ This repo is public and has no secret. The server makes its own secrets. They ar
 |---|---|
 | `install.sh` | Runs on the server as root. Makes a fresh OpenBSD 8.0 server into teoyujie.org. Safe to run again. |
 | `test.sh` | Runs on the server as root after `install.sh`. Tests the services. |
-| `apply` | Runs on the Mac. Copies this repo and `local.conf` to the server, then runs `install.sh`. |
+| `apply` | Runs on the desktop or Mac. Stages a full pack, then checks WireGuard. Install needs an explicit mode and a checkpoint id. |
 | `private-setup` | Runs on the Mac. Sets up the tunnel keys of the private names (below). |
 | `mail-alias` | Runs on the Mac. `./mail-alias add NAME` or `./mail-alias del NAME`. |
 | `share` | Runs on the Mac. `./share FILE` prints a link to FILE that works for 30 days. |
@@ -36,20 +36,31 @@ This repo is public and has no secret. The server makes its own secrets. They ar
 
 The gate runs the rules, the markdown grade, shellcheck, the evals and the benchmark check. The configs of `install.sh` must equal `evals/golden` byte for byte. A change to a config needs a change to its golden file, and the reason in `REQUIREMENTS.md`.
 
-The VM evals need OpenBSD. CI runs them on a fresh OpenBSD 8.0 VM. The desktop runner cannot start that VM, so this job runs on a GitHub runner.
+The VM evals need OpenBSD. CI runs them on a fresh OpenBSD 8.0 VM. This job runs on a GitHub runner. Local VM proof needs QEMU and KVM.
 
 ## Rebuild from zero
 
 1. At Vultr, deploy "OpenBSD 8.0" (plan vc2-1c-1gb, Singapore) with the SSH key of the Mac and the hostname `teoyujie.org`. Set the reverse DNS of the IPv4 and the IPv6 address to `teoyujie.org`.
 2. On the Mac, run `cp local.conf.example local.conf`, then put in the real values. Before the first apply, make the tunnels of the Mac and the iPhone in the WireGuard app (below). Put their public keys in `WG_PEERS`. After the first apply, SSH works only through the VPN.
-3. Run `./apply root@NEW_IPV4`. It asks for the doas password of the admin and prints the WireGuard public key of the server. After this run, root cannot log in with SSH.
+3. Run `./apply --bootstrap root@NEW_IPV4`. It asks for the doas password of the admin and prints the WireGuard public key of the server. After this run, root cannot log in with SSH.
 4. Put that key in the WireGuard configs of the Mac and the iPhone (below). Turn on the tunnel, then test: `ssh ADMIN_USER@10.8.0.1`. If the VPN breaks, log in as ADMIN_USER with the doas password in the Vultr web console.
 5. In Gandi LiveDNS, set the records of the next section.
 6. When `dig +short teoyujie.org` shows the new address, run `ssh -t ADMIN_USER@10.8.0.1 'doas acme-client -v teoyujie.org && doas rcctl reload httpd && doas rcctl restart smtpd'`.
 7. Deploy the site from the Mac with `scripts/deploy.sh` of the site repo. The server does not fetch the site by itself.
-8. Test on the server: `ssh -t ADMIN_USER@10.8.0.1 doas sh server/test.sh`.
+8. Run `test.sh` as root on the server from a copy of the source. `apply` removes its stage when it ends.
 
-After a change to this repo, run `./apply ADMIN_USER@10.8.0.1`.
+After a change, run `./apply --check ADMIN_USER@10.8.0.1` from the desktop or the Mac.
+This sends a private stage and checks WireGuard; it does not run the install.
+A failed pack or transfer leaves the old server tree as it was.
+The stage is removed when the check or install ends.
+The old `server` folder is not the new install source.
+
+For a live install, follow [the full checkpoint and rollback plan](ROLLBACK.md).
+Then run `./apply --install CHECKPOINT_ID ADMIN_USER@10.8.0.1`.
+The id records your checkpoint receipt; the script cannot check the host backup.
+The install refuses a WireGuard config change, a missing wg0, or a pending change.
+It restarts other core services. It does not fetch a cert or a blocklist in live mode.
+It leaves an unused femahoy token in local.conf alone; remove that token as a separate, approved secret edit.
 
 ## DNS records
 
@@ -74,7 +85,7 @@ Make no other record. A wildcard record blocks GnuPG key lookup with WKD. If you
 
 ## WireGuard clients
 
-In the WireGuard app, add an empty tunnel. The app makes the private key and shows the public key. Put the public key in `WG_PEERS` in `local.conf`. For the first apply, that is all. To add a device later, run `./apply ADMIN_USER@10.8.0.1` from a device that is on the VPN. If no device is on the VPN, log in to the Vultr web console. Add the key to `local.conf` in the `server` folder of the last apply, then run its `install.sh` as root.
+In the WireGuard app, add an empty tunnel. The app makes the private key and shows the public key. Put the public key in `WG_PEERS` in `local.conf`. For the first apply, that is all. Live apply will not add a peer, since that would change wg0. For a planned peer change, use the console and a plain `install.sh` run with its own consent. If no device is on the VPN, log in to the Vultr web console. Copy the source to the server, add the key to its `local.conf`, then run its `install.sh` as root.
 
 ```text
 [Interface]
@@ -114,14 +125,14 @@ Lavish uses paths from the root of the site, so each Lavish has its own name. No
 To set it up:
 
 1. In Gandi LiveDNS, add the records `mac.lavish` and `desk.lavish`. Let's Encrypt needs them to check the names.
-2. On the Mac, with the VPN on, run `./private-setup ADMIN_USER@10.8.0.1`. It makes the tunnel keys and puts the public keys in `local.conf`. Then it runs `apply`.
+2. On the Mac, with the VPN on, run `./private-setup ADMIN_USER@10.8.0.1`. It makes the tunnel keys and puts the public keys in `local.conf`. Then it runs `apply`, which now checks only. Use the live change plan to install.
 
 ## Upgrade to the next OpenBSD release (each 6 months)
 
 1. Run `ssh -t ADMIN_USER@10.8.0.1 doas sysupgrade`. It takes about 10 minutes.
-2. Run `./apply ADMIN_USER@10.8.0.1`. It writes the configs of this repo again.
-3. Run `ssh -t ADMIN_USER@10.8.0.1 doas sh server/test.sh`.
+2. Follow the live change plan above. It checks WireGuard before it writes the configs again.
+3. Run `test.sh` as root on the server from a copy of the source.
 
-After the upgrade, sysmerge mails root a list of the configs that it did not change. `apply` writes the repo version of each of them.
+After the upgrade, sysmerge mails root a list of the configs that it did not change. An explicit live install writes the repo version of each of them.
 
 Change `8.0` in this file and in `.github/workflows/ci.yml` to the new release.

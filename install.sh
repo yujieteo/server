@@ -1,6 +1,14 @@
 #!/bin/sh
 set -eu
 cd "$(dirname "$0")"
+mode=${1:-legacy}
+case ${mode} in
+--check) exec sh ./wg-preflight ;;
+--live) sh ./wg-preflight ;;
+--bootstrap) [ ! -e /etc/hostname.wg0 ] || { echo 'Use live mode on an existing server.' >&2; exit 1; } ;;
+legacy) ;;
+*) exit 2 ;;
+esac
 . ./local.conf
 d=teoyujie.org
 
@@ -70,27 +78,15 @@ for a in contact postmaster ${ALIASES-}; do echo "${a}@${d} ${FORWARD_TO-}"; don
 } > /etc/mail/aliases.new
 mv -f /etc/mail/aliases.new /etc/mail/aliases
 
-key=
-if [ -e /etc/hostname.wg0 ]; then key=$(awk '$1 == "wgkey" { print $2 }' /etc/hostname.wg0); fi
-[ -n "${key}" ] || key=$(openssl rand -base64 32)
-{
-	echo "wgkey ${key}"
-	echo "wgport 51820"
-	echo "inet 10.8.0.1/24"
-	for p in ${WG_PEERS-}; do
-		IFS=: read -r name ip pub <<-EOF
-		${p}
-		EOF
-		echo "wgpeer ${pub} wgaip ${ip}/32 wgdescr ${name}"
-	done
-	echo "up"
-} > /etc/hostname.wg0.new
-chmod 640 /etc/hostname.wg0.new
-if cmp -s /etc/hostname.wg0.new /etc/hostname.wg0 && ifconfig wg0 >/dev/null 2>&1; then
-	rm /etc/hostname.wg0.new
-elif ! ifconfig wg0 >/dev/null 2>&1; then
-	mv -f /etc/hostname.wg0.new /etc/hostname.wg0
-	sh /etc/netstart wg0
+if [ "${mode}" != --live ]; then
+	sh ./wg-config > /etc/hostname.wg0.new
+	chmod 640 /etc/hostname.wg0.new
+	if cmp -s /etc/hostname.wg0.new /etc/hostname.wg0 && ifconfig wg0 >/dev/null 2>&1; then
+		rm /etc/hostname.wg0.new
+	elif ! ifconfig wg0 >/dev/null 2>&1; then
+		mv -f /etc/hostname.wg0.new /etc/hostname.wg0
+		sh /etc/netstart wg0
+	fi
 fi
 
 grep -q ssh-alert /etc/syslog.conf || printf 'auth.info\t|/usr/local/sbin/ssh-alert\n' >> /etc/syslog.conf
@@ -127,12 +123,14 @@ if id fleet >/dev/null 2>&1; then
 fi
 rcctl enable httpd relayd smtpd unbound >/dev/null
 rcctl restart sshd syslogd httpd relayd smtpd unbound >/dev/null
-/usr/local/sbin/private-cert || echo "private-cert failed: cron tries again each hour"
-[ -s /var/unbound/etc/blocklist.conf ] || /usr/local/sbin/blocklist-update
+if [ "${mode}" != --live ]; then
+	/usr/local/sbin/private-cert || echo "private-cert failed: cron tries again each hour"
+	[ -s /var/unbound/etc/blocklist.conf ] || /usr/local/sbin/blocklist-update
+fi
 
 public_key=$(ifconfig wg0 | awk '$1 == "wgpubkey" { print $2 }')
 echo "Done. WireGuard public key of the server: ${public_key}"
-if [ -e /etc/hostname.wg0.new ]; then
+if [ "${mode}" != --live ] && [ -e /etc/hostname.wg0.new ]; then
 	echo "wg0 restarts in 2 seconds. The VPN stops for some seconds."
 	trap '' HUP
 	nohup sh -c 'sleep 2; mv -f /etc/hostname.wg0.new /etc/hostname.wg0; ifconfig wg0 destroy; sh /etc/netstart wg0' >/dev/null 2>&1 &

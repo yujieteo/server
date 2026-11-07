@@ -5,8 +5,9 @@ cd "$(dirname "$0")"
 case ${1:-}-${2:-} in
 add-?*) ALIASES="$ALIASES $2" ;;
 del-?*) ALIASES=$(echo " $ALIASES " | sed "s/ $2 / /") ;;
-*) echo "usage: ./mail-alias add|del NAME (changes the aliases in local.conf, then updates the server), for example ./mail-alias add shop" >&2; exit 1 ;;
+*) echo "usage: ./mail-alias add|del NAME (changes the aliases in local.conf, then checks the server; no install), for example ./mail-alias add shop" >&2; exit 1 ;;
 esac
 ALIASES=$(echo "$ALIASES" | tr -s ' \t' ' ' | sed 's/^ //; s/ $//')
 sed -i '' "s/^ALIASES=.*/ALIASES='$ALIASES'/" local.conf
 ./apply "$ADMIN_USER"@10.8.0.1
+echo "Aliases are set in local.conf. Follow ROLLBACK.md to install them."

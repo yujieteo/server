@@ -66,5 +66,6 @@ jobs:
             sh evals/vm.sh check
             sh evals/bench.sh vm
             sh evals/vm-retire.sh
+            sh evals/vm-live.sh
             sh evals/vm.sh wgchange
             if sh evals/vm-wkd.sh; then echo "wkd: both methods work"; else echo "wkd: known failing, see REQUIREMENTS.md WEB-8"; fi

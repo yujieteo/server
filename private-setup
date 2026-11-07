@@ -26,7 +26,7 @@ printf "TUNNEL_KEY='%s\n%s'\n" "$mac" "$desktop" >> local.conf.new
 chmod 600 local.conf.new
 mv local.conf.new local.conf
 
-echo "3. Apply to the server"
+echo "3. Check the server (no install)"
 ./apply "$host" || fail "./apply $host"
 
 echo "4. Dotfiles"
@@ -34,4 +34,4 @@ no_job_control=+m
 no_stdin=/dev/null
 zsh "$no_job_control" -ic rebuild < "$no_stdin" || fail "rebuild on the Mac (zsh -ic without $no_job_control takes the terminal and the script gets: zsh: suspended (tty output); stdin from $no_stdin keeps it from reading a later password)"
 ssh -t desktop 'zsh -ic rebuild' || fail "rebuild on the desktop"
-echo "Done. On the VPN, open https://mac.lavish.teoyujie.org and https://desk.lavish.teoyujie.org."
+echo "Keys are set in local.conf. Follow ROLLBACK.md to install them before you use the private names."
