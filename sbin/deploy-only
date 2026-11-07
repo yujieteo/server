@@ -2,7 +2,7 @@
 set -eu
 f=${SSH_ORIGINAL_COMMAND:-}
 case $f in site|apps/*) ;; *) echo "deploy: use 'site' or 'apps/NAME'" >&2; exit 1 ;; esac
-case ${f#apps/} in ""|*[!a-z0-9-]*) echo "deploy: bad name" >&2; exit 1 ;; *) ;; esac
+case $f in *[!a-z0-9/-]*|apps/*/*|apps/) echo "deploy: bad name" >&2; exit 1 ;; *) ;; esac
 cd /var/www/web
 rm -rf "$f.new" "$f.old"
 mkdir "$f.new"
