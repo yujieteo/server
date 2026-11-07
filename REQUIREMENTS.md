@@ -97,6 +97,10 @@ A rewrite that has none of the removed parts passes the same evals.
 - **SEC-5** `put` refuses a value that sed would change. Evals: `replay:put-refuses-sed-characters` `replay:file-list`
 - **SEC-6** gitleaks finds a WireGuard key and an SRS key, in the hook and in CI. Evals: `secrets:wireguard` `secrets:srs` `secrets:clean`
 
+## Old services on an existing host
+
+- **OLD-1** An install over a host that still has the room relay, slowcgi and the fleet account switches the two services off and stops them, locks the fleet account, and moves its authorized keys to `authorized_keys.disabled`. It sets the mode of `fleet-upload` to 000. It deletes no file or stored data, and leaves WireGuard and every other service alone. A second install changes nothing more. Evals: `vm:retire-planted` `vm:retire-install-ok` `vm:retire-install-again-ok` `vm:retire-room-stopped-first` `vm:retire-room-stopped-again` `vm:retire-slowcgi-stopped-first` `vm:retire-slowcgi-stopped-again` `vm:retire-fleet-locked-first` `vm:retire-fleet-locked-again` `vm:retire-fleet-keys-off-first` `vm:retire-fleet-keys-off-again` `vm:retire-fleet-upload-off-first` `vm:retire-fleet-upload-off-again` `vm:retire-files-remain-first` `vm:retire-files-remain-again` `vm:retire-wireguard-untouched-first` `vm:retire-wireguard-untouched-again` `vm:retire-others-run-first` `vm:retire-others-run-again`
+
 ## Removed
 
 The author chose to remove these. They have no eval, and `evals/keep.awk` cuts them from the golden files.

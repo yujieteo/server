@@ -111,6 +111,16 @@ acme-client -n >/dev/null
 relayd -n >/dev/null
 pfctl -nf /etc/pf.conf
 pfctl -f /etc/pf.conf
+for s in neurons_room slowcgi; do
+	[ -x /etc/rc.d/"${s}" ] || continue
+	rcctl disable "${s}" >/dev/null
+	if rcctl check "${s}" >/dev/null 2>&1; then rcctl stop "${s}" >/dev/null; fi
+done
+if id fleet >/dev/null 2>&1; then
+	usermod -p '*' -s /sbin/nologin fleet
+	if [ -e /home/fleet/.ssh/authorized_keys ]; then mv -f /home/fleet/.ssh/authorized_keys /home/fleet/.ssh/authorized_keys.disabled; fi
+	if [ -e /usr/local/sbin/fleet-upload ]; then chmod 000 /usr/local/sbin/fleet-upload; fi
+fi
 rcctl enable httpd relayd smtpd unbound >/dev/null
 rcctl restart sshd syslogd httpd relayd smtpd unbound >/dev/null
 /usr/local/sbin/private-cert || echo "private-cert failed: cron tries again each hour"
