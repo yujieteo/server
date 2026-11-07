@@ -46,13 +46,23 @@ plant() {
 
 files() {
 	{
-		cut -f1 evals/golden/modes.tsv
+		cut -f1 evals/golden/modes.tsv || return 1
 		for f in sbin/*; do echo /usr/local/sbin/"${f#sbin/}"; done
-		find www -type f | sed 's#^www/#/var/www/htdocs/server/#'
+		find www -type f > "${work}/web-paths" || return 1
+		sed 's#^www/#/var/www/htdocs/server/#' "${work}/web-paths"
 		printf '/home/%s/.ssh/authorized_keys\n' "${ADMIN_USER}" deploy tunnel
 		printf '%s\n' /etc/myname /etc/mail/virtual /etc/mail/aliases /etc/syslog.conf /var/cron/tabs/root /var/unbound/etc/blocklist.conf
 	} > "${work}/paths"
-	while IFS= read -r path; do grep -qxF "File: ${path}" "${work}/preview" || return 1; done < "${work}/paths"
+	while IFS= read -r path; do
+		count=$(grep -xcF "File: ${path}" "${work}/preview")
+		[ "${count}" -eq 1 ] || return 1
+		case ${path} in
+		/var/www/htdocs/server/*)
+			count=$(awk -v path="${path}" '$1 == "---" && $2 == path { n++ } END { print n + 0 }' "${work}/preview")
+			[ "${count}" -le 1 ] || return 1 ;;
+		*) ;;
+		esac
+	done < "${work}/paths"
 	grep -q '^@@' "${work}/preview" && grep -q 'old-security.txt' "${work}/preview" &&
 		grep -q 'replace, mode 755' "${work}/preview"
 }

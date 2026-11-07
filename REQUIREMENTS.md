@@ -93,7 +93,7 @@ A rewrite that has none of the removed parts passes the same evals.
 - **DEP-10** Live mode checks wg0 before any file or service change. It needs the same config bytes, a running wg0, and no pending change. It never writes or restarts wg0. Evals: `vm:live-match` `vm:live-mismatch` `vm:live-pending` `vm:live-down` `vm:live-stopped` `vm:live-install-quiet`
 - **DEP-11** Rollback uses a full disk checkpoint, as set out in `ROLLBACK.md`. It restores the whole disk, not just old source. The live run must first check all disks and console access. A restore loses later writes and boots the server. Evals: `manual:the host checkpoint and console need consent and live access`
 
-- **DEP-12** Check mode prints real diffs of all rendered files and the web tree, plus mode, owner and service actions. It names private and generated file updates, with no secret dump or guess at new bytes. It changes no installed file or service. The same render calls feed the install. Evals: `vm:preview-read-only` `vm:preview-files` `vm:preview-services` `vm:preview-private` `vm:preview-generated` `vm:preview-render-failure` `vm:preview-installed`
+- **DEP-12** Check mode prints real diffs of all rendered files and the web tree, plus mode, owner and service actions. It names private and generated file updates, with no secret dump or guess at new bytes. It changes no installed file or service. The same render calls feed the install. Each file diff prints once. Evals: `vm:preview-read-only` `vm:preview-files` `vm:preview-services` `vm:preview-private` `vm:preview-generated` `vm:preview-render-failure` `vm:preview-installed`
 
 ## Secrets
 

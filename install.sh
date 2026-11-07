@@ -22,7 +22,7 @@ if [ "${mode}" = --check ]; then
 fi
 
 metadata() {
-	stat -c '%a %U:%G' "$1" 2>/dev/null || stat -f '%Lp %Su:%Sg' "$1"
+	stat -f '%Lp %Su:%Sg' "$1"
 }
 
 visible() {
@@ -119,10 +119,6 @@ tree_preview() {
 		fi
 	done < "${work}/tree-list"
 	removed_paths "$1" "$2"
-	printf 'Tree diff: %s -> %s\n' "$2" "$1"
-	before=$2
-	if [ ! -d "${before}" ]; then mkdir -p "${work}/empty"; before=${work}/empty; fi
-	diff -ruN "${before}" "$1" || [ "$?" -eq 1 ]
 }
 
 web_files() {

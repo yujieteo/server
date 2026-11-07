@@ -54,6 +54,7 @@
     "evals/replay.sh": "Compares the real configs with the golden files.",
     "evals/secrets-detect.sh": "Checks that secret scanning finds the WireGuard and SRS keys.",
     "evals/trace.sh": "Checks that ids are unique and each has an eval.",
+    "evals/vm-isolate.sh": "Makes all scheduled VM jobs no-ops before any install or eval, with the real cron service kept.",
     "evals/vm-live.sh": "Proves early WireGuard refusal and a live install with no WireGuard restart.",
     "evals/vm-preview.sh": "Checks all preview file classes, read-only state, services, redaction and render errors.",
     "evals/vm-retire.sh": "Checks old access is retired, files stay and WireGuard is intact.",

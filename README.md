@@ -38,6 +38,8 @@ The gate runs the rules, the markdown grade, shellcheck, the evals and the bench
 
 The VM evals need OpenBSD. CI runs them on a fresh OpenBSD 8.0 VM. This job runs on a GitHub runner. Local VM proof needs QEMU and KVM.
 
+On each test VM, run `sh evals/vm-isolate.sh` before any install or eval. CI does this first. It keeps cron up but sets each job's shell to `/usr/bin/true`, so no scheduled job runs. This setting stays outside the managed block when the install writes root's crontab. Use a fresh test disk and block outbound VM traffic for local proof. Never boot a disk kept for an audit.
+
 ## Rebuild from zero
 
 1. At Vultr, deploy "OpenBSD 8.0" (plan vc2-1c-1gb, Singapore) with the SSH key of the Mac and the hostname `teoyujie.org`. Set the reverse DNS of the IPv4 and the IPv6 address to `teoyujie.org`.
