@@ -1,2 +1,0 @@
-class TextFrame:
-    text: str

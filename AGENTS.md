@@ -8,8 +8,7 @@ This repository is the config of the teoyujie.org server (OpenBSD). Read `VISION
 4. No comments. Make the code say it. Allowed: a shebang, a source credit, a build directive.
 5. No function values, no callbacks. Max 350 lines a file, 35 lines a function.
 6. No native tests. Tests are evals in `evals/`.
-7. Hot code goes in `.hot.go`, `.hot.ts` or `.hot.rs`. It must not allocate. Python has no hot files.
-8. Prove a change with the `prove-change` skill. Model evals cost money: run them only when the author asks.
-9. Markdown must grade under 4.0. Use short words.
-10. `EXPIRY` is a date three months out. A late date only warns. Rethink the playbook, or rebuild.
-11. Design work uses the `site-design` skill and the Emil Kowalski skills.
+7. Prove a change with the `prove-change` skill. Never run a paid model eval unless the author asks.
+8. Markdown must grade under 4.0. Use short words.
+9. `EXPIRY` is a date three months out. A late date only warns. Rethink the playbook, or rebuild.
+10. `project.needs.json` lists each skill, eval and tool this project keeps, with a reason. Declare a need there before you add one.

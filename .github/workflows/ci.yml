@@ -28,9 +28,9 @@ jobs:
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
         with:
           fetch-depth: 0
-      - name: the runner has xz for the Nix installer and /usr/bin/time for bin/bench, and the log says what else it has
+      - name: the runner has xz for the Nix installer and /usr/bin/time for evals/bench.sh, and the log says what else it has
         run: |
-          for tool in sudo apt-get xz /usr/bin/time curl tar python3 node; do printf '%s: %s\n' "$tool" "$(command -v "$tool" || echo missing)"; done
+          for tool in sudo apt-get xz /usr/bin/time curl tar; do printf '%s: %s\n' "$tool" "$(command -v "$tool" || echo missing)"; done
           sudo -n apt-get update -qq
           sudo -n apt-get install -y -qq xz-utils time
       - name: cachix/install-nix-action v31.8.4 (single user, no KVM; the desktop runner has no systemd)

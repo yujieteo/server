@@ -1,6 +1,6 @@
 ---
 name: prove-change
-description: Prove or disprove a code change with benchmarks, replay, A/B runs and model evals. Use after any change, and before you say a change is better.
+description: Prove or disprove a server change with the gate, config replay, the local benchmark and the OpenBSD VM checks. Use after any change, and before you say a change is better.
 user-invocable: true
 ---
 
@@ -8,18 +8,13 @@ user-invocable: true
 
 A claim that a change is better needs a number. Get the number first.
 
-Run these, cheapest first. The first four cost nothing but time.
+Run these, cheapest first. All of them cost nothing but time.
 
-1. `./gate` runs every rule, the lint evals and the intent evals.
-2. `bin/replay` runs the same inputs through the old code and the new code. It fails if an output changes. If the change is on purpose, read the diff, then run `bin/replay --accept`.
-3. `bin/bench NAME` measures latency, throughput, memory, bytes out and error rate. The spec is `evals/bench/NAME.bench`.
-4. `bin/ab NAME BASE_REF` runs the old and the new code in turns, then says better, worse or no difference.
-5. Model evals spend the author's plan allowance. Run them only when the author asks.
-   - `bin/modeleval plan` shows what would run and spends nothing.
-   - `bin/modeleval ab BASE_REF --captain-requested` compares tokens and correctness of the old and the new code.
+1. `./gate` runs the rules, the markdown grade, shellcheck, the evals and the context size check.
+2. `sh evals/replay.sh` runs the configs of `install.sh` and compares them with `evals/golden`. It fails if an output changes. If the change is on purpose, read the diff, change the golden file, and give the reason in `REQUIREMENTS.md`.
+3. `sh evals/bench.sh local` measures the deploy bytes against the limits in `evals/baseline.tsv`.
+4. The OpenBSD VM checks (`evals/vm.sh`, `evals/vm-retire.sh`, `evals/vm-wkd.sh`) run in CI on a fresh OpenBSD 8.0 VM. Read the `rebuild` job.
 
-For a hot file, also run `bin/hotescape` for Go and `bin/hotrun` for Go and TypeScript.
-Say only what the output proves. A run with no GC does not prove zero GC.
-
-If a benchmark you need does not exist, add one in `evals/bench`.
+Never run a paid model eval unless the author asks.
+Say only what the output proves.
 Tests are evals. Do not add native test files.

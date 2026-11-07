@@ -23,6 +23,7 @@ This repo is public and has no secret. The server makes its own secrets. They ar
 | `sbin/` | The jobs: health-check, ssh-alert, blocklist-update and private-cert. deploy-only is the forced command of the deploy user. tunnel-wait is the login shell of the tunnel user. |
 | `www/` | Files on the web: security.txt, the GPG key with WKD, the MTA-STS policy, and the error page. |
 | `gate`, `rules.conf`, `bin/` | The local check. Run `nix develop`, then `./gate`. |
+| `project.needs.json` | The skills, evals and tools this project keeps, each with a reason. `evals/intent/needs-consistency.sh` checks it matches the repo. |
 | `EXPIRY` | The date this project ends unless you renew it. |
 | `evals/` | The evals of `REQUIREMENTS.md`: the config replay against `evals/golden`, the checks of the OpenBSD VM, and the benchmark baselines. `sh evals/trace.sh` checks that each id has an eval. |
 | `.githooks/pre-commit`, `.gitleaks.toml` | gitleaks stops a commit that has a secret in it. Turn on the hook once in each clone: `git config core.hooksPath .githooks`. |

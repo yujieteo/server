@@ -1,2 +1,0 @@
-prompt_file=commands.prompt
-check="grep -q './gate'"
