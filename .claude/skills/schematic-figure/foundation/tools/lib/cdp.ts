@@ -3,9 +3,9 @@ import { spawn } from 'node:child_process';
 import type { ChildProcess } from 'node:child_process';
 import { createServer } from 'node:http';
 import type { IncomingMessage, Server, ServerResponse } from 'node:http';
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, extname, join, normalize, relative, resolve, sep } from 'node:path';
+import { dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { once } from 'node:events';
 import { setInterval as every } from 'node:timers/promises';
 import { asNumber, asString, describeError, field, isRecord } from './guards.ts';
@@ -57,14 +57,16 @@ interface Routes {
 
 let routes: Routes = { root: '', proj: null, bundle: null };
 
+function outside(base: string, f: string): boolean { return /^\.\.($|[\\/])/.test(relative(base, f)) || isAbsolute(relative(base, f)); }
+function contained(base: string, rel: string): string | null {
+  const f = resolve(base, `.${sep}${rel}`);
+  return outside(base, f) || (existsSync(f) && outside(realpathSync(base), realpathSync(f))) ? null : f;
+}
+
 function resolveFile(u: string): string | null {
-  if (u.startsWith(BUNDLE_URL)) return join(routes.bundle?.dir ?? '', u.slice(BUNDLE_URL.length));
-  let base = routes.root;
-  const proj = routes.proj;
-  const foundationOnly = u.startsWith('/engine/') || u.startsWith('/fonts/');
-  if (proj !== null && !foundationOnly && existsSync(normalize(join(proj, u)))) base = proj;
-  const f = normalize(join(base, u));
-  return f.startsWith(base) ? f : null;
+  if (u.startsWith(BUNDLE_URL)) return routes.bundle === null ? null : contained(routes.bundle.dir, u.slice(BUNDLE_URL.length));
+  const inProj = routes.proj === null || u.startsWith('/engine/') || u.startsWith('/fonts/') ? null : contained(routes.proj, u);
+  return contained(inProj !== null && existsSync(inProj) ? (routes.proj ?? '') : routes.root, u);
 }
 
 function handle(req: IncomingMessage, res: ServerResponse): void {
