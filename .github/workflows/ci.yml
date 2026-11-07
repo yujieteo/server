@@ -67,6 +67,7 @@ jobs:
             sh evals/vm.sh check
             sh evals/bench.sh vm
             sh evals/vm-retire.sh
+            sh evals/vm-kept.sh
             sh evals/vm-live.sh
             sh evals/vm-preview.sh
             sh evals/vm.sh wgchange

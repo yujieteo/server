@@ -6,7 +6,7 @@ The config of the teoyujie.org server, kept as code. One run of `install.sh` tur
 
 ## Who it is for
 
-One person, the author. The server serves the site and a few app pages, forwards mail, and is a VPN with an ad blocker.
+One person, the author. The server serves the site and a few app pages, saves and reads the pond, relays the neuron rooms, forwards mail, and is a VPN with an ad blocker.
 
 ## What matters most
 
@@ -17,9 +17,8 @@ One person, the author. The server serves the site and a few app pages, forwards
 
 ## What it does not do
 
-- It does not run the pond save and read services, the room relay of the neuron explorer, or the fleet view. They are removed.
+- It does not run the fleet view. It is removed.
 - It does not run femahoy. Its name and token are removed.
-- The server does not fetch the site by itself. The Mac deploys it.
 - It does not manage a second server.
 
 ## How we know it works

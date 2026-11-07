@@ -6,10 +6,10 @@ function clean(line) {
 }
 function removed(line) {
 	if (line ~ /(^|[^A-Za-z0-9])(fh|fleet)([^A-Za-z0-9]|$)/) return 1
-	return line ~ /8790|FH_TOKEN|site-update|neurons_room|pond|\/play\/neurons/
+	return line ~ /FH_TOKEN/
 }
 function block_start(line) {
-	return line ~ /^[ \t]*(server "fleet\.|location "\/(pond|log)|location "\/play\/neurons)/
+	return line ~ /^[ \t]*server "fleet\./
 }
 skip {
 	opens = gsub(/\{/, "{", $0)

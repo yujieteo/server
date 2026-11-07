@@ -68,15 +68,13 @@ files() {
 }
 
 services() {
-	grep -qxF 'Action: rcctl restart sshd syslogd httpd relayd smtpd unbound' "${work}/preview" || return 1
+	grep -qxF 'Action: rcctl restart sshd syslogd slowcgi neurons_room httpd relayd smtpd unbound' "${work}/preview" || return 1
+	grep -qxF 'Action: rcctl enable slowcgi neurons_room httpd relayd smtpd unbound' "${work}/preview" || return 1
+	grep -qxF 'Action: mv -f /usr/local/sbin/neurons_room.new /usr/local/sbin/neurons_room' "${work}/preview" || return 1
+	grep -qxF 'Action: mv -f /var/www/cgi-bin/pond_save.new /var/www/cgi-bin/pond_save' "${work}/preview" || return 1
 	grep -qxF 'Action: pfctl -f /etc/pf.conf' "${work}/preview" || return 1
 	grep -qxF 'Action: unbound-anchor' "${work}/preview" || return 1
-	for service in neurons_room slowcgi; do
-		if [ -x /etc/rc.d/"${service}" ]; then
-			grep -qxF "Action: rcctl disable ${service}" "${work}/preview" || return 1
-			if rcctl check "${service}" >/dev/null 2>&1; then grep -qxF "Action: rcctl stop ${service}" "${work}/preview" || return 1; fi
-		fi
-	done
+	! grep -qE '^Action: rcctl (disable|stop) (slowcgi|neurons_room)' "${work}/preview"
 }
 
 private_values() {

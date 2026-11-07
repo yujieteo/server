@@ -1,0 +1,2 @@
+#!/bin/sh
+case $3 in *info/refs*) printf '003d%s refs/heads/main\n' "${STUB_COMMIT}" ;; *) cp "${STUB_TGZ}" "$2" ;; esac

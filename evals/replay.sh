@@ -20,7 +20,6 @@ render_call() {
 	src=$1
 	dest=$2
 	mode=${3:-}
-	grep -qxF "${dest}" evals/removed-paths && return 0
 	mkdir -p "${work}/raw$(dirname "${dest}")" "${work}/out$(dirname "${dest}")"
 	put_one "${src}" "${work}/raw${dest}" ${mode:+"${mode}"}
 	raw_mode=$(mode_of "${work}/raw${dest}")

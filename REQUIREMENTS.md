@@ -11,9 +11,8 @@ Eval names:
 - `conf:NAME`, `secrets:NAME`, `wkd:NAME` and `bench:NAME` are in `evals/conf-keys.sh`, `evals/secrets-detect.sh`, `evals/vm-wkd.sh` and `evals/bench.sh`.
 - `manual:WHY` has no eval, and says why.
 
-The golden files and the VM checks leave out what the author chose to remove (section Removed).
-`evals/keep.awk` cuts it from the golden files. The rewrite has none of the removed parts, so the cut changes nothing. The VM run is `sh test.sh`.
-A rewrite that has none of the removed parts passes the same evals.
+The golden files and the VM checks leave out what the author chose to remove (section Removed): the fleet view and femahoy.
+`evals/keep.awk` cuts only those from the golden files. The pond, the room relay and the site update stay in the golden files. The VM run is `sh test.sh`.
 `sh evals/trace.sh` checks both ways: each id has evals that exist, and each eval is named by an id.
 
 ## WireGuard
@@ -76,12 +75,13 @@ A rewrite that has none of the removed parts passes the same evals.
 - **JOB-3** health-check runs each day and mails what it finds. Evals: `vm:crontab` `test.sh:health-check runs` `test.sh:jobs in crontab`
 - **JOB-4** The blocklist updates each week. Evals: `vm:crontab` `test.sh:DNS`
 - **JOB-5** The private certificate job runs each hour. Evals: `vm:crontab`
-- **JOB-6** A service that is down is found by `rcctl`. Evals: `vm:services-run` `test.sh:configs`
+- **JOB-6** A service that is down is found by `rcctl`. This includes `slowcgi` and `neurons_room`. Evals: `vm:services-run` `test.sh:configs`
+- **JOB-7** Each minute, one `site-update` run fetches the site, puts it in place, and puts the old site back when a page fails. With no network it does nothing and exits 0. Evals: `vm:crontab` `vm:kept-site-update-restores` `vm:kept-site-update-offline`
 
 ## Deploy
 
 - **DEP-1** `install.sh` is safe to run twice. A second run changes no key and no file. Evals: `vm:installed` `vm:second-install-ok` `vm:wg-second-install-quiet` `bench:second_install_seconds`
-- **DEP-2** `deploy-only` puts `site` or `apps/NAME` in place as one step, removes old files, and refuses all else. Evals: `test.sh:deploy`
+- **DEP-2** `deploy-only` puts `site` or `apps/NAME` in place as one step, removes old files, and refuses all else. It checks the name as the live script does. Evals: `test.sh:deploy` `deploy:only-accepts-site-and-apps` `deploy:only-refuses-all-else`
 - **DEP-3** `install.sh` has `mv -f` everywhere, so no question stops the run. Evals: `test.sh:install.sh`
 - **DEP-4** `apply` runs on the desktop and the Mac. Its tar pack uses no Mac-only flag. Its stage keeps public file modes but locks the stage and local.conf. The other tools run on the Mac. Evals: `deploy:default-check` `deploy:stage-modes` `manual:the other tools need the Mac and live access`
 - **DEP-5** The apply sends as few bytes as it did. `bench:apply_bytes` packs a clean copy of the repo with `pack`, as `apply` does, and counts the bytes. Evals: `bench:apply_bytes`
@@ -106,18 +106,24 @@ A rewrite that has none of the removed parts passes the same evals.
 
 ## Old services on an existing host
 
-- **OLD-1** An install over a host that still has the room relay, slowcgi and the fleet account switches the two services off and stops them, locks the fleet account, and moves its authorized keys to `authorized_keys.disabled`. It sets the mode of `fleet-upload` to 000. It deletes no file or stored data, and leaves WireGuard and every other service alone. A second install changes nothing more. Evals: `vm:retire-planted` `vm:retire-install-ok` `vm:retire-install-again-ok` `vm:retire-room-stopped-first` `vm:retire-room-stopped-again` `vm:retire-slowcgi-stopped-first` `vm:retire-slowcgi-stopped-again` `vm:retire-fleet-locked-first` `vm:retire-fleet-locked-again` `vm:retire-fleet-keys-off-first` `vm:retire-fleet-keys-off-again` `vm:retire-fleet-upload-off-first` `vm:retire-fleet-upload-off-again` `vm:retire-files-remain-first` `vm:retire-files-remain-again` `vm:retire-wireguard-untouched-first` `vm:retire-wireguard-untouched-again` `vm:retire-others-run-first` `vm:retire-others-run-again`
+- **OLD-1** An install over a host that still has the fleet account locks it and moves its authorized keys to `authorized_keys.disabled`. It sets the mode of `fleet-upload` to 000. It deletes no file or stored data, and leaves WireGuard and every other service alone. A second install changes nothing more. Evals: `vm:retire-planted` `vm:retire-install-ok` `vm:retire-install-again-ok` `vm:retire-fleet-locked-first` `vm:retire-fleet-locked-again` `vm:retire-fleet-keys-off-first` `vm:retire-fleet-keys-off-again` `vm:retire-fleet-upload-off-first` `vm:retire-fleet-upload-off-again` `vm:retire-files-remain-first` `vm:retire-files-remain-again` `vm:retire-wireguard-untouched-first` `vm:retire-wireguard-untouched-again` `vm:retire-others-run-first` `vm:retire-others-run-again`
+
+## Kept on an existing host
+
+The first rewrite dropped these. The live preview showed it, and the author wants them kept.
+
+- **KEEP-1** The pond services stay. `pond_save` and `pond_read` are built from `pond/`, and httpd serves `/pond/entries.json`, `/log/`, `/log/feed.xml` and `/pond/*` through slowcgi. An install keeps the stored entries. Evals: `replay:etc/httpd.conf` `vm:kept-binaries` `vm:kept-pond-save` `vm:kept-pond-refusals` `vm:kept-pond-reads` `vm:retire-files-remain-first` `vm:retire-files-remain-again`
+- **KEEP-2** The room relay stays. `neurons_room` is built from `room/`, runs as `_neuronsroom` on 127.0.0.1:8790, and httpd sends `/play/neurons/room` to it. An install keeps both services on and running. Evals: `replay:etc/httpd.conf` `replay:etc/rc.d/neurons_room` `vm:kept-services-run` `vm:kept-room` `vm:retire-room-kept-first` `vm:retire-room-kept-again` `vm:retire-slowcgi-kept-first` `vm:retire-slowcgi-kept-again`
+- **KEEP-3** The preview names the build and restart of these services, and never a disable or a stop of them. Evals: `vm:preview-services`
+- **KEEP-4** The health check and the SSH alert act as the live scripts do. The live preview showed only comment and name changes in them, so they differ from the live bytes in comments only. Evals: `vm:syslog-alert-once` `test.sh:SSH alert` `test.sh:SSH alert for an unknown address` `test.sh:health-check runs`
+- **KEEP-5** The VM journey runs with outbound networking blocked and with cron isolated, so no eval reaches the internet or runs a job by itself. The check that other names resolve is skipped then. Evals: `vm:kept-outbound-blocked` `vm:kept-cron-isolated`
 
 ## Removed
 
 The author chose to remove these. They have no eval, and `evals/keep.awk` cuts them from the golden files.
 
-- **GONE-1** The pond save and read services and the `/log/` page. Was: `test.sh:pond`
-- **GONE-2** The room relay of the neuron explorer, `neurons_room` and its user. Was: `test.sh:rooms`
 - **GONE-3** The fleet view: the `fleet` user, `fleet-upload`, the page, and `fleet.teoyujie.org`. Was: `test.sh:fleet`
-- **GONE-4** femahoy: `fh.teoyujie.org`, `FH_TOKEN` and the token in `relayd.conf`. The rewrite has no fh check in `test.sh`.
-- **GONE-5** The job that runs `site-update` each minute. The site deploys from the Mac with `deploy-only`. Was: `test.sh:site-update`
-- **GONE-6** The `services run` check of `test.sh` also asks for `slowcgi` and `neurons_room`, which go with the pond and the room. The kept path uses `vm:services-run`. Was: `test.sh:services run`
+- **GONE-4** femahoy: `fh.teoyujie.org`, `FH_TOKEN` and the token in `relayd.conf`. The rewrite has no fh check in `test.sh`. The unused token in the server `local.conf` stays as it is.
 
 ## Known failing on today's code
 

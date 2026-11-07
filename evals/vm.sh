@@ -242,7 +242,7 @@ check() {
 	expect vm:crontab crontab_is_golden
 	expect vm:syslog-alert-once alert_logged_once
 	expect vm:admin-wheel is_wheel
-	expect vm:services-run rcctl check httpd relayd smtpd unbound sshd cron
+	expect vm:services-run rcctl check slowcgi neurons_room httpd relayd smtpd unbound sshd cron
 	expect vm:private-origin-403 private_blocked 'Origin: https://evil.example\r\n'
 	expect vm:private-cross-site-403 private_blocked 'Sec-Fetch-Site: cross-site\r\n'
 	expect vm:private-403-page private_block_page
