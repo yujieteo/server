@@ -118,7 +118,10 @@ for s in neurons_room slowcgi; do
 done
 if id fleet >/dev/null 2>&1; then
 	usermod -p '*' -s /sbin/nologin fleet
-	if [ -e /home/fleet/.ssh/authorized_keys ]; then mv -f /home/fleet/.ssh/authorized_keys /home/fleet/.ssh/authorized_keys.disabled; fi
+	keys=/home/fleet/.ssh/authorized_keys
+	archive=${keys}.disabled
+	if [ -e "${archive}" ]; then archive=${archive}.$(date +%s); fi
+	if [ -e "${keys}" ]; then mv "${keys}" "${archive}"; fi
 	if [ -e /usr/local/sbin/fleet-upload ]; then chmod 000 /usr/local/sbin/fleet-upload; fi
 fi
 rcctl enable httpd relayd smtpd unbound >/dev/null
