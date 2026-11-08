@@ -1,0 +1,171 @@
+#!/usr/bin/perl
+use strict;
+use warnings;
+use POSIX qw(strftime);
+use Time::Local qw(timegm);
+
+my $out = $ARGV[0] // '/var/www/web/feed/feed.xml';
+my $site = 'https://teoyujie.org';
+my $max_items = 60;
+
+my $categories = join '+OR+', map { "cat:$_" } qw(math.NT math.AG math.AT math.KT math.RT hep-th);
+my $titles = join '+OR+', map { "ti:$_" } qw(Langlands motivic motives homotopy K-theory cohomology anomaly Chern-Simons %22class+field%22);
+my $arxiv = "https://export.arxiv.org/api/query?search_query=%28$categories%29+AND+%28$titles%29&sortBy=submittedDate&sortOrder=descending&max_results=15";
+
+my @sources = (
+	["Stallman's political notes", 'https://stallman.org/rss/rss.xml', 15],
+	['arXiv', $arxiv, 15],
+	['Terence Tao', 'https://terrytao.wordpress.com/feed/', 5],
+	['Not Even Wrong', 'https://www.math.columbia.edu/~woit/wordpress/?feed=rss2', 5],
+	['Quanta Mathematics', 'https://www.quantamagazine.org/mathematics/feed/', 5],
+	['Alignment Forum', 'https://www.alignmentforum.org/feed.xml', 5],
+	['Dan Luu', 'https://danluu.com/atom.xml', 3],
+	['Phil Eaton', 'https://notes.eatonphil.com/rss.xml', 3],
+	['Marc Brooker', 'https://brooker.co.za/blog/rss.xml', 3],
+	['matklad', 'https://matklad.github.io/feed.xml', 3],
+	['Chips and Cheese', 'https://chipsandcheese.com/feed/', 3],
+	['LWN', 'https://lwn.net/headlines/rss', 5],
+	['Simon Willison', 'https://simonwillison.net/atom/everything/', 5],
+);
+
+my %months;
+@months{qw(Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec)} = (0 .. 11);
+
+sub character {
+	my ($code) = @_;
+	return '' if $code < 0x20 || $code > 0x10FFFF || ($code >= 0xD800 && $code <= 0xDFFF);
+	my $text = chr $code;
+	utf8::encode($text);
+	return $text;
+}
+
+sub plain {
+	my ($text) = @_;
+	$text =~ s/<!\[CDATA\[(.*?)\]\]>/$1/gs;
+	$text =~ s/&#(\d+);/character($1)/ge;
+	$text =~ s/&#[xX]([0-9a-fA-F]+);/character(hex $1)/ge;
+	$text =~ s/&lt;/</g;
+	$text =~ s/&gt;/>/g;
+	$text =~ s/&quot;/"/g;
+	$text =~ s/&apos;/'/g;
+	$text =~ s/&nbsp;/ /g;
+	$text =~ s/&amp;/&/g;
+	$text =~ s/<[^>]*>//g;
+	$text =~ s/[\x00-\x08\x0b\x0c\x0e-\x1f]//g;
+	$text =~ s/\s+/ /g;
+	$text =~ s/^ | $//g;
+	return $text;
+}
+
+sub escaped {
+	my ($text) = @_;
+	$text =~ s/&/&amp;/g;
+	$text =~ s/</&lt;/g;
+	$text =~ s/>/&gt;/g;
+	$text =~ s/"/&quot;/g;
+	return $text;
+}
+
+sub field {
+	my ($block, @tags) = @_;
+	for my $tag (@tags) {
+		return $1 if $block =~ m{<\Q$tag\E(?:\s[^>]*)?>(.*?)</\Q$tag\E>}s;
+	}
+	return '';
+}
+
+sub link_of {
+	my ($block) = @_;
+	my $text = plain(field($block, 'link'));
+	return $text if $text =~ /^https?:/;
+	while ($block =~ /(<link\b[^>]*>)/g) {
+		my $tag = $1;
+		my ($href) = $tag =~ /href="([^"]+)"/;
+		my ($rel) = $tag =~ /rel="([^"]+)"/;
+		return plain($href) if defined $href && $href =~ /^https?:/ && ($rel // 'alternate') eq 'alternate';
+	}
+	return '';
+}
+
+sub offset {
+	my ($zone) = @_;
+	return 0 unless defined $zone && $zone =~ /^([+-])(\d\d):?(\d\d)$/;
+	return ($1 eq '-' ? -1 : 1) * ($2 * 3600 + $3 * 60);
+}
+
+sub epoch {
+	my ($text) = @_;
+	my ($day, $month, $year, $hour, $minute, $second, $zone);
+	if ($text =~ /^(\d{4})-(\d\d)-(\d\d)T(\d\d):(\d\d):(\d\d)(?:\.\d+)?(Z|[+-]\d\d:?\d\d)?/) {
+		($year, $month, $day, $hour, $minute, $second, $zone) = ($1, $2 - 1, $3, $4, $5, $6, $7);
+	} elsif ($text =~ /(\d{1,2}) ([A-Z][a-z]{2}) (\d{4}) (\d\d):(\d\d)(?::(\d\d))?\s*([+-]\d{4})?/) {
+		return undef unless defined $months{$2};
+		($day, $month, $year, $hour, $minute, $second, $zone) = ($1, $months{$2}, $3, $4, $5, $6 // 0, $7);
+	} else {
+		return undef;
+	}
+	my $time = eval { timegm($second, $minute, $hour, $day, $month, $year) };
+	return defined $time ? $time - offset($zone) : undef;
+}
+
+sub parse {
+	my ($xml, $name, $limit) = @_;
+	my @items;
+	while ($xml =~ /<(item|entry)[\s>](.*?)<\/\1>/gs) {
+		my $block = $2;
+		my $title = plain(field($block, 'title'));
+		my $link = link_of($block);
+		my $date = epoch(plain(field($block, qw(pubDate published updated dc:date))));
+		next unless $title ne '' && $link =~ m{^https?://} && defined $date;
+		push @items, { title => $title, link => $link, date => $date, source => $name };
+		last if @items == $limit;
+	}
+	return @items;
+}
+
+sub render {
+	my ($now, @items) = @_;
+	my $format = '%a, %d %b %Y %H:%M:%S GMT';
+	my $built = strftime($format, gmtime $now);
+	my $body = '';
+	for my $item (@items) {
+		my $link = escaped($item->{link});
+		my $title = escaped($item->{title});
+		my $source = escaped($item->{source});
+		my $date = strftime($format, gmtime $item->{date});
+		$body .= qq{<item><title>$title</title><link>$link</link><guid isPermaLink="true">$link</guid><pubDate>$date</pubDate><description>$source</description></item>\n};
+	}
+	return <<"EOF";
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom"><channel>
+<title>Yu Jie Teo: reading feed</title>
+<link>$site/</link>
+<description>Mathematics, systems and Stallman's political notes, gathered from public feeds.</description>
+<atom:link href="$site/feed.xml" rel="self" type="application/rss+xml"/>
+<lastBuildDate>$built</lastBuildDate>
+$body</channel></rss>
+EOF
+}
+
+my $working = 0;
+my $now = time;
+my %seen;
+for my $source (@sources) {
+	my ($name, $url, $limit) = @$source;
+	my $xml = qx{ftp -MV -w 20 -U teoyujie-feed/1.0 -o - '$url' 2>/dev/null};
+	my @items = $? == 0 ? parse($xml, $name, $limit) : ();
+	$working++ if @items;
+	for my $item (@items) {
+		$seen{$item->{link}} //= $item if $item->{date} <= $now;
+	}
+}
+die "feed-update: only $working of " . scalar(@sources) . " sources worked, the old feed stays\n" if $working * 2 < @sources;
+
+my @sorted = sort { $b->{date} <=> $a->{date} } values %seen;
+splice @sorted, $max_items if @sorted > $max_items;
+my $temporary = "$out.new";
+open my $file, '>', $temporary or die "feed-update: $temporary: $!\n";
+print {$file} render($now, @sorted) or die "feed-update: write: $!\n";
+close $file or die "feed-update: close: $!\n";
+chmod 0644, $temporary or die "feed-update: chmod: $!\n";
+rename $temporary, $out or die "feed-update: rename: $!\n";

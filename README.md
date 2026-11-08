@@ -127,6 +127,7 @@ Root's crontab comes from `etc/crontab`:
 | Daily | Delete shared files older than 30 days. |
 | Weekly | Refresh the DNS blocklist. |
 | Each minute | Fetch and deploy the site if it changed. |
+| Hourly | `feed-update` rebuilds `/feed.xml` from public RSS feeds. It lives outside the site folder, so deploys do not remove it. |
 
 Separately, `sbin/ssh-alert` mails root about any SSH login from an address outside `KNOWN_IPS`.
 
