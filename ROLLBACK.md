@@ -43,7 +43,7 @@ Do not call this a zero-impact install.
 1. Stop the run. Do not run the old install as a rollback. Do not keep retrying over SSH.
 2. Use the web console to halt or power off the server. Keep all new writes paused.
 3. Restore every disk from the same stopped-server checkpoint set. Check each disk id and restore result before you boot. If the host cannot restore one, keep the server off and use its disk recovery path.
-4. Boot from that set. Use the console to check local admin and root access. Check the VPN from a client, then the site, mail, cron and service flags. Check the fleet account, its keys and the mode of fleet-upload against the saved state. Resume writes only when those checks pass.
+4. Boot from that set. Use the console to check local admin and root access. Check the VPN from a client, then the site, mail, cron and service flags. Resume writes only when those checks pass.
 
 A disposable OpenBSD VM can prove the disk restore method.
 It cannot prove your host's checkpoint coverage or your console access.

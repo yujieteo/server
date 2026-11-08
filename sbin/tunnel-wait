@@ -1,2 +1,0 @@
-#!/bin/sh
-while [ "$(ps -o ppid= -p $$)" -gt 1 ]; do sleep 30; done

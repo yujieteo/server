@@ -1,62 +1,79 @@
 # teoyujie.org server
 
-The config of the teoyujie.org server. It is an OpenBSD 8.0 base system with no packages.
+Configuration for the teoyujie.org server: OpenBSD 8.0. The config needs only the base system.
 
-It serves the site and the app pages, forwards mail, and is a VPN with an ad blocker.
+It does four things:
 
-This repo is public and has no secret. The server makes its own secrets. They are the TLS key, the ACME account key, the SRS key and the WireGuard key. They never leave it. `local.conf` has the private values. Git ignores it. No value in it gives access to the server.
+- Serves the website and temporary file links with httpd.
+- Forwards mail for teoyujie.org with smtpd.
+- Runs a WireGuard VPN, which is the only way to reach SSH.
+- Blocks ads and trackers for VPN clients with unbound.
+
+This repo is public and holds no secrets. The server generates its own TLS, ACME, SRS and WireGuard keys, and they never leave it. Your personal settings live in `local.conf`, which git ignores.
 
 ## Files
 
-| File | Use |
-|---|---|
-| `install.sh` | Runs on the server as root. Makes a fresh OpenBSD 8.0 server into teoyujie.org. Safe to run again. |
-| `test.sh` | Runs on the server as root after `install.sh`. Tests the services. |
-| `apply` | Runs on the desktop or Mac. Stages a full pack, then shows file diffs and service actions after a WireGuard check. Install needs an explicit mode and a checkpoint id. |
-| `private-setup` | Runs on the Mac. Sets up the tunnel keys of the private names (below). |
-| `mail-alias` | Runs on the Mac. `./mail-alias add NAME` or `./mail-alias del NAME`. |
-| `share` | Runs on the Mac. `./share FILE` prints a link to FILE that works for 30 days. |
-| `local.conf.example` | The private values, with test values. |
-| `etc/` | The configs: httpd, relayd, acme-client, smtpd, pf, sshd, unbound, doas, sysctl and crontab. |
-| `sbin/` | The jobs: health-check, ssh-alert, blocklist-update and private-cert. deploy-only is the forced command of the deploy user. tunnel-wait is the login shell of the tunnel user. |
-| `www/` | Files on the web: security.txt, the GPG key with WKD, the MTA-STS policy, and the error page. |
+| Path | Runs on | Purpose |
+|---|---|---|
+| `apply` | Mac or desktop | Sends the config to the server, then previews or installs it. |
+| `pack` | Mac or desktop | Builds the bundle that `apply` sends. |
+| `install.sh` | Server, as root | Turns a fresh OpenBSD install into this server. Safe to run again. |
+| `test.sh` | Server, as root | Tests the running services. |
+| `wg-config`, `wg-preflight` | Server | Generate the WireGuard config, and stop an install that would change it. |
+| `share` | Mac | `./share FILE` uploads a file and prints a link that lasts 30 days. |
+| `mail-alias` | Mac | `./mail-alias add NAME` or `del NAME` edits the mail aliases in `local.conf`. |
+| `local.conf.example` | | Template for `local.conf`, filled with test values. |
+| `etc/` | | Configs for httpd, smtpd, acme-client, pf, sshd, unbound, doas, sysctl and cron. |
+| `sbin/` | Server | Scheduled jobs and the forced command of the `deploy` user. |
+| `www/` | | Public files: `security.txt`, the GPG key and WKD, the MTA-STS policy, the error page. |
+| `ROLLBACK.md` | | The checkpoint and recovery plan for live installs. |
+
+## Change the live server
+
+Run these from the Mac or desktop with the VPN on.
+
+Preview the change. This writes nothing to the installed system:
+
+```sh
+./apply --check ADMIN_USER@10.8.0.1
+```
+
+Read the file diffs and service actions, and keep the output private because it can show mail and key settings.
+
+Then make a full disk checkpoint by following [ROLLBACK.md](ROLLBACK.md), and install with the checkpoint id:
+
+```sh
+./apply --install CHECKPOINT_ID ADMIN_USER@10.8.0.1
+```
+
+The script records the id but cannot confirm the checkpoint exists.
+
+A live install stops if the WireGuard config would change, `wg0` is down, or a WireGuard change is pending. It reloads the firewall and restarts the core services, so expect a short interruption. It does not fetch certificates, the blocklist or the site; cron does those.
+
+To test the result, copy the source and `local.conf` to a private folder on the server and run `sh test.sh` there as root. Do not pass it a deploy key on a live server, because that replaces the site with test pages.
 
 ## Rebuild from zero
 
-1. At Vultr, deploy "OpenBSD 8.0" (plan vc2-1c-1gb, Singapore) with the SSH key of the Mac and the hostname `teoyujie.org`. Set the reverse DNS of the IPv4 and the IPv6 address to `teoyujie.org`.
-2. On the Mac, run `cp local.conf.example local.conf`, then put in the real values. Before the first apply, make the tunnels of the Mac and the iPhone in the WireGuard app (below). Put their public keys in `WG_PEERS`. After the first apply, SSH works only through the VPN.
-3. Run `./apply --bootstrap root@NEW_IPV4`. It asks for the doas password of the admin and prints the WireGuard public key of the server. After this run, root cannot log in with SSH.
-4. Put that key in the WireGuard configs of the Mac and the iPhone (below). Turn on the tunnel, then test: `ssh ADMIN_USER@10.8.0.1`. If the VPN breaks, log in as ADMIN_USER with the doas password in the Vultr web console.
-5. In Gandi LiveDNS, set the records of the next section.
-6. When `dig +short teoyujie.org` shows the new address, run `ssh -t ADMIN_USER@10.8.0.1 'doas acme-client -v teoyujie.org && doas rcctl reload httpd && doas rcctl restart smtpd'`.
-7. Deploy the site from the Mac with `scripts/deploy.sh` of the site repo. The server also fetches the site by itself, each minute, with `sbin/site-update`.
-8. Run `test.sh` as root on the server from a copy of the source. `apply` removes its stage when it ends.
+1. At Vultr, deploy OpenBSD 8.0 (plan vc2-1c-1gb, Singapore) with the Mac's SSH key and the hostname `teoyujie.org`. Set reverse DNS for the IPv4 and IPv6 addresses to `teoyujie.org`.
+2. Run `cp local.conf.example local.conf` and fill in the real values. Create the Mac and iPhone tunnels in the WireGuard app first, so you can add their public keys to `WG_PEERS`. After the next step, SSH only works through the VPN.
+3. Run `./apply --bootstrap root@NEW_IPV4`. It asks you to set the admin's doas password, prints the server's WireGuard public key, and turns off root login.
+4. Add that key to the WireGuard clients, turn on the tunnel, and test `ssh ADMIN_USER@10.8.0.1`. If the VPN fails, log in as the admin in the Vultr web console.
+5. Create the DNS records below in Gandi LiveDNS.
+6. Once `dig +short teoyujie.org` shows the new address, get the real certificate:
 
-After a change, run `./apply --check ADMIN_USER@10.8.0.1` from the desktop or the Mac.
-This sends a private stage and checks WireGuard. It then shows file diffs and service actions, not an install.
-The preview covers config, keys, scripts, web files, cron, modes and account changes.
-It hides secret values in old Authorization headers.
-It names private and generated file updates but does not invent their future bytes.
-A binary file gets a diff notice, not a text dump.
-Keep the preview private: it can show mail and key settings.
-The check still makes a private stage and the usual SSH and cron audit logs.
-A failed pack or transfer leaves the old server tree as it was.
-The stage is removed when the check or install ends.
-The old `server` folder is not the new install source.
+   ```sh
+   ssh -t ADMIN_USER@10.8.0.1 'doas acme-client -v teoyujie.org && doas rcctl reload httpd && doas rcctl restart smtpd'
+   ```
 
-For a live install, follow [the full checkpoint and rollback plan](ROLLBACK.md).
-Then run `./apply --install CHECKPOINT_ID ADMIN_USER@10.8.0.1`.
-The id records your checkpoint receipt; the script cannot check the host backup.
-The install refuses a WireGuard config change, a missing wg0, or a pending change.
-It restarts other core services. The site update stays as it is. It does not fetch a cert or a blocklist in live mode.
-It leaves an unused femahoy token in local.conf alone; remove that token as a separate, approved secret edit.
+7. Wait a minute for cron to fetch the site, or deploy it from the site repo.
+8. Run `test.sh` on the server as described above.
 
 ## DNS records
 
 | Name | Type | Value |
 |---|---|---|
-| `@` | A | the IPv4 address of the server |
-| `@` | AAAA | the IPv6 address of the server |
+| `@` | A | Server IPv4 |
+| `@` | AAAA | Server IPv6 |
 | `@` | MX | `10 teoyujie.org.` |
 | `@` | TXT | `"v=spf1 mx -all"` |
 | `_dmarc` | TXT | `"v=DMARC1; p=reject"` |
@@ -67,61 +84,56 @@ It leaves an unused femahoy token in local.conf alone; remove that token as a se
 | `@` | CAA | `0 issue "letsencrypt.org"` |
 | `@` | CAA | `0 issuewild ";"` |
 | `@` | CAA | `0 iodef "mailto:contact@teoyujie.org"` |
-| `mac.lavish` | A | the IPv4 address of the server |
-| `desk.lavish` | A | the IPv4 address of the server |
 
-Make no other record. A wildcard record blocks GnuPG key lookup with WKD. If you change `www/.well-known/mta-sts.txt`, also change the `id` of `_mta-sts`. The records `fh` and `fleet` are no longer used. Delete them in Gandi.
+Do not add a wildcard record, because it breaks GnuPG key lookup through WKD. If you change `www/.well-known/mta-sts.txt`, also change the `id` in `_mta-sts`.
 
 ## WireGuard clients
 
-In the WireGuard app, add an empty tunnel. The app makes the private key and shows the public key. Put the public key in `WG_PEERS` in `local.conf`. For the first apply, that is all. Live apply will not add a peer, since that would change wg0. For a planned peer change, use the console and a plain `install.sh` run with its own consent. If no device is on the VPN, log in to the Vultr web console. Copy the source to the server, add the key to its `local.conf`, then run its `install.sh` as root.
+In the WireGuard app, add an empty tunnel. The app generates the private key and shows the public key, which goes in `WG_PEERS` in `local.conf`.
 
 ```text
 [Interface]
-PrivateKey = (the app makes it)
+PrivateKey = (generated by the app)
 Address = 10.8.0.2/32
 DNS = 10.8.0.1
 
 [Peer]
-PublicKey = (the server key that install.sh prints)
+PublicKey = (printed by install.sh)
 Endpoint = teoyujie.org:51820
 AllowedIPs = 10.8.0.0/24
 PersistentKeepalive = 25
 ```
 
-The iPhone uses `Address = 10.8.0.3/32`. Only traffic to 10.8.0.0/24 goes through the VPN. All DNS goes to the server, which blocks ads and trackers. Turn on "On Demand" on both devices.
+The iPhone uses `Address = 10.8.0.3/32`. Only traffic to 10.8.0.0/24 goes through the VPN, but all DNS goes to the server. Turn on "On Demand" on both devices.
+
+`apply` never changes WireGuard peers on a live server. To add one, open the Vultr web console, copy the source to the server, add the key to its `local.conf`, and run `sh install.sh` as root.
 
 ## Site deploys
 
-The Mac deploys the site with `scripts/deploy.sh` of the [site repo](https://github.com/yujieteo/site). It sends a tarball over SSH to the deploy user. The only command of that user is `sbin/deploy-only`. It takes `site` or `apps/NAME`, writes the files to a new folder, then renames it. Thus httpd always serves a complete site. `sbin/site-update` runs each minute from cron. It fetches a new commit of the site, deploys it the same way, and puts the old site back when a page fails.
+The website comes from the [site repo](https://github.com/yujieteo/site), in two ways:
 
-## Private names of Lavish
+- **Automatic:** each minute, `sbin/site-update` looks for a new commit on `main` and deploys its `public/` folder. If a page then fails, it restores the previous site.
+- **Manual:** `scripts/deploy.sh` in the site repo sends a tarball over SSH to the `deploy` user. That user can only run `sbin/deploy-only`, which accepts only `site` and swaps in the new folder by renaming it.
 
-On a device on the VPN, these names open the apps. No token is necessary.
+## Scheduled jobs
 
-| Name | App | Tunnel port on 10.8.0.1 |
-|---|---|---|
-| `https://mac.lavish.teoyujie.org` | Lavish on the Mac | 4387 |
-| `https://desk.lavish.teoyujie.org` | Lavish on the desktop | 4388 |
+Root's crontab comes from `etc/crontab`:
 
-Lavish uses paths from the root of the site, so each Lavish has its own name. Nobody without a WireGuard key gets to them.
+| When | Job |
+|---|---|
+| Daily | Install OpenBSD patches, and reboot if any were applied. |
+| Daily | `health-check` reports problems with disk, services, patches, certificates, domain expiry, DNS, Spamhaus listing and unknown certificates. |
+| Hourly | Renew the TLS certificate if needed. |
+| Daily | Delete shared files older than 30 days. |
+| Weekly | Refresh the DNS blocklist. |
+| Each minute | Fetch and deploy the site if it changed. |
 
-- The Mac and the desktop open a reverse SSH tunnel to the server, as the user `tunnel`. The tunnel ports listen only on 10.8.0.1.
-- The user `tunnel` can only open these 2 tunnels. It cannot run a command, get a terminal, or connect from the server to another address. It logs in with a key only, and only through the VPN.
-- unbound gives the names to the VPN devices as 10.8.0.1. relayd on 10.8.0.1 port 443 sends each name to its tunnel. relayd gives 403 to a request with another `Origin`, or with `Sec-Fetch-Site: cross-site`. httpd on 10.8.0.1 port 80 sends the names to HTTPS.
-- On the public addresses, httpd answers only the Let's Encrypt challenge for the names. `sbin/private-cert` gets their certificate.
+Separately, `sbin/ssh-alert` mails root about any SSH login from an address outside `KNOWN_IPS`.
 
-To set it up:
+## Upgrade OpenBSD
 
-1. In Gandi LiveDNS, add the records `mac.lavish` and `desk.lavish`. Let's Encrypt needs them to check the names.
-2. On the Mac, with the VPN on, run `./private-setup ADMIN_USER@10.8.0.1`. It makes the tunnel keys and puts the public keys in `local.conf`. Then it runs `apply`, which now checks only. Use the live change plan to install.
-
-## Upgrade to the next OpenBSD release (each 6 months)
+There is a new release every six months.
 
 1. Run `ssh -t ADMIN_USER@10.8.0.1 doas sysupgrade`. It takes about 10 minutes.
-2. Follow the live change plan above. It checks WireGuard before it writes the configs again.
-3. Run `test.sh` as root on the server from a copy of the source.
-
-After the upgrade, sysmerge mails root a list of the configs that it did not change. An explicit live install writes the repo version of each of them.
-
-Change `8.0` in this file to the new release.
+2. Follow [Change the live server](#change-the-live-server). This rewrites any configs that sysmerge left alone.
+3. Change `8.0` in this file to the new release.

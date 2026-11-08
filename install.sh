@@ -25,23 +25,12 @@ metadata() {
 	stat -f '%Lp %Su:%Sg' "$1"
 }
 
-visible() {
-	if [ "$1" = /etc/relayd.conf ]; then
-		awk 'tolower($0) ~ /header[[:space:]]+set[[:space:]]+"authorization"/ { sub(/value[[:space:]]+".*/, "value \"[redacted]\"") } { print }' "$2"
-	else
-		cat "$2"
-	fi
-}
-
 preview() {
 	printf '\nFile: %s\n' "$1"
 	before=/dev/null
 	if [ -e "$1" ]; then before=$1; printf 'Current metadata: '; metadata "$1"; else echo 'Create file'; fi
 	printf 'Write: %s\n' "${3:-keep current mode and owner, or use the current umask for a new file}"
-	visible "$1" "${before}" > "${work}/before"
-	visible "$1" "$2" > "${work}/after"
-	diff -u -L "$1 (current)" -L "$1 (next)" "${work}/before" "${work}/after" || [ "$?" -eq 1 ]
-	if ! cmp -s "${before}" "$2" && cmp -s "${work}/before" "${work}/after"; then echo 'Content differs; secret values are hidden.'; fi
+	diff -u -L "$1 (current)" -L "$1 (next)" "${before}" "$2" || [ "$?" -eq 1 ]
 }
 
 write() {
@@ -71,9 +60,9 @@ run() {
 	if [ "${mode}" != --check ]; then "$@"; return; fi
 	printf 'Action:' >&3; printf ' %s' "$@" >&3; printf '\n' >&3
 	case $1 in
-	useradd|usermod|passwd)
+	useradd|userdel|usermod|passwd)
 		for path in /etc/master.passwd /etc/passwd /etc/pwd.db /etc/spwd.db; do generated "${path}" "$1 account state"; done
-		if [ "$1" = useradd ]; then generated /etc/group 'useradd group state'; fi ;;
+		case $1 in useradd|userdel) generated /etc/group "$1 group state" ;; *) ;; esac ;;
 	rcctl)
 		case $2 in enable|disable) generated /etc/rc.conf.local "service flags from rcctl $2" ;; *) ;; esac ;;
 	*) ;;
@@ -167,9 +156,6 @@ echo "from=\"10.8.0.0/24,127.0.0.1\",restrict,command=\"/usr/local/sbin/deploy-o
 write /home/deploy/.ssh/authorized_keys < "${work}/content"
 
 for f in sbin/*; do put "${f}" /usr/local/sbin/"${f#sbin/}" 755; done
-id tunnel >/dev/null 2>&1 || run useradd -d /home/tunnel -s /usr/local/sbin/tunnel-wait tunnel
-run install -d -m 755 /home/tunnel /home/tunnel/.ssh
-ssh_keys /home/tunnel/.ssh/authorized_keys "${TUNNEL_KEY:-}"
 put etc/doas.conf /etc/doas.conf
 put etc/sysctl.conf /etc/sysctl.conf
 put etc/sshd_config /etc/ssh/sshd_config
@@ -178,16 +164,14 @@ put etc/acme-client.conf /etc/acme-client.conf
 put etc/smtpd.conf /etc/mail/smtpd.conf
 put etc/unbound.conf /var/unbound/etc/unbound.conf
 put etc/pf.conf /etc/pf.conf 600
-put etc/relayd.conf /etc/relayd.conf 600
 run sysctl -q net.inet.ip.forwarding=1
 
-run install -d -o deploy -m 755 /var/www/web /var/www/web/site /var/www/web/apps
+run install -d -o deploy -m 755 /var/www/web /var/www/web/site
 run install -d -o "${ADMIN_USER}" -m 755 /var/www/files/f
 web_files
 
 
 if [ ! -e /etc/ssl/"${d}".fullchain.pem ]; then certificate /etc/ssl/"${d}".fullchain.pem /etc/ssl/private/"${d}".key "${d}"; fi
-if [ ! -e /etc/ssl/apps.crt ]; then certificate /etc/ssl/apps.crt /etc/ssl/private/apps.key mac.lavish."${d}"; fi
 if [ ! -e /etc/mail/srs.conf ]; then
 	if [ "${mode}" = --check ]; then
 		generated /etc/mail/srs.conf 'create SRS key, mode 600'
@@ -243,6 +227,11 @@ if [ "${mode}" = --check ]; then
 fi
 run touch /var/unbound/etc/blocklist.conf
 
+if [ "${mode}" = --check ]; then
+	sshd -t -f "${PWD}/etc/sshd_config"
+	httpd -n -f "${PWD}/etc/httpd.conf"
+	pfctl -nf "${PWD}/etc/pf.conf"
+fi
 run sshd -t
 run httpd -n
 run smtpd -n
@@ -254,36 +243,22 @@ else
 fi
 run unbound-checkconf >/dev/null
 run acme-client -n >/dev/null
-run relayd -n >/dev/null
 run pfctl -nf /etc/pf.conf
 run pfctl -f /etc/pf.conf
-for s in neurons_room slowcgi; do
+for s in neurons_room slowcgi relayd; do
 	[ -x /etc/rc.d/"${s}" ] || continue
 	run rcctl disable "${s}" >/dev/null
 	if rcctl check "${s}" >/dev/null 2>&1; then run rcctl stop "${s}" >/dev/null; fi
 done
-if id fleet >/dev/null 2>&1; then
-	run usermod -p '*' -s /sbin/nologin fleet
-	keys=/home/fleet/.ssh/authorized_keys
-	archive=${keys}.disabled
-	n=0
-	while [ -e "${archive}" ]; do n=$((n + 1)); archive=${keys}.disabled.${n}; done
-	if [ -e "${keys}" ]; then
-		if [ "${mode}" = --check ]; then
-			preview "${keys}" /dev/null "rename to ${archive}"
-			preview "${archive}" "${keys}" "rename from ${keys}; keep mode and owner"
-		fi
-		run mv -f "${keys}" "${archive}"
-	fi
-	if [ -e /usr/local/sbin/fleet-upload ]; then
-		if [ "${mode}" = --check ]; then preview /usr/local/sbin/fleet-upload /usr/local/sbin/fleet-upload 'mode 000; content unchanged'; fi
-		run chmod 000 /usr/local/sbin/fleet-upload
-	fi
-fi
-run rcctl enable httpd relayd smtpd unbound >/dev/null
-run rcctl restart sshd syslogd httpd relayd smtpd unbound >/dev/null
+run rcctl enable httpd smtpd unbound >/dev/null
+for u in fleet tunnel; do
+	if id "${u}" >/dev/null 2>&1; then run userdel -r "${u}"; fi
+done
+for f in /etc/relayd.conf /etc/ssl/apps.crt /etc/ssl/private/apps.key /usr/local/sbin/private-cert /usr/local/sbin/tunnel-wait /usr/local/sbin/fleet-upload /usr/local/sbin/neurons_room /etc/rc.d/neurons_room /var/www/web/apps; do
+	if [ -e "${f}" ]; then run rm -rf "${f}"; fi
+done
+run rcctl restart sshd syslogd httpd smtpd unbound >/dev/null
 if [ "${mode}" != --live ] && [ "${mode}" != --check ]; then
-	/usr/local/sbin/private-cert || echo "private-cert failed: cron tries again each hour"
 	[ -s /var/unbound/etc/blocklist.conf ] || /usr/local/sbin/blocklist-update
 	su deploy -c /usr/local/sbin/site-update || echo "site-update failed: cron tries again each minute"
 fi
