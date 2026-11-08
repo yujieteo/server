@@ -48,7 +48,7 @@ On each test VM, run `sh evals/vm-isolate.sh` before any install or eval. CI doe
 4. Put that key in the WireGuard configs of the Mac and the iPhone (below). Turn on the tunnel, then test: `ssh ADMIN_USER@10.8.0.1`. If the VPN breaks, log in as ADMIN_USER with the doas password in the Vultr web console.
 5. In Gandi LiveDNS, set the records of the next section.
 6. When `dig +short teoyujie.org` shows the new address, run `ssh -t ADMIN_USER@10.8.0.1 'doas acme-client -v teoyujie.org && doas rcctl reload httpd && doas rcctl restart smtpd'`.
-7. Deploy the site from the Mac with `scripts/deploy.sh` of the site repo. The server also fetches the site by itself, each minute, with `sbin/site-update`.
+7. Deploy the site from the Mac with `scripts/deploy.sh` of the site repo. The server also fetches the built site by itself, each minute, with `sbin/site-update`.
 8. Run `test.sh` as root on the server from a copy of the source. `apply` removes its stage when it ends.
 
 After a change, run `./apply --check ADMIN_USER@10.8.0.1` from the desktop or the Mac.
@@ -112,7 +112,7 @@ The iPhone uses `Address = 10.8.0.3/32`. Only traffic to 10.8.0.0/24 goes throug
 
 ## Site deploys
 
-The Mac deploys the site with `scripts/deploy.sh` of the [site repo](https://github.com/yujieteo/site). It sends a tarball over SSH to the deploy user. The only command of that user is `sbin/deploy-only`. It takes `site` or `apps/NAME`, writes the files to a new folder, then renames it. Thus httpd always serves a complete site. `sbin/site-update` runs each minute from cron. It fetches a new commit of the site, deploys it the same way, and puts the old site back when a page fails.
+The Mac deploys the site with `scripts/deploy.sh` of the [site repo](https://github.com/yujieteo/site). It sends a tarball over SSH to the deploy user. The only command of that user is `sbin/deploy-only`. It takes `site` or `apps/NAME`, writes the files to a new folder, then renames it. Thus httpd always serves a complete site. `sbin/site-update` runs each minute from cron. It reads the `built` branch of the site repo, not `main`. The site builds on GitHub and puts the result on that branch: the pages in `public/`, and the paths to test in `fixed-urls.txt`. On a new commit of `built`, the server deploys it the same way, and puts the old site back when a page fails.
 
 ## Private names of Lavish
 

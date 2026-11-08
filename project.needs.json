@@ -11,7 +11,7 @@
     "evals/bench.sh": "Measures the real deploy payload and the VM results.",
     "evals/conf-keys.sh": "Guards the allowed local config formats.",
     "evals/deploy-only.sh": "Checks that deploy-only takes the same names as the live script.",
-    "evals/fixtures/fake-ftp": "Stands in for ftp so the site-update eval needs no network.",
+    "evals/fixtures/fake-ftp": "Stands in for ftp so the site-update eval needs no network. It gives the branch in STUB_REF, or built.",
     "evals/fixtures/relayd-before.conf": "Keeps the real prior relay config for file diffs and secret redaction.",
     "evals/golden/etc/acme-client.conf": "Expected acme-client config.",
     "evals/golden/etc/doas.conf": "Expected doas config.",

@@ -40,7 +40,8 @@ site_stub() {
 run_site_update() {
 	saved=$(cat /home/deploy/site-commit 2>/dev/null)
 	commit=$(echo "$1" | sha1)
-	out=$(su deploy -c "PATH=${work}/bin:\$PATH STUB_COMMIT=${commit} STUB_TGZ=${work}/site.tgz /usr/local/sbin/site-update" 2>&1)
+	out=$(su deploy -c "PATH=${work}/bin:\$PATH STUB_REF=${2:-built} STUB_COMMIT=${commit} STUB_TGZ=${work}/site.tgz /usr/local/sbin/site-update" 2>&1)
+	status=$?
 	written=$(cat /home/deploy/site-commit 2>/dev/null)
 	if [ -n "${saved}" ]; then echo "${saved}" > /home/deploy/site-commit; else rm -f /home/deploy/site-commit; fi
 }
@@ -60,6 +61,12 @@ site_update_deploys() {
 	return "${result}"
 }
 
+site_update_ignores_main() {
+	site_stub /site-update-test.html
+	run_site_update main main
+	[ "${status}" -eq 0 ] && [ -z "${out}" ] && [ "${written}" = "${saved}" ] && [ ! -e /var/www/web/site/site-update-test.html ]
+}
+
 site_update_offline() {
 	su deploy -c /usr/local/sbin/site-update > "${work}/offline" 2>&1
 }
@@ -74,6 +81,7 @@ cron_isolated() {
 
 expect vm:kept-site-update-restores site_update_restores
 expect vm:kept-site-update-deploys site_update_deploys
+expect vm:kept-site-update-ignores-main site_update_ignores_main
 expect vm:kept-site-update-offline site_update_offline
 expect vm:kept-cron-isolated cron_isolated
 expect vm:kept-outbound-blocked outbound_blocked

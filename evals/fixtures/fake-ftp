@@ -1,2 +1,3 @@
 #!/bin/sh
-case $3 in *info/refs*) printf '003d%s refs/heads/main\n' "${STUB_COMMIT}" ;; *) cp "${STUB_TGZ}" "$2" ;; esac
+line="${STUB_COMMIT} refs/heads/${STUB_REF:-built}"
+case $3 in *info/refs*) printf '%04x%s\n' $((${#line} + 5)) "${line}" ;; *) cp "${STUB_TGZ}" "$2" ;; esac
