@@ -130,6 +130,10 @@ Root's crontab comes from `etc/crontab`:
 
 Separately, `sbin/ssh-alert` mails root about any SSH login from an address outside `KNOWN_IPS`.
 
+## Versions
+
+Tags named `vYYYY.MM.DD` mark the state of `main` on that date. They do not show the live version. Each tag applies to the OpenBSD release named at the top of this file at that tag.
+
 ## Upgrade OpenBSD
 
 There is a new release every six months.
