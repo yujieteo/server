@@ -6,8 +6,6 @@ It serves the site and the app pages, forwards mail, and is a VPN with an ad blo
 
 This repo is public and has no secret. The server makes its own secrets. They are the TLS key, the ACME account key, the SRS key and the WireGuard key. They never leave it. `local.conf` has the private values. Git ignores it. No value in it gives access to the server.
 
-`VISION.md` says what this project is for. `REQUIREMENTS.md` lists what the server must do. Each line has an id and the evals that prove it.
-
 ## Files
 
 | File | Use |
@@ -18,27 +16,10 @@ This repo is public and has no secret. The server makes its own secrets. They ar
 | `private-setup` | Runs on the Mac. Sets up the tunnel keys of the private names (below). |
 | `mail-alias` | Runs on the Mac. `./mail-alias add NAME` or `./mail-alias del NAME`. |
 | `share` | Runs on the Mac. `./share FILE` prints a link to FILE that works for 30 days. |
-| `local.conf.example` | The private values, with test values. CI uses it. |
+| `local.conf.example` | The private values, with test values. |
 | `etc/` | The configs: httpd, relayd, acme-client, smtpd, pf, sshd, unbound, doas, sysctl and crontab. |
 | `sbin/` | The jobs: health-check, ssh-alert, blocklist-update and private-cert. deploy-only is the forced command of the deploy user. tunnel-wait is the login shell of the tunnel user. |
 | `www/` | Files on the web: security.txt, the GPG key with WKD, the MTA-STS policy, and the error page. |
-| `gate`, `rules.conf`, `bin/` | The local check. Run `nix develop`, then `./gate`. |
-| `project.needs.json` | The skills, evals and tools this project keeps, each with a reason. `evals/intent/needs-consistency.sh` checks it matches the repo. |
-| `EXPIRY` | The date this project ends unless you renew it. |
-| `evals/` | The evals of `REQUIREMENTS.md`: the config replay against `evals/golden`, the checks of the OpenBSD VM, and the benchmark baselines. `sh evals/trace.sh` checks that each id has an eval. |
-| `.githooks/pre-commit`, `.gitleaks.toml` | gitleaks stops a commit that has a secret in it. Turn on the hook once in each clone: `git config core.hooksPath .githooks`. |
-| `.github/workflows/ci.yml` | gitleaks and the gate on the desktop runner. `install.sh` twice, then `test.sh` and `evals/vm.sh`, on a fresh OpenBSD 8.0 VM. |
-
-## Check a change
-
-1. Run `nix develop`.
-2. Run `./gate`.
-
-The gate runs the rules, the markdown grade, shellcheck, the evals and the benchmark check. The configs of `install.sh` must equal `evals/golden` byte for byte. A change to a config needs a change to its golden file, and the reason in `REQUIREMENTS.md`.
-
-The VM evals need OpenBSD. CI runs them on a fresh OpenBSD 8.0 VM. This job runs on a GitHub runner. Local VM proof needs QEMU and KVM.
-
-On each test VM, run `sh evals/vm-isolate.sh` before any install or eval. CI does this first. It keeps cron up but sets each job's shell to `/usr/bin/true`, so no scheduled job runs. This setting stays outside the managed block when the install writes root's crontab. Use a fresh test disk and block outbound VM traffic for local proof. Never boot a disk kept for an audit.
 
 ## Rebuild from zero
 
@@ -143,4 +124,4 @@ To set it up:
 
 After the upgrade, sysmerge mails root a list of the configs that it did not change. An explicit live install writes the repo version of each of them.
 
-Change `8.0` in this file and in `.github/workflows/ci.yml` to the new release.
+Change `8.0` in this file to the new release.

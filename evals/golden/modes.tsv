@@ -1,9 +1,0 @@
-/etc/acme-client.conf	644
-/etc/doas.conf	644
-/etc/httpd.conf	644
-/etc/mail/smtpd.conf	644
-/etc/pf.conf	600
-/etc/relayd.conf	600
-/etc/ssh/sshd_config	644
-/etc/sysctl.conf	644
-/var/unbound/etc/unbound.conf	644

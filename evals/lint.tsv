@@ -1,7 +1,0 @@
-evals/lint/fixtures/sh/comment.sh	comment
-evals/lint/fixtures/sh/fnsize.sh	fnsize
-evals/lint/fixtures/sh/good.sh	ok
-evals/lint/fixtures/sh/ignored.sh	ignored
-evals/lint/fixtures/sh/loop.sh	loop
-evals/lint/fixtures/sh/recurse.sh	recurse
-evals/lint/fixtures/sh/suppress.sh	suppress

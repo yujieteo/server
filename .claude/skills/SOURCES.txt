@@ -1,2 +1,0 @@
-vision                     https://github.com/kunchenguid/vision 7a20c38181151ec67efdf8fa2cb03a60123a7b83 (MIT)
-ste100                     the author's installed skill
