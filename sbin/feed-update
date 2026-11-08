@@ -6,7 +6,9 @@ use Time::Local qw(timegm);
 
 my $out = $ARGV[0] // '/var/www/web/feed/feed.xml';
 my $site = 'https://teoyujie.org';
-my $max_items = 60;
+my $max_items = 70;
+my $excerpt_length = 600;
+my $about = "Mathematics, Stallman's political notes and the best Hacker News comments, gathered from public feeds.";
 
 my $categories = join '+OR+', map { "cat:$_" } qw(math.NT math.AG math.AT math.KT math.RT hep-th);
 my $titles = join '+OR+', map { "ti:$_" } qw(Langlands motivic motives homotopy K-theory cohomology anomaly Chern-Simons %22class+field%22);
@@ -17,15 +19,7 @@ my @sources = (
 	['arXiv', $arxiv, 15],
 	['Terence Tao', 'https://terrytao.wordpress.com/feed/', 5],
 	['Not Even Wrong', 'https://www.math.columbia.edu/~woit/wordpress/?feed=rss2', 5],
-	['Quanta Mathematics', 'https://www.quantamagazine.org/mathematics/feed/', 5],
-	['Alignment Forum', 'https://www.alignmentforum.org/feed.xml', 5],
-	['Dan Luu', 'https://danluu.com/atom.xml', 3],
-	['Phil Eaton', 'https://notes.eatonphil.com/rss.xml', 3],
-	['Marc Brooker', 'https://brooker.co.za/blog/rss.xml', 3],
-	['matklad', 'https://matklad.github.io/feed.xml', 3],
-	['Chips and Cheese', 'https://chipsandcheese.com/feed/', 3],
-	['LWN', 'https://lwn.net/headlines/rss', 5],
-	['Simon Willison', 'https://simonwillison.net/atom/everything/', 5],
+	['Hacker News', 'https://hnrss.org/bestcomments?count=30', 30],
 );
 
 my %months;
@@ -41,7 +35,9 @@ sub character {
 
 sub plain {
 	my ($text) = @_;
-	$text =~ s/<!\[CDATA\[(.*?)\]\]>/$1/gs;
+	my $wrapped = $text =~ s/<!\[CDATA\[(.*?)\]\]>/$1/gs;
+	$text =~ s/<\/?(?:p|br|pre)\b[^>]*>/ /gi if $wrapped;
+	$text =~ s/<[^>]*>//g if $wrapped;
 	$text =~ s/&#(\d+);/character($1)/ge;
 	$text =~ s/&#[xX]([0-9a-fA-F]+);/character(hex $1)/ge;
 	$text =~ s/&lt;/</g;
@@ -50,7 +46,7 @@ sub plain {
 	$text =~ s/&apos;/'/g;
 	$text =~ s/&nbsp;/ /g;
 	$text =~ s/&amp;/&/g;
-	$text =~ s/<[^>]*>//g;
+	$text =~ s/<[^>]*>//g unless $wrapped;
 	$text =~ s/[\x00-\x08\x0b\x0c\x0e-\x1f]//g;
 	$text =~ s/\s+/ /g;
 	$text =~ s/^ | $//g;
@@ -64,6 +60,17 @@ sub escaped {
 	$text =~ s/>/&gt;/g;
 	$text =~ s/"/&quot;/g;
 	return $text;
+}
+
+sub excerpt {
+	my ($text) = @_;
+	my $characters = $text;
+	return $text unless utf8::decode($characters) && length $characters > $excerpt_length;
+	$characters = substr $characters, 0, $excerpt_length;
+	$characters =~ s/\s+\S*$//;
+	$characters .= "\x{2026}";
+	utf8::encode($characters);
+	return $characters;
 }
 
 sub field {
@@ -116,8 +123,13 @@ sub parse {
 		my $title = plain(field($block, 'title'));
 		my $link = link_of($block);
 		my $date = epoch(plain(field($block, qw(pubDate published updated dc:date))));
+		my ($source, $text) = ($name, '');
+		if ($title =~ /^New comment by (\S+) in "(.*)"$/) {
+			($source, $title) = ("$1 on $name", $2);
+			$text = excerpt(plain(field($block, 'description')));
+		}
 		next unless $title ne '' && $link =~ m{^https?://} && defined $date;
-		push @items, { title => $title, link => $link, date => $date, source => $name };
+		push @items, { title => $title, link => $link, date => $date, label => $text eq '' ? $source : "$source: $text" };
 		last if @items == $limit;
 	}
 	return @items;
@@ -131,16 +143,17 @@ sub render {
 	for my $item (@items) {
 		my $link = escaped($item->{link});
 		my $title = escaped($item->{title});
-		my $source = escaped($item->{source});
+		my $label = escaped($item->{label});
 		my $date = strftime($format, gmtime $item->{date});
-		$body .= qq{<item><title>$title</title><link>$link</link><guid isPermaLink="true">$link</guid><pubDate>$date</pubDate><description>$source</description></item>\n};
+		$body .= qq{<item><title>$title</title><link>$link</link><guid isPermaLink="true">$link</guid><pubDate>$date</pubDate><description>$label</description></item>\n};
 	}
+	my $description = escaped($about);
 	return <<"EOF";
 <?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom"><channel>
 <title>Yu Jie Teo: reading feed</title>
-<link>$site/</link>
-<description>Mathematics, systems and Stallman's political notes, gathered from public feeds.</description>
+<link>$site/reading.html</link>
+<description>$description</description>
 <atom:link href="$site/feed.xml" rel="self" type="application/rss+xml"/>
 <lastBuildDate>$built</lastBuildDate>
 $body</channel></rss>
@@ -154,10 +167,11 @@ sub render_page {
 	for my $item (@items) {
 		my $link = escaped($item->{link});
 		my $title = escaped($item->{title});
-		my $source = escaped($item->{source});
+		my $label = escaped($item->{label});
 		my $date = strftime('%Y-%m-%d', gmtime $item->{date});
-		$list .= qq{<li><a href="$link" rel="noopener noreferrer"><h3>$title</h3><span class="kind">$date</span><p>$source</p></a></li>\n};
+		$list .= qq{<li><a href="$link" rel="noopener noreferrer"><h3>$title</h3><span class="kind">$date</span><p>$label</p></a></li>\n};
 	}
+	my $description = escaped($about);
 	return <<"EOF";
 <!doctype html>
 <html lang="en">
@@ -169,7 +183,7 @@ sub render_page {
 <link rel="stylesheet" href="/style.css">
 <link rel="alternate" type="application/rss+xml" title="Reading feed" href="/feed.xml">
 <title>Reading</title>
-<meta name="description" content="Mathematics, systems and Stallman's political notes, gathered from public feeds.">
+<meta name="description" content="$description">
 </head>
 <body>
 <header class="wrap"><a class="name" href="/">Yu Jie Teo</a><span class="tagline">Mechanical Engineer</span></header>
