@@ -147,6 +147,51 @@ $body</channel></rss>
 EOF
 }
 
+sub render_page {
+	my ($now, @items) = @_;
+	my $built = strftime('%d %b %Y, %H:%M UTC', gmtime $now);
+	my $list = '';
+	for my $item (@items) {
+		my $link = escaped($item->{link});
+		my $title = escaped($item->{title});
+		my $source = escaped($item->{source});
+		my $date = strftime('%Y-%m-%d', gmtime $item->{date});
+		$list .= qq{<li><a href="$link" rel="noopener noreferrer"><h3>$title</h3><span class="kind">$date</span><p>$source</p></a></li>\n};
+	}
+	return <<"EOF";
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="only light">
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="/style.css">
+<link rel="alternate" type="application/rss+xml" title="Reading feed" href="/feed.xml">
+<title>Reading</title>
+<meta name="description" content="Mathematics, systems and Stallman's political notes, gathered from public feeds.">
+</head>
+<body>
+<header class="wrap"><a class="name" href="/">Yu Jie Teo</a><span class="tagline">Mechanical Engineer</span></header>
+<main class="wrap"><section id="reading"><h2>Reading</h2>
+<p class="muted">Updated $built. <a href="/feed.xml">RSS feed</a></p>
+<ol class="featured">
+$list</ol></section></main>
+</body>
+</html>
+EOF
+}
+
+sub publish {
+	my ($path, $content) = @_;
+	my $temporary = "$path.new";
+	open my $file, '>', $temporary or die "feed-update: $temporary: $!\n";
+	print {$file} $content or die "feed-update: write: $!\n";
+	close $file or die "feed-update: close: $!\n";
+	chmod 0644, $temporary or die "feed-update: chmod: $!\n";
+	rename $temporary, $path or die "feed-update: rename: $!\n";
+}
+
 my $working = 0;
 my $now = time;
 my %seen;
@@ -163,9 +208,6 @@ die "feed-update: only $working of " . scalar(@sources) . " sources worked, the 
 
 my @sorted = sort { $b->{date} <=> $a->{date} } values %seen;
 splice @sorted, $max_items if @sorted > $max_items;
-my $temporary = "$out.new";
-open my $file, '>', $temporary or die "feed-update: $temporary: $!\n";
-print {$file} render($now, @sorted) or die "feed-update: write: $!\n";
-close $file or die "feed-update: close: $!\n";
-chmod 0644, $temporary or die "feed-update: chmod: $!\n";
-rename $temporary, $out or die "feed-update: rename: $!\n";
+(my $page = $out) =~ s{[^/]*$}{reading.html};
+publish($page, render_page($now, @sorted));
+publish($out, render($now, @sorted));
