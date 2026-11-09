@@ -8,7 +8,8 @@ my $out = $ARGV[0] // '/var/www/web/feed/feed.xml';
 my $site = 'https://teoyujie.org';
 my $max_items = 70;
 my $excerpt_length = 600;
-my $about = "Mathematics, Stallman's political notes and the best Hacker News comments, gathered from public feeds.";
+my $about = "Mathematics, Stallman's political notes and the best Hacker News and EDMW comments, gathered from public feeds.";
+(my $edmw = $out) =~ s{[^/]*$}{edmw.xml};
 
 my $categories = join '+OR+', map { "cat:$_" } qw(math.NT math.AG math.AT math.KT math.RT hep-th);
 my $titles = join '+OR+', map { "ti:$_" } qw(Langlands motivic motives homotopy K-theory cohomology anomaly Chern-Simons %22class+field%22);
@@ -20,6 +21,7 @@ my @sources = (
 	['Terence Tao', 'https://terrytao.wordpress.com/feed/', 5],
 	['Not Even Wrong', 'https://www.math.columbia.edu/~woit/wordpress/?feed=rss2', 5],
 	['Hacker News', 'https://hnrss.org/bestcomments?count=30', 30],
+	['EDMW', $edmw, 15],
 );
 
 my %months;
@@ -124,7 +126,7 @@ sub parse {
 		my $link = link_of($block);
 		my $date = epoch(plain(field($block, qw(pubDate published updated dc:date))));
 		my ($source, $text) = ($name, '');
-		if ($title =~ /^New comment by (\S+) in "(.*)"$/) {
+		if ($title =~ /^New comment by (.+?) in "(.*)"$/) {
 			($source, $title) = ("$1 on $name", $2);
 			$text = excerpt(plain(field($block, 'description')));
 		}
@@ -206,14 +208,34 @@ sub publish {
 	rename $temporary, $path or die "feed-update: rename: $!\n";
 }
 
+sub fetch {
+	my ($url) = @_;
+	if ($url =~ m{^/}) {
+		open my $file, '<', $url or return '';
+		local $/;
+		return scalar <$file>;
+	}
+	my $xml = qx{ftp -MV -w 20 -U teoyujie-feed/1.0 -o - '$url' 2>/dev/null};
+	return $? == 0 ? $xml : '';
+}
+
+(my $cache = $out) =~ s{[^/]*$}{cache};
+mkdir $cache unless -d $cache;
+
 my $working = 0;
 my $now = time;
 my %seen;
 for my $source (@sources) {
 	my ($name, $url, $limit) = @$source;
-	my $xml = qx{ftp -MV -w 20 -U teoyujie-feed/1.0 -o - '$url' 2>/dev/null};
-	my @items = $? == 0 ? parse($xml, $name, $limit) : ();
-	$working++ if @items;
+	my $xml = fetch($url);
+	my @items = parse($xml, $name, $limit);
+	(my $saved = "$cache/$name") =~ s/[^\w\/.-]+/-/g;
+	if (@items) {
+		$working++;
+		publish($saved, $xml);
+	} else {
+		@items = parse(fetch($saved), $name, $limit);
+	}
 	for my $item (@items) {
 		$seen{$item->{link}} //= $item if $item->{date} <= $now;
 	}
