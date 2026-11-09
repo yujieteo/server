@@ -48,7 +48,7 @@ Then make a full disk checkpoint by following [ROLLBACK.md](ROLLBACK.md), and in
 
 The script records the id but cannot confirm the checkpoint exists.
 
-A live install stops if the WireGuard config would change, `wg0` is down, or a WireGuard change is pending. It reloads the firewall and restarts the core services, so expect a short interruption. It does not fetch certificates, the blocklist or the site; cron does those.
+A live install stops if the WireGuard config would change, `wg0` is down, or a WireGuard change is pending. It reloads the firewall and restarts the core services, so expect a short interruption. It does not fetch certificates or the blocklist, which cron does, and it does not deploy the site.
 
 To test the result, copy the source and `local.conf` to a private folder on the server and run `sh test.sh` there as root. Do not pass it a deploy key on a live server, because that replaces the site with test pages.
 
@@ -65,7 +65,7 @@ To test the result, copy the source and `local.conf` to a private folder on the 
    ssh -t ADMIN_USER@10.8.0.1 'doas acme-client -v teoyujie.org && doas rcctl reload httpd && doas rcctl restart smtpd'
    ```
 
-7. Wait a minute for cron to fetch the site, or deploy it from the site repo.
+7. Deploy the site by running `scripts/deploy.sh` in the site repo with the VPN on.
 8. Run `test.sh` on the server as described above.
 
 ## DNS records
@@ -112,12 +112,9 @@ The iPhone uses `Address = 10.8.0.3/32`. Only traffic to 10.8.0.0/24 goes throug
 
 ## Site deploys
 
-The website comes from the [site repo](https://github.com/yujieteo/site), in two ways:
+The website comes from the [site repo](https://github.com/yujieteo/site). Its `scripts/deploy.sh` builds the site and sends a tarball over SSH to the `deploy` user, so a commit there changes nothing until you run that script. The `deploy` user can only run `sbin/deploy-only`, which accepts only `site` and swaps in the new folder by renaming it.
 
-- **Automatic:** each minute, `sbin/site-update` looks for a new commit on `main` and deploys its `public/` folder. If a page then fails, it restores the previous site.
-- **Manual:** `scripts/deploy.sh` in the site repo sends a tarball over SSH to the `deploy` user. That user can only run `sbin/deploy-only`, which accepts only `site` and swaps in the new folder by renaming it.
-
-Both ways end in `deploy-only`, which also writes a `.gz` copy of each text file over 1 KB. httpd sends that copy to browsers that accept gzip. `feed-update` does the same for `/feed.xml`, `/reading.html`, `/forecasters.html` and `/forecasters.xml`.
+`deploy-only` also writes a `.gz` copy of each text file over 1 KB. httpd sends that copy to browsers that accept gzip. `feed-update` does the same for `/feed.xml`, `/reading.html`, `/forecasters.html` and `/forecasters.xml`.
 
 After the swap, `deploy-only` runs `sbin/link-check`, which prints any link between the site's own pages that leads to no file. It only reports, so the deploy still goes ahead. If you add a `location` to `httpd.conf` that serves a file from outside the site folder, add its path to the list at the top of that script.
 
@@ -128,11 +125,10 @@ Root's crontab comes from `etc/crontab`:
 | When | Job |
 |---|---|
 | Daily | Install OpenBSD patches, and reboot if any were applied. |
-| Daily | `health-check` reports problems with disk, services, patches, certificates, domain expiry, DNS, Spamhaus listing, unknown certificates, stale feeds, a site deploy that has fallen behind and an OpenBSD release that needs upgrading. |
+| Daily | `health-check` reports problems with disk, services, patches, certificates, domain expiry, DNS, Spamhaus listing, unknown certificates, stale feeds and an OpenBSD release that needs upgrading. |
 | Hourly | Renew the TLS certificate if needed. |
 | Daily | Delete shared links that have reached their end date. |
 | Weekly | Refresh the DNS blocklist. |
-| Each minute | Fetch and deploy the site if it changed. |
 | Hourly | `feed-update` rebuilds `/feed.xml`, `/reading.html`, `/forecasters.html` and `/forecasters.xml` from public RSS feeds. They live outside the site folder, so deploys do not remove them. If a source fails, its last good copy is used. |
 | Hourly | `edmw-update` records reply counts from HardwareZone's EDMW forum. Once a day it writes the busiest threads and most-reacted comments to `/edmw.xml`, which `feed-update` includes. Its first output comes about a day after install. To stop bad words getting through, edit the list at the top of the script. |
 

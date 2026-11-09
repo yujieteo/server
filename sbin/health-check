@@ -42,14 +42,6 @@ find $feed/feed.xml -mmin +360 | sed 's#.*/##; s/$/ has not been rebuilt for 6 h
 find $feed/edmw.xml -mmin +2880 2>/dev/null | sed 's#.*/##; s/$/ has not been rebuilt for 2 days/'
 find $feed/cache -type f -mmin +4320 ! -name 'forecaster-*' 2>/dev/null | sed 's#.*/##; s/^/feed source has not loaded for 3 days: /'
 
-site_main=$(ftp -MVo - "https://github.com/yujieteo/site.git/info/refs?service=git-upload-pack" | tr -d '\0' |
-	sed -n 's#^[0-9a-f]\{4\}\([0-9a-f]\{40\}\) refs/heads/main$#\1#p')
-if [ -z "$site_main" ]; then
-	echo "site: no answer from GitHub"
-elif [ "$site_main" != "$(cat /home/deploy/site-commit 2>/dev/null)" ]; then
-	echo "site-update has not picked up commit $site_main on main"
-fi
-
 # Only the two newest releases get patches. A release's folder appears when it comes out.
 following() { awk -v v="$1" 'BEGIN { printf "%.1f", v + 0.1 }'; }
 released() { ftp -MVo /dev/null "https://cdn.openbsd.org/pub/OpenBSD/$1/amd64/SHA256.sig" 2>/dev/null; }

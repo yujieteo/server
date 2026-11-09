@@ -254,13 +254,12 @@ run rcctl enable httpd smtpd unbound >/dev/null
 for u in fleet tunnel; do
 	if id "${u}" >/dev/null 2>&1; then run userdel -r "${u}"; fi
 done
-for f in /etc/relayd.conf /etc/ssl/apps.crt /etc/ssl/private/apps.key /usr/local/sbin/private-cert /usr/local/sbin/tunnel-wait /usr/local/sbin/fleet-upload /usr/local/sbin/neurons_room /etc/rc.d/neurons_room /var/www/web/apps; do
+for f in /etc/relayd.conf /etc/ssl/apps.crt /etc/ssl/private/apps.key /usr/local/sbin/private-cert /usr/local/sbin/tunnel-wait /usr/local/sbin/fleet-upload /usr/local/sbin/neurons_room /etc/rc.d/neurons_room /var/www/web/apps /usr/local/sbin/site-update /home/deploy/site-commit; do
 	if [ -e "${f}" ]; then run rm -rf "${f}"; fi
 done
 run rcctl restart sshd syslogd httpd smtpd unbound >/dev/null
 if [ "${mode}" != --live ] && [ "${mode}" != --check ]; then
 	[ -s /var/unbound/etc/blocklist.conf ] || /usr/local/sbin/blocklist-update
-	su deploy -c /usr/local/sbin/site-update || echo "site-update failed: cron tries again each minute"
 fi
 
 if [ "${mode}" = --check ]; then
