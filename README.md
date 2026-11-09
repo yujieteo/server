@@ -124,7 +124,7 @@ Root's crontab comes from `etc/crontab`:
 | When | Job |
 |---|---|
 | Daily | Install OpenBSD patches, and reboot if any were applied. |
-| Daily | `health-check` reports problems with disk, services, patches, certificates, domain expiry, DNS, Spamhaus listing and unknown certificates. |
+| Daily | `health-check` reports problems with disk, services, patches, certificates, domain expiry, DNS, Spamhaus listing, unknown certificates, stale feeds and a site deploy that has fallen behind. |
 | Hourly | Renew the TLS certificate if needed. |
 | Daily | Delete shared files older than 30 days. |
 | Weekly | Refresh the DNS blocklist. |

@@ -35,6 +35,21 @@ case $spamhaus_zen_answer in
 *) echo "$ip4 is on Spamhaus ZEN: $spamhaus_zen_answer" ;;
 esac
 
+# Ages in minutes: find rounds up, so -mtime +0 would match every file.
+# feed-update hides a failing source behind its last good copy, so only the age of that copy shows it.
+feed=/var/www/web/feed
+find $feed/feed.xml -mmin +360 | sed 's#.*/##; s/$/ has not been rebuilt for 6 hours/'
+find $feed/edmw.xml -mmin +2880 2>/dev/null | sed 's#.*/##; s/$/ has not been rebuilt for 2 days/'
+find $feed/cache -type f -mmin +4320 ! -name 'forecaster-*' 2>/dev/null | sed 's#.*/##; s/^/feed source has not loaded for 3 days: /'
+
+site_main=$(ftp -MVo - "https://github.com/yujieteo/site.git/info/refs?service=git-upload-pack" | tr -d '\0' |
+	sed -n 's#^[0-9a-f]\{4\}\([0-9a-f]\{40\}\) refs/heads/main$#\1#p')
+if [ -z "$site_main" ]; then
+	echo "site: no answer from GitHub"
+elif [ "$site_main" != "$(cat /home/deploy/site-commit 2>/dev/null)" ]; then
+	echo "site-update has not picked up commit $site_main on main"
+fi
+
 ct_last_id_file=/var/db/ct-last-id
 key=$(openssl pkey -in /etc/ssl/private/$d.key -pubout -outform DER | sha256)
 last=$(cat $ct_last_id_file 2>/dev/null)
