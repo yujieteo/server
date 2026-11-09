@@ -127,7 +127,8 @@ Root's crontab comes from `etc/crontab`:
 | Daily | Delete shared files older than 30 days. |
 | Weekly | Refresh the DNS blocklist. |
 | Each minute | Fetch and deploy the site if it changed. |
-| Hourly | `feed-update` rebuilds `/feed.xml` and `/reading.html` from public RSS feeds. They live outside the site folder, so deploys do not remove them. |
+| Hourly | `feed-update` rebuilds `/feed.xml` and `/reading.html` from public RSS feeds. They live outside the site folder, so deploys do not remove them. If a source fails, its last good copy is used. |
+| Hourly | `edmw-update` records reply counts from HardwareZone's EDMW forum. Once a day it writes the busiest threads and most-reacted comments to `/edmw.xml`, which `feed-update` includes. Its first output comes about a day after install. To stop bad words getting through, edit the list at the top of the script. |
 
 Separately, `sbin/ssh-alert` mails root about any SSH login from an address outside `KNOWN_IPS`.
 

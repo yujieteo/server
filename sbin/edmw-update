@@ -1,0 +1,337 @@
+#!/usr/bin/perl
+use strict;
+use warnings;
+use POSIX qw(ceil strftime);
+
+# Runs hourly. Each run records reply counts from the EDMW thread list. Once a
+# day it scores them and writes the day's best threads and comments as RSS.
+# feed-update reads that file, and httpd serves it at /edmw.xml.
+
+my $out = $ARGV[0] // '/var/www/web/feed/edmw.xml';
+my $state_file = $ARGV[1] // '/home/deploy/edmw-state';
+my $site = 'https://teoyujie.org';
+my $base = 'https://forums.hardwarezone.com.sg';
+my $forum = "$base/forums/eat-drink-man-woman.16/";
+
+my $hour = 3600;
+my $day = 24 * $hour;
+my $list_pages = 3;
+my $posts_per_page = 20;
+my $pages_per_thread = 3;
+my $pause = 2;
+
+my $publish_every = $day - 600;
+my $history_needed = 20 * $hour;
+my $comment_age = 36 * $hour;
+my $max_thread_age = 30 * $day;
+my $picks_kept = 7 * $day;
+
+my $threads_scanned = 10;
+my $threads_published = 5;
+my $comments_published = 10;
+my $comments_per_thread = 3;
+my $min_gain = 20;
+my $min_reactions = 5;
+my $min_characters = 40;
+my $excerpt_length = 600;
+
+# Long-running chit-chat threads would otherwise fill every day's list, so
+# $max_thread_age leaves them out. Best effort. Add to this list when something unsuitable gets through.
+my $blocked = join '|', qw(
+	fuck\w* shit\w* cunts? cocks? puss(?:y|ies) dicks? bitch\w* whor\w* slut\w*
+	nudes? naked porn\w* sex sexy sexual\w* onlyfans boobs? tits? titties milfs?
+	blowjob\w* cum horny rap(?:e|es|ed|ist|ists|ing)
+	knn kns ccb cb cheebye chee\s*bye lanjiao lan\s*jiao nabei puki\w* kanina
+	keling tiong\w* cheena ah\s*neh chink\w* nigg\w*
+);
+$blocked = qr/\b(?:$blocked)\b/i;
+
+sub fetch {
+	my ($url) = @_;
+	my $html = qx{ftp -MV -w 20 -U teoyujie-feed/1.0 -o - '$url' 2>/dev/null};
+	return $? == 0 ? $html : '';
+}
+
+sub character {
+	my ($code) = @_;
+	return '' if $code < 0x20 || $code > 0x10FFFF || ($code >= 0xD800 && $code <= 0xDFFF);
+	my $text = chr $code;
+	utf8::encode($text);
+	return $text;
+}
+
+sub text {
+	my ($html) = @_;
+	1 while $html =~ s/<blockquote\b(?:(?!<blockquote\b).)*?<\/blockquote>/ /gis;
+	$html =~ s/<(script|style|iframe)\b.*?<\/\1>/ /gis;
+	$html =~ s/<\/?(?:p|br|div|li)\b[^>]*>/ /gi;
+	$html =~ s/<[^>]*>//g;
+	$html =~ s/&#(\d+);/character($1)/ge;
+	$html =~ s/&#[xX]([0-9a-fA-F]+);/character(hex $1)/ge;
+	$html =~ s/&lt;/</g;
+	$html =~ s/&gt;/>/g;
+	$html =~ s/&quot;/"/g;
+	$html =~ s/&apos;/'/g;
+	$html =~ s/&nbsp;/ /g;
+	$html =~ s/&amp;/&/g;
+	$html =~ s/[\x00-\x1f]/ /g;
+	$html =~ s/\s+/ /g;
+	$html =~ s/^ | $//g;
+	return $html;
+}
+
+sub excerpt {
+	my ($text) = @_;
+	my $characters = $text;
+	return $text unless utf8::decode($characters) && length $characters > $excerpt_length;
+	$characters = substr $characters, 0, $excerpt_length;
+	$characters =~ s/\s+\S*$//;
+	$characters .= "\x{2026}";
+	utf8::encode($characters);
+	return $characters;
+}
+
+sub escaped {
+	my ($text) = @_;
+	$text =~ s/&/&amp;/g;
+	$text =~ s/</&lt;/g;
+	$text =~ s/>/&gt;/g;
+	$text =~ s/"/&quot;/g;
+	return $text;
+}
+
+# XenForo shortens large counts, for example 1.2K.
+sub count {
+	my ($text) = @_;
+	$text =~ s/,//g;
+	return undef unless $text =~ /^(\d+(?:\.\d+)?)([KM]?)$/i;
+	return int($1 * (uc($2) eq 'K' ? 1000 : uc($2) eq 'M' ? 1000000 : 1));
+}
+
+sub threads_in {
+	my ($html) = @_;
+	my @blocks = split /<div class="structItem structItem--thread /, $html;
+	shift @blocks;
+	my @threads;
+	for my $block (@blocks) {
+		next if $block =~ /structItem-status--sticky/;
+		next unless $block =~ m{<a href="(/threads/(?:[a-z0-9-]+\.)?(\d+)/)"[^>]*data-tp-primary="on"[^>]*>(.*?)</a>}s;
+		my ($path, $id, $title) = ($1, $2, text($3));
+		next unless $block =~ /structItem-startDate.*?data-time="(\d+)"/s;
+		my $start = $1;
+		next unless $block =~ m{<dt>Replies</dt>\s*<dd>(.*?)</dd>}s;
+		my $shown = text($1);
+		my $replies = count($shown);
+		next unless defined $replies;
+		my $last;
+		if ($block =~ /structItem-pageJump">(.*?)<\/span>/s) {
+			my $jump = $1;
+			while ($jump =~ /page-(\d+)"/g) { $last = $1 if $1 > ($last // 0); }
+		}
+		$last //= ceil(($replies + 1) / $posts_per_page);
+		$replies = $last * $posts_per_page if $shown =~ /[KM]$/i;
+		push @threads, { id => $id, replies => $replies, start => $start, last => $last, path => $path, title => $title };
+	}
+	return @threads;
+}
+
+sub comments_in {
+	my ($html) = @_;
+	my @blocks = split /<article class="message message--post /, $html;
+	shift @blocks;
+	my @comments;
+	for my $block (@blocks) {
+		next unless $block =~ /data-author="([^"]*)"/;
+		my $author = text($1);
+		next unless $block =~ /data-content="post-(\d+)"/;
+		my $id = $1;
+		next unless $block =~ /data-time="(\d+)"[^>]*itemprop="datePublished"/;
+		my $date = $1;
+		next unless $block =~ /class="reactionsBar-link"[^>]*>(.*?)<\/a>/s;
+		my $names = $1;
+		my $reactions = () = $names =~ /<bdi>/g;
+		$reactions += count($1) // 0 if $names =~ /and ([\d,.]+[KM]?) others?/;
+		next unless $block =~ /<div class="bbWrapper">(.*?)<\/article>/s;
+		push @comments, { id => $id, author => $author, date => $date, reactions => $reactions, body => text($1) };
+	}
+	return @comments;
+}
+
+# Spread the fetches across the pages written during the day. The earliest of
+# them have had the longest to collect reactions.
+sub pages_for {
+	my ($thread, $gain) = @_;
+	my $last = $thread->{last};
+	my $first = $last - ceil($gain / $posts_per_page);
+	$first = 1 if $first < 1;
+	my $span = $last - $first;
+	return ($first .. $last) if $span < $pages_per_thread;
+	my %pages = map { $first + int($span * $_ / ($pages_per_thread - 1)) => 1 } 0 .. $pages_per_thread - 1;
+	return sort { $a <=> $b } keys %pages;
+}
+
+sub read_state {
+	my (@snapshots, @picks);
+	my $published = 0;
+	open my $file, '<', $state_file or return (\@snapshots, \@picks, $published);
+	while (my $line = <$file>) {
+		chomp $line;
+		my ($type, @fields) = split /\t/, $line, -1;
+		if ($type eq 'published') {
+			$published = $fields[0];
+		} elsif ($type eq 'snapshot') {
+			my %row;
+			@row{qw(time id replies start last path title)} = @fields;
+			push @snapshots, \%row;
+		} elsif ($type eq 'pick') {
+			my %row;
+			@row{qw(picked date link title description)} = @fields;
+			push @picks, \%row;
+		}
+	}
+	close $file;
+	return (\@snapshots, \@picks, $published);
+}
+
+sub replace {
+	my ($path, $content) = @_;
+	my $temporary = "$path.new";
+	open my $file, '>', $temporary or die "edmw-update: $temporary: $!\n";
+	print {$file} $content or die "edmw-update: write: $!\n";
+	close $file or die "edmw-update: close: $!\n";
+	chmod 0644, $temporary or die "edmw-update: chmod: $!\n";
+	rename $temporary, $path or die "edmw-update: rename: $!\n";
+}
+
+sub write_state {
+	my ($snapshots, $picks, $published) = @_;
+	my $content = "published\t$published\n";
+	$content .= join("\t", 'snapshot', @$_{qw(time id replies start last path title)}) . "\n" for @$snapshots;
+	$content .= join("\t", 'pick', @$_{qw(picked date link title description)}) . "\n" for @$picks;
+	replace($state_file, $content);
+}
+
+sub render {
+	my ($now, @picks) = @_;
+	my $format = '%a, %d %b %Y %H:%M:%S GMT';
+	my $built = strftime($format, gmtime $now);
+	my $body = '';
+	for my $pick (@picks) {
+		my ($link, $title, $description) = map { escaped($_) } @$pick{qw(link title description)};
+		my $date = strftime($format, gmtime $pick->{date});
+		$body .= qq{<item><title>$title</title><link>$link</link><guid isPermaLink="true">$link</guid><pubDate>$date</pubDate><description>$description</description></item>\n};
+	}
+	return <<"EOF";
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom"><channel>
+<title>EDMW: the day's best threads and comments</title>
+<link>$forum</link>
+<description>The busiest threads and most-reacted comments on HardwareZone's Eat-Drink-Man-Woman forum, chosen once a day.</description>
+<atom:link href="$site/edmw.xml" rel="self" type="application/rss+xml"/>
+<lastBuildDate>$built</lastBuildDate>
+$body</channel></rss>
+EOF
+}
+
+sub ranked {
+	my ($now, $snapshots) = @_;
+	my (%earliest, %latest);
+	for my $row (sort { $a->{time} <=> $b->{time} } @$snapshots) {
+		next if $row->{time} < $now - $day - $hour;
+		$earliest{$row->{id}} //= $row;
+		$latest{$row->{id}} = $row;
+	}
+	my @threads;
+	for my $id (keys %latest) {
+		my $thread = $latest{$id};
+		my $gain = $thread->{start} >= $now - $day ? $thread->{replies} : $thread->{replies} - $earliest{$id}{replies};
+		next if $thread->{start} < $now - $max_thread_age;
+		next if $gain < $min_gain || $thread->{title} =~ $blocked;
+		push @threads, { %$thread, gain => $gain };
+	}
+	return sort { $b->{gain} <=> $a->{gain} || $a->{id} <=> $b->{id} } @threads;
+}
+
+sub choose {
+	my ($now, $threads, $previous) = @_;
+	my %used = map { $_->{link} => 1 } @$previous;
+	my @scanned = grep { defined } @$threads[0 .. $threads_scanned - 1];
+	my (@comments, $fetched);
+	for my $thread (@scanned) {
+		my (%seen, @found);
+		for my $page (pages_for($thread, $thread->{gain})) {
+			sleep $pause;
+			my $html = fetch($base . $thread->{path} . ($page > 1 ? "page-$page" : ''));
+			$fetched++ if $html =~ /<article class="message message--post /;
+			push @found, grep { !$seen{$_->{id}}++ } comments_in($html);
+		}
+		my $kept = 0;
+		for my $comment (sort { $b->{reactions} <=> $a->{reactions} || $a->{id} <=> $b->{id} } @found) {
+			my $link = "$base$thread->{path}post-$comment->{id}";
+			next if $used{$link} || $comment->{reactions} < $min_reactions;
+			next if $comment->{date} < $now - $comment_age || $comment->{date} > $now;
+			next if $comment->{body} =~ $blocked || $comment->{author} =~ $blocked;
+			next if length($comment->{body} =~ s{https?://\S+|@\S+}{}gr) < $min_characters;
+			push @comments, {
+				picked => $now, date => $comment->{date}, link => $link, reactions => $comment->{reactions},
+				title => qq{New comment by $comment->{author} in "$thread->{title}"},
+				description => excerpt($comment->{body}),
+			};
+			last if ++$kept == $comments_per_thread;
+		}
+	}
+	return undef if @scanned && !$fetched;
+	@comments = sort { $b->{reactions} <=> $a->{reactions} } @comments;
+	splice @comments, $comments_published if @comments > $comments_published;
+	my @picks;
+	for my $thread (@$threads) {
+		my $link = $base . $thread->{path};
+		next if $used{$link};
+		push @picks, {
+			picked => $now, date => $now, link => $link,
+			title => "$thread->{title} (+$thread->{gain} replies)",
+			description => "$thread->{gain} replies in the past day on EDMW.",
+		};
+		last if @picks == $threads_published;
+	}
+	return [@picks, @comments];
+}
+
+my $now = time;
+my ($snapshots, $picks, $published) = read_state();
+
+my @listed;
+for my $page (1 .. $list_pages) {
+	sleep $pause if $page > 1;
+	push @listed, threads_in(fetch($forum . ($page > 1 ? "page-$page" : '')));
+}
+if (!@listed) {
+	my $newest = 0;
+	for (@$snapshots) { $newest = $_->{time} if $_->{time} > $newest; }
+	die "edmw-update: the thread list has not loaded for over a day\n" if $now - $newest > $day && (gmtime $now)[2] == 0;
+	exit 0;
+}
+
+my @kept = grep { $_->{time} >= $now - $day - 2 * $hour } @$snapshots;
+my $oldest = $now;
+for (@kept) { $oldest = $_->{time} if $_->{time} < $oldest; }
+my %listed_ids;
+for my $thread (grep { !$listed_ids{$_->{id}}++ } @listed) {
+	push @kept, { %$thread, time => $now };
+}
+
+if ($now - $published < $publish_every || $now - $oldest < $history_needed) {
+	write_state(\@kept, $picks, $published);
+	exit 0;
+}
+
+my @current = grep { $_->{picked} >= $now - $picks_kept } @$picks;
+my @threads = ranked($now, \@kept);
+my $chosen = choose($now, \@threads, \@current);
+if (!defined $chosen) {
+	write_state(\@kept, $picks, $published);
+	die "edmw-update: no thread page could be loaded, trying again next hour\n";
+}
+my @all = (@$chosen, @current);
+replace($out, render($now, @all));
+write_state(\@kept, \@all, $now);

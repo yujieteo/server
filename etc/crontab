@@ -4,4 +4,5 @@
 0	3	*	*	0	/usr/local/sbin/blocklist-update
 *	*	*	*	*	-s su deploy -c /usr/local/sbin/site-update
 ~	*	*	*	*	-s su deploy -c /usr/local/sbin/feed-update
+~	*	*	*	*	-s su deploy -c /usr/local/sbin/edmw-update
 0	4	*	*	*	find /var/www/files/f -mindepth 1 -maxdepth 1 -mtime +30 -exec rm -rf {} +
