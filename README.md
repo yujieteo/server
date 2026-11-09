@@ -1,15 +1,15 @@
 # teoyujie.org server
 
-Configuration for the teoyujie.org server: OpenBSD 8.0. The config needs only the base system.
+Configuration for the teoyujie.org server: OpenBSD 8.0. The config needs the base system and one package, `opensmtpd-filter-dkimsign`.
 
 It does four things:
 
 - Serves the website and temporary file links with httpd.
-- Forwards mail for teoyujie.org with smtpd.
+- Forwards mail for teoyujie.org with smtpd, and signs mail that starts on the server with DKIM.
 - Runs a WireGuard VPN, which is the only way to reach SSH.
 - Blocks ads and trackers for VPN clients with unbound.
 
-This repo is public and holds no secrets. The server generates its own TLS, ACME, SRS and WireGuard keys, and they never leave it. Your personal settings live in `local.conf`, which git ignores.
+This repo is public and holds no secrets. The server generates its own TLS, ACME, SRS, DKIM and WireGuard keys, and they never leave it. Your personal settings live in `local.conf`, which git ignores.
 
 ## Files
 
@@ -78,6 +78,7 @@ To test the result, copy the source and `local.conf` to a private folder on the 
 | `@` | MX | `10 teoyujie.org.` |
 | `@` | TXT | `"v=spf1 mx -all"` |
 | `_dmarc` | TXT | `"v=DMARC1; p=reject"` |
+| `2026._domainkey` | TXT | `"v=DKIM1; k=rsa; p=PUBLIC_KEY"` |
 | `www` | CNAME | `teoyujie.org.` |
 | `mta-sts` | CNAME | `teoyujie.org.` |
 | `_mta-sts` | TXT | `"v=STSv1; id=20261101"` |
@@ -87,6 +88,12 @@ To test the result, copy the source and `local.conf` to a private folder on the 
 | `@` | CAA | `0 iodef "mailto:contact@teoyujie.org"` |
 
 Do not add a wildcard record, because it breaks GnuPG key lookup through WKD. If you change `www/.well-known/mta-sts.txt`, also change the `id` in `_mta-sts`.
+
+A new server makes a new DKIM key. To print `PUBLIC_KEY`, run this on the server:
+
+```sh
+doas openssl pkey -in /etc/mail/dkim/teoyujie.org.2026.rsa.key -pubout -outform DER | openssl base64 -A
+```
 
 smtpd refuses connections from hosts with no reverse DNS, so less spam gets forwarded from this server's address.
 

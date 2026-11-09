@@ -180,6 +180,17 @@ if [ ! -e /etc/mail/srs.conf ]; then
 		(umask 077 && echo "srs key ${srs_key}" > /etc/mail/srs.conf)
 	fi
 fi
+if ! pkg_info -qe 'opensmtpd-filter-dkimsign-*'; then run pkg_add -I opensmtpd-filter-dkimsign; fi
+run install -d -o _dkimsign -g _dkimsign -m 750 /etc/mail/dkim
+dkim_key=/etc/mail/dkim/${d}.2026.rsa.key
+if [ ! -e "${dkim_key}" ]; then
+	if [ "${mode}" = --check ]; then
+		generated "${dkim_key}" 'create RSA 2048 DKIM key, mode 600, owner _dkimsign'
+	else
+		(umask 077 && openssl genrsa -out "${dkim_key}" 2048 2>/dev/null)
+		chown _dkimsign:_dkimsign "${dkim_key}"
+	fi
+fi
 for a in contact postmaster ${ALIASES-}; do echo "${a}@${d} ${FORWARD_TO-}"; done > "${work}/content"
 write /etc/mail/virtual < "${work}/content"
 {
