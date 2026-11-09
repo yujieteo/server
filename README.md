@@ -115,6 +115,8 @@ The website comes from the [site repo](https://github.com/yujieteo/site), in two
 - **Automatic:** each minute, `sbin/site-update` looks for a new commit on `main` and deploys its `public/` folder. If a page then fails, it restores the previous site.
 - **Manual:** `scripts/deploy.sh` in the site repo sends a tarball over SSH to the `deploy` user. That user can only run `sbin/deploy-only`, which accepts only `site` and swaps in the new folder by renaming it.
 
+Both ways end in `deploy-only`, which also writes a `.gz` copy of each text file over 1 KB. httpd sends that copy to browsers that accept gzip. `feed-update` does the same for `/feed.xml` and `/reading.html`.
+
 ## Scheduled jobs
 
 Root's crontab comes from `etc/crontab`:

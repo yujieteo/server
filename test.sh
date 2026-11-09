@@ -26,6 +26,10 @@ get() {
 	printf 'GET %s HTTP/1.0\r\nHost: teoyujie.org\r\n\r\n' "$1" |
 	openssl s_client -quiet -connect 127.0.0.1:443 -servername teoyujie.org 2>/dev/null | tr -d '\r'
 }
+sends_gzip() {
+	printf 'GET %s HTTP/1.0\r\nHost: teoyujie.org\r\nAccept-Encoding: gzip\r\n\r\n' "$1" |
+	openssl s_client -quiet -connect 127.0.0.1:443 -servername teoyujie.org 2>/dev/null | tr -d '\r' | grep -aqix 'Content-Encoding: gzip'
+}
 has_header() {
 	get / | grep -qi "^$1:"
 }
@@ -95,6 +99,8 @@ t "web: MTA-STS policy" is_eq '200 ' web 443 mta-sts.teoyujie.org /.well-known/m
 d=$(openssl rand -hex 16)
 mkdir "/var/www/files/f/${d}" && echo test > "/var/www/files/f/${d}/a.txt"
 t "web: file link" is_eq '200 ' web 443 teoyujie.org "/f/${d}/a.txt"
+gzip -9nc "/var/www/files/f/${d}/a.txt" > "/var/www/files/f/${d}/a.txt.gz"
+t "web: a .gz copy is sent to clients that accept gzip" sends_gzip "/f/${d}/a.txt"
 t "web: no file list" not is_eq '200 ' web 443 teoyujie.org /f/
 t "web: a 403 is the site error page" is_eq '<h1>403 Forbidden</h1>' errpage /f/
 rm -r "/var/www/files/f/${d}"

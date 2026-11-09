@@ -208,6 +208,15 @@ sub publish {
 	rename $temporary, $path or die "feed-update: rename: $!\n";
 }
 
+# httpd ignores a .gz older than its original, so a failure here only means no compression.
+sub publish_gzipped {
+	my ($path, $content) = @_;
+	publish($path, $content);
+	system("gzip -9nc <\Q$path\E >\Q$path\E.gz.new") == 0 or die "feed-update: gzip $path failed\n";
+	chmod 0644, "$path.gz.new" or die "feed-update: chmod: $!\n";
+	rename "$path.gz.new", "$path.gz" or die "feed-update: rename: $!\n";
+}
+
 sub fetch {
 	my ($url) = @_;
 	if ($url =~ m{^/}) {
@@ -245,5 +254,5 @@ die "feed-update: only $working of " . scalar(@sources) . " sources worked, the 
 my @sorted = sort { $b->{date} <=> $a->{date} } values %seen;
 splice @sorted, $max_items if @sorted > $max_items;
 (my $page = $out) =~ s{[^/]*$}{reading.html};
-publish($page, render_page($now, @sorted));
-publish($out, render($now, @sorted));
+publish_gzipped($page, render_page($now, @sorted));
+publish_gzipped($out, render($now, @sorted));
