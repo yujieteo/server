@@ -24,6 +24,21 @@ my @sources = (
 	['EDMW', $edmw, 15],
 );
 
+my $forecasters_about = 'The latest comments and blog posts from the 20 Hacker News commenters with the best forecasting records.';
+my $forecasters_max_items = 60;
+my $forecasters_per_feed = 6;
+# hnrss starts refusing after about ten quick requests.
+my $forecasters_pause = 5;
+my @forecasters = qw(
+	stcredzero wmf gojomo adventured jonnathanson earl Zigurd gbog nostrademons potatolicious
+	dasil003 snowwrestler nl jsjenkins168 Samuel_Michon bane bryanlarsen SwellJoe tptacek btilly
+);
+my @forecaster_sources = map { ['Hacker News', "https://hnrss.org/threads?id=$_", $forecasters_per_feed, "forecaster-$_"] } @forecasters;
+push @forecaster_sources,
+	["gojomo's blog", 'https://memesteading.wordpress.com/feed/', $forecasters_per_feed, 'forecaster-blog-gojomo'],
+	["bryanlarsen's blog", 'https://bryan.larsen.st/feed.xml', $forecasters_per_feed, 'forecaster-blog-bryanlarsen'],
+	["SwellJoe's blog", 'https://swelljoe.com/index.xml', $forecasters_per_feed, 'forecaster-blog-SwellJoe'];
+
 my %months;
 @months{qw(Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec)} = (0 .. 11);
 
@@ -163,7 +178,7 @@ EOF
 }
 
 sub render_page {
-	my ($now, @items) = @_;
+	my ($now, $page, @items) = @_;
 	my $built = strftime('%d %b %Y, %H:%M UTC', gmtime $now);
 	my $list = '';
 	for my $item (@items) {
@@ -173,7 +188,7 @@ sub render_page {
 		my $date = strftime('%Y-%m-%d', gmtime $item->{date});
 		$list .= qq{<li><a href="$link" rel="noopener noreferrer"><h3>$title</h3><span class="kind">$date</span><p>$label</p></a></li>\n};
 	}
-	my $description = escaped($about);
+	my $description = escaped($page->{about});
 	return <<"EOF";
 <!doctype html>
 <html lang="en">
@@ -183,14 +198,13 @@ sub render_page {
 <meta name="color-scheme" content="only light">
 <link rel="icon" href="data:,">
 <link rel="stylesheet" href="/style.css">
-<link rel="alternate" type="application/rss+xml" title="Reading feed" href="/feed.xml">
-<title>Reading</title>
+$page->{head}<title>$page->{title}</title>
 <meta name="description" content="$description">
 </head>
 <body>
 <header class="wrap"><a class="name" href="/">Yu Jie Teo</a><span class="tagline">Mechanical Engineer</span></header>
-<main class="wrap"><section id="reading"><h2>Reading</h2>
-<p class="muted">Updated $built. <a href="/feed.xml">RSS feed</a></p>
+<main class="wrap"><section id="$page->{id}"><h2>$page->{title}</h2>
+<p class="muted">Updated $built. $page->{note}</p>
 <ol class="featured">
 $list</ol></section></main>
 </body>
@@ -231,28 +245,60 @@ sub fetch {
 (my $cache = $out) =~ s{[^/]*$}{cache};
 mkdir $cache unless -d $cache;
 
-my $working = 0;
 my $now = time;
-my %seen;
-for my $source (@sources) {
-	my ($name, $url, $limit) = @$source;
-	my $xml = fetch($url);
-	my @items = parse($xml, $name, $limit);
-	(my $saved = "$cache/$name") =~ s/[^\w\/.-]+/-/g;
-	if (@items) {
-		$working++;
-		publish($saved, $xml);
-	} else {
-		@items = parse(fetch($saved), $name, $limit);
+
+# A source that fails falls back to its last good copy, saved under its cache key.
+sub gather {
+	my ($pause, @list) = @_;
+	my $working = 0;
+	my %seen;
+	for my $source (@list) {
+		my ($name, $url, $limit, $key) = @$source;
+		sleep $pause if $pause;
+		my $xml = fetch($url);
+		my @items = parse($xml, $name, $limit);
+		(my $saved = "$cache/" . ($key // $name)) =~ s/[^\w\/.-]+/-/g;
+		if (@items) {
+			$working++;
+			publish($saved, $xml);
+		} else {
+			@items = parse(fetch($saved), $name, $limit);
+		}
+		for my $item (@items) {
+			$seen{$item->{link}} //= $item if $item->{date} <= $now;
+		}
 	}
-	for my $item (@items) {
-		$seen{$item->{link}} //= $item if $item->{date} <= $now;
-	}
+	return ($working, \%seen);
 }
+
+my ($working, $seen) = gather(0, @sources);
 die "feed-update: only $working of " . scalar(@sources) . " sources worked, the old feed stays\n" if $working * 2 < @sources;
 
-my @sorted = sort { $b->{date} <=> $a->{date} } values %seen;
+my @sorted = sort { $b->{date} <=> $a->{date} } values %$seen;
 splice @sorted, $max_items if @sorted > $max_items;
 (my $page = $out) =~ s{[^/]*$}{reading.html};
-publish_gzipped($page, render_page($now, @sorted));
+my %reading = (
+	title => 'Reading',
+	id => 'reading',
+	about => $about,
+	head => qq{<link rel="alternate" type="application/rss+xml" title="Reading feed" href="/feed.xml">\n},
+	note => '<a href="/feed.xml">RSS feed</a>',
+);
+publish_gzipped($page, render_page($now, \%reading, @sorted));
 publish_gzipped($out, render($now, @sorted));
+
+# Last, so a slow or failing forecaster feed cannot hold up the reading feed.
+my ($forecasters_working, $forecasters_seen) = gather($forecasters_pause, @forecaster_sources);
+die "feed-update: only $forecasters_working of " . scalar(@forecaster_sources) . " forecaster feeds worked, the old page stays\n" if $forecasters_working * 2 < @forecaster_sources;
+
+my @forecaster_items = sort { $b->{date} <=> $a->{date} } values %$forecasters_seen;
+splice @forecaster_items, $forecasters_max_items if @forecaster_items > $forecasters_max_items;
+(my $forecasters_page = $out) =~ s{[^/]*$}{forecasters.html};
+my %forecasters = (
+	title => 'Forecasters',
+	id => 'forecasters',
+	about => $forecasters_about,
+	head => '',
+	note => 'The latest from the people in <a href="/essays/hn-forecasters/">the forecasting ranking</a>. <a href="/hn-forecasters.opml">OPML of all feeds</a>',
+);
+publish_gzipped($forecasters_page, render_page($now, \%forecasters, @forecaster_items));
