@@ -63,7 +63,7 @@ deploy_ssh() {
 	ssh -i "$1" -o StrictHostKeyChecking=accept-new -o BatchMode=yes deploy@127.0.0.1 "$2"
 }
 deploy_pages() {
-	tar -czf - -C "${p}" index.html play lullapixie marklove | deploy_ssh "$1" site
+	tar -czf - -C "${p}" index.html | deploy_ssh "$1" site
 }
 deploy_replaces() {
 	touch /var/www/web/site/old.html && deploy_pages "$1" && [ ! -e /var/www/web/site/old.html ]
@@ -73,9 +73,7 @@ deploy_refuses() {
 }
 if [ -n "${1:-}" ]; then
 	p=$(mktemp -d)
-	mkdir -p "${p}/play/beamdiag" "${p}/lullapixie" "${p}/marklove"
-	for f in index.html play/beamdiag/index.html lullapixie/privacy.html lullapixie/support.html \
-		marklove/privacy.html marklove/support.html; do echo test > "${p}/${f}"; done
+	echo test > "${p}/index.html"
 	t "deploy: site" deploy_pages "$1"
 	t "deploy: old files go away" deploy_replaces "$1"
 	t "deploy: no shell" deploy_refuses "$1" sh
@@ -83,8 +81,7 @@ if [ -n "${1:-}" ]; then
 	rm -rf "${p}"
 fi
 
-for u in / /lullapixie/privacy.html /lullapixie/support.html /marklove/privacy.html /marklove/support.html \
-	/play/beamdiag/ /.well-known/security.txt /contact.gpg /.well-known/openpgpkey/hu/dj3498u4hyyarh35rkjfnghbjxug6b19; do
+for u in / /.well-known/security.txt /contact.gpg /.well-known/openpgpkey/hu/dj3498u4hyyarh35rkjfnghbjxug6b19; do
 	t "web: ${u}" is_eq '200 ' web 443 teoyujie.org "${u}"
 done
 t "web: old URL is 404" is_eq '404 ' web 443 teoyujie.org /old.html
