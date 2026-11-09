@@ -27,6 +27,7 @@ This repo is public and holds no secrets. The server generates its own TLS, ACME
 | `sbin/` | Server | Scheduled jobs and the forced command of the `deploy` user. |
 | `www/` | | Public files: `security.txt`, the GPG key and WKD, the MTA-STS policy, the error page. |
 | `ROLLBACK.md` | | The checkpoint and recovery plan for live installs. |
+| `LICENSE` | | The MIT License for this repository. |
 
 ## Change the live server
 
