@@ -20,7 +20,7 @@ This repo is public and holds no secrets. The server generates its own TLS, ACME
 | `install.sh` | Server, as root | Turns a fresh OpenBSD install into this server. Safe to run again. |
 | `test.sh` | Server, as root | Tests the running services. |
 | `wg-config`, `wg-preflight` | Server | Generate the WireGuard config, and stop an install that would change it. |
-| `share` | Mac | `./share FILE` uploads a file and prints a link that lasts 30 days. |
+| `share` | Mac | `./share [--days N] FILE` uploads a file and prints a link that lasts N days (default 30). `--list` shows the live links and `--rm LINK` deletes one. |
 | `mail-alias` | Mac | `./mail-alias add NAME` or `del NAME` edits the mail aliases in `local.conf`. |
 | `local.conf.example` | | Template for `local.conf`, filled with test values. |
 | `etc/` | | Configs for httpd, smtpd, acme-client, pf, sshd, unbound, doas, sysctl and cron. |
@@ -87,6 +87,8 @@ To test the result, copy the source and `local.conf` to a private folder on the 
 
 Do not add a wildcard record, because it breaks GnuPG key lookup through WKD. If you change `www/.well-known/mta-sts.txt`, also change the `id` in `_mta-sts`.
 
+smtpd refuses connections from hosts with no reverse DNS, so less spam gets forwarded from this server's address.
+
 ## WireGuard clients
 
 In the WireGuard app, add an empty tunnel. The app generates the private key and shows the public key, which goes in `WG_PEERS` in `local.conf`.
@@ -115,7 +117,9 @@ The website comes from the [site repo](https://github.com/yujieteo/site), in two
 - **Automatic:** each minute, `sbin/site-update` looks for a new commit on `main` and deploys its `public/` folder. If a page then fails, it restores the previous site.
 - **Manual:** `scripts/deploy.sh` in the site repo sends a tarball over SSH to the `deploy` user. That user can only run `sbin/deploy-only`, which accepts only `site` and swaps in the new folder by renaming it.
 
-Both ways end in `deploy-only`, which also writes a `.gz` copy of each text file over 1 KB. httpd sends that copy to browsers that accept gzip. `feed-update` does the same for `/feed.xml`, `/reading.html` and `/forecasters.html`.
+Both ways end in `deploy-only`, which also writes a `.gz` copy of each text file over 1 KB. httpd sends that copy to browsers that accept gzip. `feed-update` does the same for `/feed.xml`, `/reading.html`, `/forecasters.html` and `/forecasters.xml`.
+
+After the swap, `deploy-only` runs `sbin/link-check`, which prints any link between the site's own pages that leads to no file. It only reports, so the deploy still goes ahead. If you add a `location` to `httpd.conf` that serves a file from outside the site folder, add its path to the list at the top of that script.
 
 ## Scheduled jobs
 
@@ -124,12 +128,12 @@ Root's crontab comes from `etc/crontab`:
 | When | Job |
 |---|---|
 | Daily | Install OpenBSD patches, and reboot if any were applied. |
-| Daily | `health-check` reports problems with disk, services, patches, certificates, domain expiry, DNS, Spamhaus listing, unknown certificates, stale feeds and a site deploy that has fallen behind. |
+| Daily | `health-check` reports problems with disk, services, patches, certificates, domain expiry, DNS, Spamhaus listing, unknown certificates, stale feeds, a site deploy that has fallen behind and an OpenBSD release that needs upgrading. |
 | Hourly | Renew the TLS certificate if needed. |
-| Daily | Delete shared files older than 30 days. |
+| Daily | Delete shared links that have reached their end date. |
 | Weekly | Refresh the DNS blocklist. |
 | Each minute | Fetch and deploy the site if it changed. |
-| Hourly | `feed-update` rebuilds `/feed.xml`, `/reading.html` and `/forecasters.html` from public RSS feeds. They live outside the site folder, so deploys do not remove them. If a source fails, its last good copy is used. |
+| Hourly | `feed-update` rebuilds `/feed.xml`, `/reading.html`, `/forecasters.html` and `/forecasters.xml` from public RSS feeds. They live outside the site folder, so deploys do not remove them. If a source fails, its last good copy is used. |
 | Hourly | `edmw-update` records reply counts from HardwareZone's EDMW forum. Once a day it writes the busiest threads and most-reacted comments to `/edmw.xml`, which `feed-update` includes. Its first output comes about a day after install. To stop bad words getting through, edit the list at the top of the script. |
 
 Separately, `sbin/ssh-alert` mails root about any SSH login from an address outside `KNOWN_IPS`.
@@ -140,7 +144,7 @@ Tags named `vYYYY.MM.DD` mark the state of `main` on that date. They do not show
 
 ## Upgrade OpenBSD
 
-There is a new release every six months.
+There is a new release every six months. `health-check` reminds you each Monday once a new release is out, and daily once this one has stopped getting patches.
 
 1. Run `ssh -t ADMIN_USER@10.8.0.1 doas sysupgrade`. It takes about 10 minutes.
 2. Follow [Change the live server](#change-the-live-server). This rewrites any configs that sysmerge left alone.

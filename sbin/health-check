@@ -50,6 +50,17 @@ elif [ "$site_main" != "$(cat /home/deploy/site-commit 2>/dev/null)" ]; then
 	echo "site-update has not picked up commit $site_main on main"
 fi
 
+# Only the two newest releases get patches. A release's folder appears when it comes out.
+following() { awk -v v="$1" 'BEGIN { printf "%.1f", v + 0.1 }'; }
+released() { ftp -MVo /dev/null "https://cdn.openbsd.org/pub/OpenBSD/$1/amd64/SHA256.sig" 2>/dev/null; }
+release=$(uname -r)
+next_release=$(following "$release")
+if released "$(following "$next_release")"; then
+	echo "OpenBSD $release no longer gets patches: run sysupgrade"
+elif released "$next_release" && [ "$(date +%u)" = 1 ]; then
+	echo "OpenBSD $next_release is out: run sysupgrade before the release after it ends patches for $release"
+fi
+
 ct_last_id_file=/var/db/ct-last-id
 key=$(openssl pkey -in /etc/ssl/private/$d.key -pubout -outform DER | sha256)
 last=$(cat $ct_last_id_file 2>/dev/null)

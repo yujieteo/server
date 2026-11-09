@@ -105,6 +105,13 @@ t "web: no file list" not is_eq '200 ' web 443 teoyujie.org /f/
 t "web: a 403 is the site error page" is_eq '<h1>403 Forbidden</h1>' errpage /f/
 rm -r "/var/www/files/f/${d}"
 
+p=$(mktemp -d)
+echo '<a href="/there.html">link</a>' > "${p}/index.html"
+t "link check: finds a broken link" not /usr/local/sbin/link-check "${p}"
+echo test > "${p}/there.html"
+t "link check: accepts a good link" /usr/local/sbin/link-check "${p}"
+rm -r "${p}"
+
 egress_ip=$(ifconfig egress | awk '$1 == "inet" { print $2; exit }')
 mail_to() {
 	printf 'From: test@example.org\nSubject: test.sh\n\ntest\n' | smtp -C -s "smtp://$1" -F test@example.org "$2" 2>&1 | grep -q "$3"

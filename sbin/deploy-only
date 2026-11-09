@@ -15,3 +15,5 @@ find "$f.new" -type f -size +2 \( -name '*.html' -o -name '*.css' -o -name '*.js
 [ ! -d "$f" ] || mv "$f" "$f.old"
 mv "$f.new" "$f"
 rm -rf "$f.old"
+# A report only: a broken link in one page is no reason to refuse the deploy.
+/usr/local/sbin/link-check "$f" || true

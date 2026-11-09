@@ -1,0 +1,70 @@
+#!/usr/bin/perl
+use strict;
+use warnings;
+use File::Find;
+
+# Reports links in a built site that lead to no file. It reads the folder only
+# and does not try outside links. deploy-only runs it after each deploy.
+
+my $root = $ARGV[0] // die "usage: link-check DIR\n";
+$root =~ s{/+$}{};
+
+# httpd serves these from outside the site folder.
+my %served_elsewhere = map { $_ => 1 } qw(/feed.xml /reading.html /forecasters.html /forecasters.xml /edmw.xml /contact.gpg);
+
+sub resolve {
+	my ($page, $link) = @_;
+	my $base = $link =~ m{^/} ? '' : $page =~ s{[^/]*$}{}r;
+	my @parts;
+	for my $part (split m{/}, "$base$link") {
+		next if $part eq '' || $part eq '.';
+		if ($part eq '..') {
+			return undef unless @parts;
+			pop @parts;
+		} else {
+			push @parts, $part;
+		}
+	}
+	return '/' . join '/', @parts;
+}
+
+sub found {
+	my ($path) = @_;
+	return 1 if $served_elsewhere{$path} || $path =~ m{^/(?:f|\.well-known)/};
+	return -f "$root$path" || -f "$root$path/index.html";
+}
+
+sub broken_links {
+	my ($file, $page) = @_;
+	open my $handle, '<', $file or die "link-check: $file: $!\n";
+	my $html = do { local $/; <$handle> };
+	close $handle;
+	$html =~ s/<!--.*?-->//gs;
+	$html =~ s/(<script\b[^>]*>).*?<\/script>/$1/gis;
+	$html =~ s/<(style|pre|code)\b.*?<\/\1>//gis;
+	my %broken;
+	while ($html =~ /<[a-z][a-z0-9]*\b[^>]*?\s(?:href|src)\s*=\s*(?:"([^"]*)"|'([^']*)')/gi) {
+		my $link = $1 // $2;
+		next if $link =~ /^(?:[a-z][a-z0-9+.-]*:|\/\/|#)/i;
+		$link =~ s/[?#].*//s;
+		next if $link eq '';
+		$link =~ s/&amp;/&/g;
+		$link =~ s/%([0-9a-fA-F]{2})/chr hex $1/ge;
+		my $path = resolve($page, $link);
+		$broken{$link} = 1 unless defined $path && found($path);
+	}
+	return sort keys %broken;
+}
+
+my @files;
+find({ no_chdir => 1, wanted => sub { push @files, $_ if -f && /\.html?$/ } }, $root);
+
+my $count = 0;
+for my $file (sort @files) {
+	my $page = substr $file, length $root;
+	for my $link (broken_links($file, $page)) {
+		print "link-check: $page links to $link, which does not exist\n";
+		$count++;
+	}
+}
+exit($count ? 1 : 0);
