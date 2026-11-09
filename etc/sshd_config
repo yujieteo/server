@@ -5,3 +5,13 @@ Subsystem sftp /usr/libexec/sftp-server
 AllowGroups wheel deploy
 AllowTcpForwarding no
 AllowAgentForwarding no
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+X11Forwarding no
+PermitTunnel no
+
+# The deploy key already forces this command. This holds even if that key file changes.
+Match User deploy
+	ForceCommand /usr/local/sbin/deploy-only
+	PermitTTY no
+	PermitUserRC no
