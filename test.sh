@@ -33,6 +33,9 @@ sends_gzip() {
 has_header() {
 	get / | grep -qi "^$1:"
 }
+policy_starts() {
+	get "$1" | grep -qi "^Content-Security-Policy: $2"
+}
 errpage() {
 	get "$1" | grep -q '^<link rel="stylesheet" href="/style.css">$' && get "$1" | grep '^<h1>'
 }
@@ -54,6 +57,7 @@ t "configs: pf" pfctl -nf /etc/pf.conf
 t "install.sh: each mv has -f, so no file question can stop the run" not grep -E '(^|[;|&]|sh -c .)[[:space:]]*mv [^-]' install.sh
 t "sshd: no root login" sshd_has 'permitrootlogin no'
 t "sshd: keys only" sshd_has 'authenticationmethods publickey'
+t "sshd: deploy runs only deploy-only" sh -c "sshd -T -C user=deploy,host=x,addr=10.8.0.2 | grep -qix 'forcecommand /usr/local/sbin/deploy-only'"
 t "admin keys: VPN only" not grep -qv '^from="10.8.0.0/24,127.0.0.1" ssh-' "/home/${ADMIN_USER:?}/.ssh/authorized_keys"
 t "jobs in crontab" has_job
 t "feed job in crontab" sh -c "crontab -l | grep -q feed-update"
@@ -90,6 +94,8 @@ t "web: a 404 is the site error page" is_eq '<h1>404 Not Found</h1>' errpage /ol
 t "web: the error page has the header and footer of the home page" error_page_has_chrome
 t "web: HSTS is on" has_header Strict-Transport-Security
 t "web: nosniff is on" has_header X-Content-Type-Options
+t "web: pages load only from this site" policy_starts / "default-src 'self'"
+t "web: feed pages run no script" policy_starts /reading.html "default-src 'none'"
 t "web: www to bare" is_eq '301 https://teoyujie.org/a' web 443 www.teoyujie.org /a
 t "web: HTTP to HTTPS" is_eq '301 https://teoyujie.org/a' web 80 teoyujie.org /a
 t "web: ACME on HTTP" is_eq '404 ' web 80 teoyujie.org /.well-known/acme-challenge/x
@@ -161,6 +167,7 @@ other_names_resolve() {
 	dig +short @10.8.0.1 openbsd.org | grep -q .
 }
 t "pf: the internet reaches only the public services on the public addresses" pf_public_only
+t "pf: the flood table exists" pfctl -t flood -T show
 t "VPN: wg0 has all peers" wg_has_all_peers
 blocked_name=$(sed -n '1s/^local-zone: "\(.*\)" always_nxdomain$/\1/p' /var/unbound/etc/blocklist.conf)
 t "DNS: blocklist loaded" blocklist_loaded
