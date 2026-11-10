@@ -62,6 +62,7 @@ t "admin keys: VPN only" not grep -qv '^from="10.8.0.0/24,127.0.0.1" ssh-' "/hom
 t "jobs in crontab" has_job
 t "feed job in crontab" sh -c "crontab -l | grep -q feed-update"
 t "edmw job in crontab" sh -c "crontab -l | grep -q edmw-update"
+t "singapore job in crontab" sh -c "crontab -l | grep -q sg-update"
 
 deploy_ssh() {
 	ssh -i "$1" -o StrictHostKeyChecking=accept-new -o BatchMode=yes deploy@127.0.0.1 "$2"
