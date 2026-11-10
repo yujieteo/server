@@ -167,7 +167,7 @@ put etc/acme-client.conf /etc/acme-client.conf
 put etc/smtpd.conf /etc/mail/smtpd.conf
 put etc/unbound.conf /var/unbound/etc/unbound.conf
 put etc/pf.conf /etc/pf.conf 600
-run sysctl -q net.inet.ip.forwarding=0
+run sysctl -q net.inet.ip.forwarding=1
 
 run install -d -o deploy -m 755 /var/www/web /var/www/web/site /var/www/web/feed
 run install -d -o "${ADMIN_USER}" -m 755 /var/www/files/f
