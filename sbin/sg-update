@@ -6,7 +6,7 @@ use Time::Local qw(timegm);
 use Digest::MD5 qw(md5_hex);
 
 # Ranks new Singapore government documents by fixed rules. It reads primary
-# sources only: agency feeds, the Gazette and Parliament's list of bills.
+# sources only: agency feeds and the Gazette.
 # Run with no flag once a week to fetch and rank. Run with --render to rank
 # again from the saved copies, which it does only when the notes file is newer.
 # It writes singapore-policy-actionables.html, singapore-policy-actionables.xml and singapore-policy-actionables.txt for httpd.
@@ -31,7 +31,6 @@ my $about = 'New Singapore laws, bills, consultations and agency notices, ranked
 my @sources = (
 	['REACH', 'https://www.reach.gov.sg/latest-happenings/public-consultation/rss.xml', 'rss'],
 	['Gazette', 'https://www.egazette.gov.sg/gazettes/rss.xml', 'rss'],
-	['Parliament', 'https://www.parliament.gov.sg/parliamentary-business/bills-introduced', 'bills'],
 	['MOF', 'https://www.mof.gov.sg/news-resources/newsroom/rss.xml', 'rss'],
 	['MOM', 'https://www.mom.gov.sg/newsroom/press-releases', 'mom'],
 	['MTI', 'https://www.mti.gov.sg/newsroom/rss.xml', 'rss'],
@@ -139,24 +138,6 @@ sub parse_rss {
 	return @items;
 }
 
-sub parse_bills {
-	my ($html) = @_;
-	my @items;
-	while ($html =~ /<div class="indv-bill">(.*?)(?=<div class="indv-bill">|<div class="sidebar-wrap">)/gs) {
-		my $block = $1;
-		my ($link, $title) = $block =~ m{<a href="(/api/media/[^"]+)"[^>]*>(.*?)</a>}s or next;
-		$title = plain($title);
-		$title =~ s/\s*\(PDF[^)]*\)\s*$//;
-		my %dates;
-		$dates{$1} = midnight($4, $3 - 1, $2) while $block =~ m{<b>Date (Introduced|Passed):</b>\s*<br/>(?:\s|<!-- -->)*(\d\d)\.(\d\d)\.(\d{4})}g;
-		next unless $title ne '' && defined $dates{Introduced};
-		my $passed = defined $dates{Passed};
-		push @items, { title => ($passed ? 'Passed: ' : 'Introduced: ') . $title, link => "https://www.parliament.gov.sg$link",
-			date => $passed ? $dates{Passed} : $dates{Introduced}, tags => $passed ? 'Passed' : 'Pending' };
-	}
-	return @items;
-}
-
 sub parse_mom {
 	my ($html) = @_;
 	my (@links, @dates);
@@ -173,7 +154,6 @@ sub parse_mom {
 
 sub parse {
 	my ($text, $name, $format) = @_;
-	return parse_bills($text) if $format eq 'bills';
 	return parse_mom($text) if $format eq 'mom';
 	return parse_rss($text, $name);
 }
@@ -181,8 +161,7 @@ sub parse {
 sub kind_of {
 	my ($item) = @_;
 	my ($title, $tags, $source) = @$item{qw(title tags source)};
-	return 'bill' if $source eq 'Parliament';
-	return 'law' if $source eq 'Gazette';
+	return $tags =~ /Bills Supplement/ ? 'bill' : 'law' if $source eq 'Gazette';
 	return $tags =~ /\bOpen\b/ ? 'consultation' : 'closed' if $source eq 'REACH';
 	return 'explainer' if $source eq 'gov.sg';
 	return 'consultation' if $title =~ $consultation;
@@ -194,14 +173,14 @@ sub kind_of {
 
 sub still_open {
 	my ($item) = @_;
-	return $item->{kind} eq 'consultation' && $item->{source} eq 'REACH' || $item->{kind} eq 'bill' && $item->{tags} eq 'Pending';
+	return $item->{kind} eq 'consultation' && $item->{source} eq 'REACH';
 }
 
 # Sets the kind, the lenses, the score and the reasons for the score.
 sub rank {
 	my ($item, $now, $notes) = @_;
 	my $kind = $item->{kind};
-	(my $title = $item->{title}) =~ s/^(?:Introduced|Passed): //;
+	my $title = $item->{title};
 	my $text = "$title; $item->{tags}";
 	my @why = ("$kind $kind_points{$kind}");
 	my $score = $kind_points{$kind};
@@ -224,7 +203,7 @@ sub rank {
 	}
 	my $age = int(($now - $item->{date}) / $day);
 	$age = 0 if $age < 0;
-	# A consultation or a bill stays useful while it is open, so its age costs little.
+	# A consultation stays useful while it is open, so its age costs little.
 	$age = $open_age_limit if $age > $open_age_limit && still_open($item);
 	if ($age) {
 		$score += $points_per_day * $age;
@@ -335,7 +314,7 @@ sub render_text {
 	my ($now, @items) = @_;
 	my $built = local_date($now);
 	my $text = <<"EOF";
-# Singapore primary documents, ranked by fixed rules. Fetched $built. Top $text_items of the last 28 days, with open consultations and pending bills from the last 120.
+# Singapore primary documents, ranked by fixed rules. Fetched $built. Top $text_items of the last 28 days, with open consultations from the last 120.
 # Columns, split by tabs: id, score, date, source, kind, lenses, why, title, link.
 # To change the ranking, add lines to static/public/sg-notes.tsv in github.com/yujieteo/site and deploy.
 # A note line is: id, tab, points from -$boost_limit to $boost_limit, tab, one sentence on what to do and by when.
@@ -421,7 +400,7 @@ my $now = (stat $stamp)[9];
 my $notes = read_notes();
 my @items = grep { $_->{date} <= $now } values %seen;
 $_->{kind} = kind_of($_) for @items;
-# An open consultation or a pending bill stays listed for longer than other documents.
+# An open consultation stays listed for longer than other documents.
 @items = grep { $_->{date} > $now - (still_open($_) ? $open_window : $window) } @items;
 rank($_, $now, $notes) for @items;
 @items = sort { $b->{score} <=> $a->{score} || $b->{date} <=> $a->{date} || $a->{id} cmp $b->{id} } @items;

@@ -7,7 +7,7 @@ Add a source:
 ```text
 In sbin/sg-update, add SOURCE as a source. Use primary documents only, no news.
 Find its feed first. Most agency sites built on Isomer serve one at their news section's path plus /rss.xml.
-If it has no feed, write a small parser like parse_bills or parse_mom.
+If it has no feed, write a small parser like parse_mom.
 Test the fetch and the parse locally with a curl stand-in for ftp.
 Update the source table in the post in the site repo too.
 Then commit and open a PR. Do not run ./apply --install.
@@ -21,6 +21,6 @@ Update the points table in the post in the site repo too.
 Then commit and open a PR. Do not run ./apply --install.
 ```
 
-Not yet in the list: MAS, HDB, IRAS, CPF and Singapore Statutes Online.
+Not yet in the list: MAS, HDB, IRAS, CPF and Singapore Statutes Online. Parliament's bills page answers the server with a bot check, so the Gazette supplies the bills.
 
 To add the weekly notes, use the prompt in the [site repo](https://github.com/yujieteo/site/blob/main/prompts/singapore-policy-actionables.md).

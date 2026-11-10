@@ -147,7 +147,7 @@ Root's crontab comes from `etc/crontab`:
 | Hourly | `feed-update` rebuilds `/feed.xml`, `/reading.html`, `/forecasters.html` and `/forecasters.xml` from public RSS feeds. They live outside the site folder, so deploys do not remove them. If a source fails, its last good copy is used. |
 | Hourly | `edmw-update` records reply counts from HardwareZone's EDMW forum. Once a day it writes the busiest threads and most-reacted comments to `/edmw.xml`, which `feed-update` includes. Its first output comes about a day after install. To stop bad words getting through, edit the list at the top of the script. |
 
-| Weekly | `sg-update` fetches Singapore government feeds, the Gazette and Parliament's bills on Saturday morning, Singapore time. It ranks the documents by the fixed rules at the top of the script and writes `/singapore-policy-actionables.html`, `/singapore-policy-actionables.xml` and `/singapore-policy-actionables.txt`. If a source fails, its last good copy is used. |
+| Weekly | `sg-update` fetches Singapore government feeds and the Gazette on Saturday morning, Singapore time. It ranks the documents by the fixed rules at the top of the script and writes `/singapore-policy-actionables.html`, `/singapore-policy-actionables.xml` and `/singapore-policy-actionables.txt`. If a source fails, its last good copy is used. |
 | Hourly | `sg-update --render` ranks the saved copies again when the site's `sg-notes.tsv` is newer than the pages. Each line of that file adds or removes points for one document and gives a note to show. On the first run after install it fetches. |
 
 Separately, `sbin/ssh-alert` mails root about any SSH login from an address outside `KNOWN_IPS`.
