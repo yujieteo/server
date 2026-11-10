@@ -8,7 +8,7 @@ use FindBin;
 require "$FindBin::Bin/feed-common.pl";
 
 my $out = $ARGV[0] // '/var/www/web/feed/feed.xml';
-my $notes_file = $ARGV[1] // '/var/www/web/site/notes/reading.tsv';
+my $notes_file = $ARGV[1] // '/var/www/web/site/notes/reading.txt';
 my $site = 'https://teoyujie.org';
 my $max_items = 70;
 my $excerpt_length = 600;
@@ -185,7 +185,7 @@ EOF
 sub render_text {
 	my ($now, $about, $how, @items) = @_;
 	my $built = strftime('%Y-%m-%d %H:%M UTC', gmtime $now);
-	my $text = "# $about Built $built.\n# Columns, split by tabs: id, date, source, title, link.\n# $how The format is at $site/api/notes.md\n";
+	my $text = "# $about Built $built.\n# Columns, split by tabs: id, date, source, title, link.\n# $how The format is at $site/api/notes.txt\n";
 	for my $item (@items) {
 		$text .= join("\t", $item->{id}, strftime('%Y-%m-%d', gmtime $item->{date}), $item->{source}, $item->{title}, $item->{link}) . "\n";
 	}
@@ -253,7 +253,7 @@ my %reading = (
 	xml => 'feed.xml',
 	about => $about,
 	head => qq{<link rel="alternate" type="application/rss+xml" title="Reading feed" href="/feed.xml">\n},
-	note => 'Newest first, moved by <a href="/api/notes.md">notes from an AI model</a>. <a href="/feed.xml">RSS feed</a>. <a href="/reading.txt">Plain text</a>',
+	note => 'Newest first, moved by <a href="/api/notes.txt">notes from an AI model</a>. <a href="/feed.xml">RSS feed</a>. <a href="/reading.txt">Plain text</a>',
 );
 publish_gzipped($page, render_page($now, \%reading, @sorted));
 publish_gzipped($out, render($now, \%reading, @sorted));

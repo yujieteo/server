@@ -15,7 +15,7 @@ require "$FindBin::Bin/feed-common.pl";
 
 my $render_only = @ARGV && $ARGV[0] eq '--render' ? shift @ARGV : 0;
 my $dir = $ARGV[0] // '/var/www/web/feed';
-my $notes_file = $ARGV[1] // '/var/www/web/site/notes/policy.tsv';
+my $notes_file = $ARGV[1] // '/var/www/web/site/notes/policy.txt';
 my $site = 'https://teoyujie.org';
 my $cache = "$dir/sg-cache";
 my $stamp = "$cache/fetched";
@@ -278,7 +278,7 @@ sub render_text {
 	my $text = <<"EOF";
 # Singapore primary documents, ranked by fixed rules. Fetched $built. Top $text_items of the last 28 days, with open consultations from the last 120.
 # Columns, split by tabs: id, score, date, source, kind, lenses, why, title, link.
-# To change the ranking, add lines to notes/policy.tsv in github.com/yujieteo/site. The format is at $site/api/notes.md
+# To change the ranking, add lines to notes/policy.tsv in github.com/yujieteo/site. The format is at $site/api/notes.txt
 # A note line is: id, tab, points from -60 to 60, tab, one sentence on what to do and by when.
 # Judge each document for a Singapore resident: investing, career, and public services to use or respond to.
 EOF
