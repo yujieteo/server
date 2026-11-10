@@ -160,8 +160,8 @@ wg_has_all_peers() {
 	want=$(echo "${WG_PEERS:?}" | wc -w | tr -d ' ')
 	[ "${have}" -eq "${want}" ]
 }
-blocklist_loaded() {
-	[ -n "${blocked_name}" ] && dig @10.8.0.1 "${blocked_name}" | grep -q NXDOMAIN
+no_such_name() {
+	[ -n "$1" ] && dig @10.8.0.1 "$1" | grep -q NXDOMAIN
 }
 other_names_resolve() {
 	dig +short @10.8.0.1 openbsd.org | grep -q .
@@ -169,8 +169,9 @@ other_names_resolve() {
 t "pf: the internet reaches only the public services on the public addresses" pf_public_only
 t "pf: the flood table exists" pfctl -t flood -T show
 t "VPN: wg0 has all peers" wg_has_all_peers
-blocked_name=$(sed -n '1s/^local-zone: "\(.*\)" always_nxdomain$/\1/p' /var/unbound/etc/blocklist.conf)
-t "DNS: blocklist loaded" blocklist_loaded
+blocked_name=$(awk -F'"' '/ always_nxdomain$/ { print $2; exit }' /var/unbound/etc/blocklist.conf)
+t "DNS: blocklist loaded" no_such_name "${blocked_name}"
+t "DNS: Firefox is told to use this resolver" no_such_name use-application-dns.net
 t "DNS: other names resolve" other_names_resolve
 t "health-check runs" /usr/local/sbin/health-check
 
