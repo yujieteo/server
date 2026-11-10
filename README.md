@@ -126,6 +126,12 @@ The website comes from the [site repo](https://github.com/yujieteo/site). Its `s
 
 After the swap, `deploy-only` runs `sbin/link-check`, which prints any link between the site's own pages that leads to no file. It only reports, so the deploy still goes ahead. If you add a `location` to `httpd.conf` that serves a file from outside the site folder, add its path to the list at the top of that script.
 
+## Limits on visitors
+
+- httpd tells browsers to load scripts, styles, fonts and images only from this site. `/reading.html` and `/forecasters.html` show text from other sites, so they may run no script at all. If a page needs another host, add it to the `Content-Security-Policy` line in `etc/httpd.conf`.
+- pf puts a host in the `flood` table when it opens more than 100 web connections in 10 seconds or 30 mail connections in a minute, and blocks its TCP for a day. To let one out now, run `doas pfctl -t flood -T delete ADDRESS`.
+- sshd gives the `deploy` user only `deploy-only`, whatever its key file says.
+
 ## Scheduled jobs
 
 Root's crontab comes from `etc/crontab`:
@@ -133,10 +139,11 @@ Root's crontab comes from `etc/crontab`:
 | When | Job |
 |---|---|
 | Daily | Install OpenBSD patches, and reboot if any were applied. |
-| Daily | `health-check` reports problems with disk, services, patches, certificates, domain expiry, DNS, Spamhaus listing, unknown certificates, stale feeds and an OpenBSD release that needs upgrading. |
+| Daily | `health-check` reports problems with disk, services, the firewall, the VPN, patches, certificates, domain expiry, DNS, the DKIM record, mail stuck in the queue, Spamhaus listing, unknown certificates, stale or missing feeds and an OpenBSD release that needs upgrading. |
 | Hourly | Renew the TLS certificate if needed. |
 | Daily | Delete shared links that have reached their end date. |
 | Weekly | Refresh the DNS blocklist. |
+| Hourly | Let hosts out of the firewall's `flood` table after a day. |
 | Hourly | `feed-update` rebuilds `/feed.xml`, `/reading.html`, `/forecasters.html` and `/forecasters.xml` from public RSS feeds. They live outside the site folder, so deploys do not remove them. If a source fails, its last good copy is used. |
 | Hourly | `edmw-update` records reply counts from HardwareZone's EDMW forum. Once a day it writes the busiest threads and most-reacted comments to `/edmw.xml`, which `feed-update` includes. Its first output comes about a day after install. To stop bad words getting through, edit the list at the top of the script. |
 
