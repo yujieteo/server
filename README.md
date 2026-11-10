@@ -122,7 +122,7 @@ The iPhone uses `Address = 10.8.0.3/32`. Only traffic to 10.8.0.0/24 goes throug
 
 The website comes from the [site repo](https://github.com/yujieteo/site). Its `scripts/deploy.sh` builds the site and sends a tarball over SSH to the `deploy` user, so a commit there changes nothing until you run that script. The `deploy` user can only run `sbin/deploy-only`, which accepts only `site` and swaps in the new folder by renaming it.
 
-`deploy-only` also writes a `.gz` copy of each text file over 1 KB. httpd sends that copy to browsers that accept gzip. `feed-update` does the same for `/feed.xml`, `/reading.html`, `/forecasters.html` and `/forecasters.xml`.
+`deploy-only` also writes a `.gz` copy of each text file over 1 KB. httpd sends that copy to browsers that accept gzip. `feed-update` does the same for `/feed.xml`, `/reading.html`, `/forecasters.html` and `/forecasters.xml`, and `sg-update` for its three files.
 
 After the swap, `deploy-only` runs `sbin/link-check`, which prints any link between the site's own pages that leads to no file. It only reports, so the deploy still goes ahead. If you add a `location` to `httpd.conf` that serves a file from outside the site folder, add its path to the list at the top of that script.
 
@@ -139,6 +139,9 @@ Root's crontab comes from `etc/crontab`:
 | Weekly | Refresh the DNS blocklist. |
 | Hourly | `feed-update` rebuilds `/feed.xml`, `/reading.html`, `/forecasters.html` and `/forecasters.xml` from public RSS feeds. They live outside the site folder, so deploys do not remove them. If a source fails, its last good copy is used. |
 | Hourly | `edmw-update` records reply counts from HardwareZone's EDMW forum. Once a day it writes the busiest threads and most-reacted comments to `/edmw.xml`, which `feed-update` includes. Its first output comes about a day after install. To stop bad words getting through, edit the list at the top of the script. |
+
+| Weekly | `sg-update` fetches Singapore government feeds, the Gazette and Parliament's bills on Saturday morning, Singapore time. It ranks the documents by the fixed rules at the top of the script and writes `/singapore-policy-actionables.html`, `/singapore-policy-actionables.xml` and `/singapore-policy-actionables.txt`. If a source fails, its last good copy is used. |
+| Hourly | `sg-update --render` ranks the saved copies again when the site's `sg-notes.tsv` is newer than the pages. Each line of that file adds or removes points for one document and gives a note to show. On the first run after install it fetches. |
 
 Separately, `sbin/ssh-alert` mails root about any SSH login from an address outside `KNOWN_IPS`.
 

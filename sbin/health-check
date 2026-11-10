@@ -40,6 +40,8 @@ esac
 feed=/var/www/web/feed
 find $feed/feed.xml -mmin +360 | sed 's#.*/##; s/$/ has not been rebuilt for 6 hours/'
 find $feed/edmw.xml -mmin +2880 2>/dev/null | sed 's#.*/##; s/$/ has not been rebuilt for 2 days/'
+find $feed/singapore-policy-actionables.txt -mmin +11520 2>/dev/null | sed 's#.*/##; s/$/ has not been rebuilt for 8 days/'
+find $feed/sg-cache -type f -mmin +30240 2>/dev/null | sed 's#.*/##; s/^/Singapore source has not loaded for 3 weeks: /'
 find $feed/cache -type f -mmin +4320 ! -name 'forecaster-*' 2>/dev/null | sed 's#.*/##; s/^/feed source has not loaded for 3 days: /'
 
 # Only the two newest releases get patches. A release's folder appears when it comes out.

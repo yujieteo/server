@@ -1,0 +1,434 @@
+#!/usr/bin/perl
+use strict;
+use warnings;
+use POSIX qw(strftime);
+use Time::Local qw(timegm);
+use Digest::MD5 qw(md5_hex);
+
+# Ranks new Singapore government documents by fixed rules. It reads primary
+# sources only: agency feeds, the Gazette and Parliament's list of bills.
+# Run with no flag once a week to fetch and rank. Run with --render to rank
+# again from the saved copies, which it does only when the notes file is newer.
+# It writes singapore-policy-actionables.html, singapore-policy-actionables.xml and singapore-policy-actionables.txt for httpd.
+
+my $render_only = @ARGV && $ARGV[0] eq '--render' ? shift @ARGV : 0;
+my $dir = $ARGV[0] // '/var/www/web/feed';
+my $notes_file = $ARGV[1] // '/var/www/web/site/sg-notes.tsv';
+my $site = 'https://teoyujie.org';
+my $cache = "$dir/sg-cache";
+my $stamp = "$cache/fetched";
+
+my $day = 86400;
+my $singapore_offset = 8 * 3600;
+my $window = 28 * $day;
+my $open_window = 120 * $day;
+my $page_items = 40;
+my $text_items = 120;
+my $pause = 2;
+my $about = 'New Singapore laws, bills, consultations and agency notices, ranked by fixed rules for what a resident can act on.';
+
+# Name, address, format.
+my @sources = (
+	['REACH', 'https://www.reach.gov.sg/latest-happenings/public-consultation/rss.xml', 'rss'],
+	['Gazette', 'https://www.egazette.gov.sg/gazettes/rss.xml', 'rss'],
+	['Parliament', 'https://www.parliament.gov.sg/parliamentary-business/bills-introduced', 'bills'],
+	['MOF', 'https://www.mof.gov.sg/news-resources/newsroom/rss.xml', 'rss'],
+	['MOM', 'https://www.mom.gov.sg/newsroom/press-releases', 'mom'],
+	['MTI', 'https://www.mti.gov.sg/newsroom/rss.xml', 'rss'],
+	['MOH', 'https://www.moh.gov.sg/newsroom/rss.xml', 'rss'],
+	['URA', 'https://www.ura.gov.sg/news/media/rss.xml', 'rss'],
+	['MHA', 'https://www.mha.gov.sg/mediaroom/rss.xml', 'rss'],
+	['MDDI', 'https://www.mddi.gov.sg/newsroom/rss.xml', 'rss'],
+	['MSE', 'https://www.mse.gov.sg/latest-news/rss.xml', 'rss'],
+	['MOT', 'https://www.mot.gov.sg/news-resources/newsroom/rss.xml', 'rss'],
+	['PMO', 'https://www.pmo.gov.sg/newsroom/rss.xml', 'rss'],
+	['ACRA', 'https://www.acra.gov.sg/news-events/news-announcements/rss.xml', 'rss'],
+	['gov.sg', 'https://www.gov.sg/explainers/rss.xml', 'rss'],
+);
+
+# The rules. A document gets the points of its kind, then the changes below.
+my %kind_points = (consultation => 60, bill => 50, law => 35, release => 25, reply => 20, closed => 20, explainer => 15, speech => 5, letter => 5);
+my %kind_name = (consultation => 'Open consultation', bill => 'Bill', law => 'New law', release => 'Notice', reply => 'Reply in Parliament',
+	closed => 'Closed consultation', explainer => 'Explainer', speech => 'Speech', letter => 'Letter');
+my $lens_points = 12;
+my $action_points = 15;
+my $data_points = 10;
+my $ceremony_points = -30;
+my $points_per_day = -2;
+my $open_age_limit = 5;
+my $boost_limit = 60;
+
+my @lenses = (
+	['money', qr/\b(?:tax\w*|gst|stamp dut\w+|absd|cpf|propert\w+|real estate|sale sites?|land sales|interest rates?|bonds?|t-bills?|reits?|invest\w*|inflation|gdp|budget|tariffs?|fiscal|reserves|gic|temasek|price index|coe|bank\w*|insur\w+|financial|econom\w+|trade|exports?|electricity market)\b/i],
+	['work', qr/\b(?:jobs?|employ\w+|work pass\w*|s pass|compass|wages?|salar\w+|retrench\w+|skillsfuture|training|labour|workforce|workplace|careers?|hiring|retirement age|re-employment|workfare|foreign workers?|manpower|workers?)\b/i],
+	['services', qr/\b(?:vouchers?|payouts?|rebates?|subsid\w+|grants?|schemes?|bto|hdb|flats?|housing|medisave|medishield|careshield|chas|healthier sg|childcare|preschools?|baby bonus|parental leave|schools?|fares?|fees?|passports?|national service|nsmen|seniors?|scams?|licen[cs]\w+|vaccin\w+|polyclinics?|clinics?|hospitals?|eservices?|singpass|cost of living|households?)\b/i],
+);
+my $action = qr/\b(?:appl(?:y|ies|ications?)|regist\w+|eligib\w+|deadline|renewal|with effect|takes? effect|from \d{1,2} (?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\w*|to cease|launch\w*|introduc\w+|enhanc\w+|increas\w+|rais\w+|revis\w+|changes to|extend\w*|extension|releases?|tender)\b/i;
+my $data = qr/\b(?:breakdown|data on|number of|statistics|uptake|utili[sz]ation|proportion|percentage|trends?|forecast|projected)\b/i;
+my $ceremony = qr/\b(?:condolences?|congratulat\w+|visits?|courtesy call|doorstop|festive|greetings?|awards?|appointed|appointments?|anniversary|dinner|ceremony|memorandum|mou|dialogue|fireside|lecture|summit|conference|gala|message)\b/i;
+my $consultation = qr/\b(?:consultation|seeks? (?:public )?(?:feedback|views)|call for feedback)\b/i;
+my $speech = qr/^(?:speech|remarks|opening|keynote|transcript|welcome)\b|\bat the\b/i;
+my $reply = qr/\b(?:repl(?:y|ies) to|response to) (?:pq|parliamentary)/i;
+my %gazette_kept = map { $_ => 1 } ('Subsidiary Legislation Supplement', 'Acts Supplement', 'Bills Supplement');
+
+my %months;
+@months{qw(Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec)} = (0 .. 11);
+
+sub character {
+	my ($code) = @_;
+	return '' if $code < 0x20 || $code > 0x10FFFF || ($code >= 0xD800 && $code <= 0xDFFF);
+	my $text = chr $code;
+	utf8::encode($text);
+	return $text;
+}
+
+sub plain {
+	my ($text) = @_;
+	$text =~ s/<!\[CDATA\[(.*?)\]\]>/$1/gs;
+	$text =~ s/<[^>]*>//g;
+	$text =~ s/&#(\d+);/character($1)/ge;
+	$text =~ s/&#[xX]([0-9a-fA-F]+);/character(hex $1)/ge;
+	$text =~ s/&lt;/</g;
+	$text =~ s/&gt;/>/g;
+	$text =~ s/&quot;/"/g;
+	$text =~ s/&apos;/'/g;
+	$text =~ s/&nbsp;/ /g;
+	$text =~ s/&amp;/&/g;
+	$text =~ s/[\x00-\x1f]/ /g;
+	$text =~ s/\s+/ /g;
+	$text =~ s/^ | $//g;
+	return $text;
+}
+
+sub escaped {
+	my ($text) = @_;
+	$text =~ s/&/&amp;/g;
+	$text =~ s/</&lt;/g;
+	$text =~ s/>/&gt;/g;
+	$text =~ s/"/&quot;/g;
+	return $text;
+}
+
+sub field {
+	my ($block, $tag) = @_;
+	return $block =~ m{<\Q$tag\E(?:\s[^>]*)?>(.*?)</\Q$tag\E>}s ? $1 : '';
+}
+
+# Midnight in Singapore on that date.
+sub midnight {
+	my ($year, $month, $day) = @_;
+	my $time = eval { timegm(0, 0, 0, $day, $month, $year) };
+	return defined $time ? $time - $singapore_offset : undef;
+}
+
+sub parse_rss {
+	my ($xml, $name) = @_;
+	my @items;
+	while ($xml =~ /<item[\s>](.*?)<\/item>/gs) {
+		my $block = $1;
+		my $title = plain(field($block, 'title'));
+		my $link = plain(field($block, 'link'));
+		my $date;
+		$date = midnight($3, $months{$2}, $1) if field($block, 'pubDate') =~ /(\d{1,2}) ([A-Z][a-z]{2}) (\d{4})/ && defined $months{$2};
+		my @tags;
+		push @tags, plain($1) while $block =~ /<category[^>]*>(.*?)<\/category>/gs;
+		next unless $title ne '' && $link =~ m{^https://} && defined $date;
+		next if $name eq 'Gazette' && !grep { $gazette_kept{$_} } @tags;
+		push @items, { title => $title, link => $link, date => $date, tags => join('; ', @tags) };
+	}
+	return @items;
+}
+
+sub parse_bills {
+	my ($html) = @_;
+	my @items;
+	while ($html =~ /<div class="indv-bill">(.*?)(?=<div class="indv-bill">|<div class="sidebar-wrap">)/gs) {
+		my $block = $1;
+		my ($link, $title) = $block =~ m{<a href="(/api/media/[^"]+)"[^>]*>(.*?)</a>}s or next;
+		$title = plain($title);
+		$title =~ s/\s*\(PDF[^)]*\)\s*$//;
+		my %dates;
+		$dates{$1} = midnight($4, $3 - 1, $2) while $block =~ m{<b>Date (Introduced|Passed):</b>\s*<br/>(?:\s|<!-- -->)*(\d\d)\.(\d\d)\.(\d{4})}g;
+		next unless $title ne '' && defined $dates{Introduced};
+		my $passed = defined $dates{Passed};
+		push @items, { title => ($passed ? 'Passed: ' : 'Introduced: ') . $title, link => "https://www.parliament.gov.sg$link",
+			date => $passed ? $dates{Passed} : $dates{Introduced}, tags => $passed ? 'Passed' : 'Pending' };
+	}
+	return @items;
+}
+
+sub parse_mom {
+	my ($html) = @_;
+	my (@links, @dates);
+	push @links, [$1, plain($2)] while $html =~ m{<a id="[^"]*TitleLink" href="(/newsroom/press-releases/[^"]+)">(.*?)</a>}gs;
+	push @dates, midnight($1, $2 - 1, $3) while $html =~ /<time datetime="(\d{4})-(\d{1,2})-(\d{1,2})"/g;
+	return () unless @links && @links == @dates;
+	my @items;
+	for my $index (0 .. $#links) {
+		next unless defined $dates[$index] && $links[$index][1] ne '';
+		push @items, { title => $links[$index][1], link => "https://www.mom.gov.sg$links[$index][0]", date => $dates[$index], tags => 'Press Releases' };
+	}
+	return @items;
+}
+
+sub parse {
+	my ($text, $name, $format) = @_;
+	return parse_bills($text) if $format eq 'bills';
+	return parse_mom($text) if $format eq 'mom';
+	return parse_rss($text, $name);
+}
+
+sub kind_of {
+	my ($item) = @_;
+	my ($title, $tags, $source) = @$item{qw(title tags source)};
+	return 'bill' if $source eq 'Parliament';
+	return 'law' if $source eq 'Gazette';
+	return $tags =~ /\bOpen\b/ ? 'consultation' : 'closed' if $source eq 'REACH';
+	return 'explainer' if $source eq 'gov.sg';
+	return 'consultation' if $title =~ $consultation;
+	return 'reply' if $tags =~ /parliament/i || $title =~ $reply;
+	return 'letter' if $tags =~ /forum/i;
+	return 'speech' if $tags =~ /speech/i || $title =~ $speech;
+	return 'release';
+}
+
+sub still_open {
+	my ($item) = @_;
+	return $item->{kind} eq 'consultation' && $item->{source} eq 'REACH' || $item->{kind} eq 'bill' && $item->{tags} eq 'Pending';
+}
+
+# Sets the kind, the lenses, the score and the reasons for the score.
+sub rank {
+	my ($item, $now, $notes) = @_;
+	my $kind = $item->{kind};
+	(my $title = $item->{title}) =~ s/^(?:Introduced|Passed): //;
+	my $text = "$title; $item->{tags}";
+	my @why = ("$kind $kind_points{$kind}");
+	my $score = $kind_points{$kind};
+	$item->{lenses} = [map { $_->[0] } grep { $text =~ $_->[1] } @lenses];
+	for my $lens (@{$item->{lenses}}) {
+		$score += $lens_points;
+		push @why, "$lens +$lens_points";
+	}
+	if ($title =~ $action) {
+		$score += $action_points;
+		push @why, "action +$action_points";
+	}
+	if ($kind eq 'reply' && $title =~ $data) {
+		$score += $data_points;
+		push @why, "data +$data_points";
+	}
+	if ($title =~ $ceremony) {
+		$score += $ceremony_points;
+		push @why, "ceremony $ceremony_points";
+	}
+	my $age = int(($now - $item->{date}) / $day);
+	$age = 0 if $age < 0;
+	# A consultation or a bill stays useful while it is open, so its age costs little.
+	$age = $open_age_limit if $age > $open_age_limit && still_open($item);
+	if ($age) {
+		$score += $points_per_day * $age;
+		push @why, 'age ' . $points_per_day * $age;
+	}
+	my $note = $notes->{$item->{id}};
+	if ($note && $note->{boost}) {
+		$score += $note->{boost};
+		push @why, sprintf 'claude %+d', $note->{boost};
+	}
+	$item->{note} = $note ? $note->{text} : '';
+	$item->{score} = $score;
+	$item->{why} = join ', ', @why;
+}
+
+# One line per note: id, tab, points from -60 to 60, tab, one sentence.
+sub read_notes {
+	my %notes;
+	open my $file, '<', $notes_file or return \%notes;
+	while (my $line = <$file>) {
+		chomp $line;
+		my ($id, $boost, $text) = split /\t/, $line, 3;
+		next unless defined $boost && $id =~ /^[0-9a-f]{8}$/ && $boost =~ /^[+-]?\d{1,3}$/;
+		$boost = $boost_limit if $boost > $boost_limit;
+		$boost = -$boost_limit if $boost < -$boost_limit;
+		$notes{$id} = { boost => $boost + 0, text => plain($text // '') };
+	}
+	return \%notes;
+}
+
+sub local_date {
+	my ($time) = @_;
+	return strftime('%Y-%m-%d', gmtime $time + $singapore_offset);
+}
+
+sub label {
+	my ($item) = @_;
+	my @parts = ("$kind_name{$item->{kind}}, $item->{source}");
+	push @parts, join ', ', @{$item->{lenses}} if @{$item->{lenses}};
+	my $text = join(' · ', @parts) . '.';
+	$text .= " $item->{note}" if $item->{note} ne '';
+	return $text;
+}
+
+sub render_page {
+	my ($now, @items) = @_;
+	my $built = strftime('%d %b %Y', gmtime $now + $singapore_offset);
+	my $list = '';
+	for my $item (@items) {
+		my $link = escaped($item->{link});
+		my $title = escaped($item->{title});
+		my $label = escaped(label($item));
+		my $date = local_date($item->{date});
+		$list .= qq{<li><a href="$link" rel="noopener noreferrer"><h3>$title</h3><span class="kind">$item->{score}</span><p>$date · $label</p></a></li>\n};
+	}
+	my $description = escaped($about);
+	return <<"EOF";
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="only light">
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="/style.css">
+<link rel="alternate" type="application/rss+xml" title="Singapore policy actionables feed" href="/singapore-policy-actionables.xml">
+<title>Singapore policy actionables</title>
+<meta name="description" content="$description">
+</head>
+<body>
+<header class="wrap"><a class="name" href="/">Yu Jie Teo</a><span class="tagline">Mechanical Engineer</span></header>
+<main class="wrap"><section id="singapore"><h2>Singapore policy actionables</h2>
+<p class="muted">Fetched $built. Each row shows its score. <a href="/essays/singapore-policy-actionables/">How the ranking works</a>. <a href="/singapore-policy-actionables.xml">RSS feed</a>. <a href="/singapore-policy-actionables.txt">Plain text</a></p>
+<ol class="featured">
+$list</ol></section></main>
+</body>
+</html>
+EOF
+}
+
+sub render_rss {
+	my ($now, @items) = @_;
+	my $format = '%a, %d %b %Y %H:%M:%S GMT';
+	my $built = strftime($format, gmtime $now);
+	my $body = '';
+	for my $item (@items) {
+		my $link = escaped($item->{link});
+		my $title = escaped($item->{title});
+		my $text = escaped("Score $item->{score}. " . label($item));
+		my $date = strftime($format, gmtime $item->{date});
+		$body .= qq{<item><title>$title</title><link>$link</link><guid isPermaLink="true">$link</guid><pubDate>$date</pubDate><description>$text</description></item>\n};
+	}
+	my $description = escaped($about);
+	return <<"EOF";
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom"><channel>
+<title>Yu Jie Teo: Singapore policy actionables</title>
+<link>$site/singapore-policy-actionables.html</link>
+<description>$description</description>
+<atom:link href="$site/singapore-policy-actionables.xml" rel="self" type="application/rss+xml"/>
+<lastBuildDate>$built</lastBuildDate>
+$body</channel></rss>
+EOF
+}
+
+# The file an AI model reads to add its judgment. Short fields keep it cheap to read.
+sub render_text {
+	my ($now, @items) = @_;
+	my $built = local_date($now);
+	my $text = <<"EOF";
+# Singapore primary documents, ranked by fixed rules. Fetched $built. Top $text_items of the last 28 days, with open consultations and pending bills from the last 120.
+# Columns, split by tabs: id, score, date, source, kind, lenses, why, title, link.
+# To change the ranking, add lines to static/public/sg-notes.tsv in github.com/yujieteo/site and deploy.
+# A note line is: id, tab, points from -$boost_limit to $boost_limit, tab, one sentence on what to do and by when.
+# Judge each document for a Singapore resident: investing, career, and public services to use or respond to.
+EOF
+	for my $item (@items) {
+		$text .= join("\t", $item->{id}, $item->{score}, local_date($item->{date}), $item->{source}, $item->{kind},
+			join(',', @{$item->{lenses}}), $item->{why}, $item->{title}, $item->{link}) . "\n";
+	}
+	return $text;
+}
+
+sub publish {
+	my ($path, $content) = @_;
+	my $temporary = "$path.new";
+	open my $file, '>', $temporary or die "sg-update: $temporary: $!\n";
+	print {$file} $content or die "sg-update: write: $!\n";
+	close $file or die "sg-update: close: $!\n";
+	chmod 0644, $temporary or die "sg-update: chmod: $!\n";
+	rename $temporary, $path or die "sg-update: rename: $!\n";
+}
+
+# httpd ignores a .gz older than its original, so a failure here only means no compression.
+sub publish_gzipped {
+	my ($path, $content) = @_;
+	publish($path, $content);
+	system("gzip -9nc <\Q$path\E >\Q$path\E.gz.new") == 0 or die "sg-update: gzip $path failed\n";
+	chmod 0644, "$path.gz.new" or die "sg-update: chmod: $!\n";
+	rename "$path.gz.new", "$path.gz" or die "sg-update: rename: $!\n";
+}
+
+sub fetch {
+	my ($url) = @_;
+	my $text = qx{ftp -MV -w 30 -U teoyujie-feed/1.0 -o - '$url' 2>/dev/null};
+	return $? == 0 ? $text : '';
+}
+
+sub saved {
+	my ($path) = @_;
+	open my $file, '<', $path or return '';
+	local $/;
+	return scalar <$file>;
+}
+
+# The first run after install has no saved copies, so it fetches.
+$render_only = 0 unless -e $stamp;
+if ($render_only) {
+	exit 0 unless -e $notes_file;
+	exit 0 if -e "$dir/singapore-policy-actionables.txt" && (stat $notes_file)[9] <= (stat "$dir/singapore-policy-actionables.txt")[9];
+} else {
+	mkdir $cache unless -d $cache;
+}
+
+# A source that fails falls back to its last good copy.
+my ($working, %seen) = (0);
+for my $source (@sources) {
+	my ($name, $url, $format) = @$source;
+	(my $key = lc $name) =~ s/\W+/-/g;
+	my $copy = "$cache/$key";
+	my @items;
+	unless ($render_only) {
+		sleep $pause;
+		my $text = fetch($url);
+		@items = parse($text, $name, $format);
+		publish($copy, $text) if @items;
+	}
+	if (@items) {
+		$working++;
+	} else {
+		@items = parse(saved($copy), $name, $format);
+	}
+	for my $item (@items) {
+		$item->{source} = $name;
+		$item->{id} = substr md5_hex($item->{link}), 0, 8;
+		$seen{$item->{link}} //= $item;
+	}
+}
+die "sg-update: only $working of " . scalar(@sources) . " sources worked, the old pages stay\n" if !$render_only && $working * 2 < @sources;
+publish($stamp, '') unless $render_only;
+
+# The fetch time is the clock, so the same saved copies and notes always give the same pages.
+my $now = (stat $stamp)[9];
+my $notes = read_notes();
+my @items = grep { $_->{date} <= $now } values %seen;
+$_->{kind} = kind_of($_) for @items;
+# An open consultation or a pending bill stays listed for longer than other documents.
+@items = grep { $_->{date} > $now - (still_open($_) ? $open_window : $window) } @items;
+rank($_, $now, $notes) for @items;
+@items = sort { $b->{score} <=> $a->{score} || $b->{date} <=> $a->{date} || $a->{id} cmp $b->{id} } @items;
+die "sg-update: no documents in the window, the old pages stay\n" unless @items;
+
+my @top = @items > $page_items ? @items[0 .. $page_items - 1] : @items;
+my @listed = @items > $text_items ? @items[0 .. $text_items - 1] : @items;
+publish_gzipped("$dir/singapore-policy-actionables.html", render_page($now, @top));
+publish_gzipped("$dir/singapore-policy-actionables.xml", render_rss($now, @top));
+publish_gzipped("$dir/singapore-policy-actionables.txt", render_text($now, @listed));
