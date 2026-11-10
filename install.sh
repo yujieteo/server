@@ -13,7 +13,10 @@ legacy) ;;
 esac
 . ./local.conf
 ADMIN_USER=${ADMIN_USER:?local.conf needs ADMIN_USER}
+FORWARD_TO=${FORWARD_TO:?local.conf needs FORWARD_TO}
 d=teoyujie.org
+# install.sh writes this into smtpd.conf and health-check. README.md names it in the DNS table.
+dkim_selector=2026
 work=$(mktemp -d)
 trap 'rm -rf "${work}"' EXIT
 if [ "${mode}" = --check ]; then
@@ -60,9 +63,9 @@ run() {
 	if [ "${mode}" != --check ]; then "$@"; return; fi
 	printf 'Action:' >&3; printf ' %s' "$@" >&3; printf '\n' >&3
 	case $1 in
-	useradd|userdel|usermod|passwd)
+	useradd|passwd)
 		for path in /etc/master.passwd /etc/passwd /etc/pwd.db /etc/spwd.db; do generated "${path}" "$1 account state"; done
-		case $1 in useradd|userdel) generated /etc/group "$1 group state" ;; *) ;; esac ;;
+		case $1 in useradd) generated /etc/group "$1 group state" ;; *) ;; esac ;;
 	rcctl)
 		case $2 in enable|disable) generated /etc/rc.conf.local "service flags from rcctl $2" ;; *) ;; esac ;;
 	*) ;;
@@ -132,7 +135,7 @@ put() {
 	case ${KNOWN_IPS-} in *[\#\&\\]*) echo "put: KNOWN_IPS must not have #, & or a backslash, because sed would write other text" >&2; exit 1 ;; *) ;; esac
 	out=$2.new
 	[ "${mode:-}" != --check ] || out=${work}/put
-	sed "s#@KNOWN_IPS@#${KNOWN_IPS}#g" "$1" > "${out}"
+	sed -e "s#@KNOWN_IPS@#${KNOWN_IPS}#g" -e "s#@DKIM_SELECTOR@#${dkim_selector}#g" "$1" > "${out}"
 	chmod "${3:-644}" "${out}"
 	if [ "${mode:-}" = --check ]; then preview "$2" "${out}" "replace, mode ${3:-644}, owner of the installer"; else mv -f "${out}" "$2"; fi
 }
@@ -164,12 +167,11 @@ put etc/acme-client.conf /etc/acme-client.conf
 put etc/smtpd.conf /etc/mail/smtpd.conf
 put etc/unbound.conf /var/unbound/etc/unbound.conf
 put etc/pf.conf /etc/pf.conf 600
-run sysctl -q net.inet.ip.forwarding=1
+run sysctl -q net.inet.ip.forwarding=0
 
 run install -d -o deploy -m 755 /var/www/web /var/www/web/site /var/www/web/feed
 run install -d -o "${ADMIN_USER}" -m 755 /var/www/files/f
 web_files
-
 
 if [ ! -e /etc/ssl/"${d}".fullchain.pem ]; then certificate /etc/ssl/"${d}".fullchain.pem /etc/ssl/private/"${d}".key "${d}"; fi
 if [ ! -e /etc/mail/srs.conf ]; then
@@ -182,7 +184,7 @@ if [ ! -e /etc/mail/srs.conf ]; then
 fi
 if ! pkg_info -qe 'opensmtpd-filter-dkimsign-*'; then run pkg_add -I opensmtpd-filter-dkimsign; fi
 run install -d -o _dkimsign -g _dkimsign -m 750 /etc/mail/dkim
-dkim_key=/etc/mail/dkim/${d}.2026.rsa.key
+dkim_key=/etc/mail/dkim/${d}.${dkim_selector}.rsa.key
 if [ ! -e "${dkim_key}" ]; then
 	if [ "${mode}" = --check ]; then
 		generated "${dkim_key}" 'create RSA 2048 DKIM key, mode 600, owner _dkimsign'
@@ -198,7 +200,7 @@ write /etc/mail/virtual < "${work}/content"
 	echo "# BEGIN teoyujie.org (install.sh writes this block)"
 	echo "root: contact"
 	echo "contact: ${FORWARD_TO}"
-	for a in ${ALIASES}; do echo "${a}: contact"; done
+	for a in ${ALIASES-}; do echo "${a}: contact"; done
 	echo "# END teoyujie.org"
 } > "${work}/content"
 write /etc/mail/aliases atomic < "${work}/content"
@@ -256,18 +258,7 @@ run unbound-checkconf >/dev/null
 run acme-client -n >/dev/null
 run pfctl -nf /etc/pf.conf
 run pfctl -f /etc/pf.conf
-for s in neurons_room slowcgi relayd; do
-	[ -x /etc/rc.d/"${s}" ] || continue
-	run rcctl disable "${s}" >/dev/null
-	if rcctl check "${s}" >/dev/null 2>&1; then run rcctl stop "${s}" >/dev/null; fi
-done
 run rcctl enable httpd smtpd unbound >/dev/null
-for u in fleet tunnel; do
-	if id "${u}" >/dev/null 2>&1; then run userdel -r "${u}"; fi
-done
-for f in /etc/relayd.conf /etc/ssl/apps.crt /etc/ssl/private/apps.key /usr/local/sbin/private-cert /usr/local/sbin/tunnel-wait /usr/local/sbin/fleet-upload /usr/local/sbin/neurons_room /etc/rc.d/neurons_room /var/www/web/apps /usr/local/sbin/site-update /home/deploy/site-commit; do
-	if [ -e "${f}" ]; then run rm -rf "${f}"; fi
-done
 run rcctl restart sshd syslogd httpd smtpd unbound >/dev/null
 if [ "${mode}" != --live ] && [ "${mode}" != --check ]; then
 	[ -s /var/unbound/etc/blocklist.conf ] || /usr/local/sbin/blocklist-update

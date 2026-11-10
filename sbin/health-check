@@ -27,9 +27,10 @@ less_than_30_days_away "$e" && echo "security.txt ends on $e: change Expires in 
 quad9() { dig +short @9.9.9.9 $d "$1" | sort | tr '\n' ' '; }
 [ "$(quad9 NS)" = "ns-126-c.gandi.net. ns-130-a.gandi.net. ns-225-b.gandi.net. " ] || echo "NS is now: $(quad9 NS)"
 [ "$(quad9 MX)" = "10 $d. " ] || echo "MX is now: $(quad9 MX)"
-dkim_key=$(openssl pkey -in /etc/mail/dkim/$d.2026.rsa.key -pubout -outform DER | openssl base64 -A)
-dkim_dns=$(dig +short @9.9.9.9 2026._domainkey.$d TXT | tr -d '" \n' | sed 's/.*p=//; s/;.*//')
-[ "$dkim_dns" = "$dkim_key" ] || echo "the DKIM record 2026._domainkey does not match the key on this server"
+selector=@DKIM_SELECTOR@
+dkim_key=$(openssl pkey -in /etc/mail/dkim/$d.$selector.rsa.key -pubout -outform DER | openssl base64 -A)
+dkim_dns=$(dig +short @9.9.9.9 $selector._domainkey.$d TXT | tr -d '" \n' | sed 's/.*p=//; s/;.*//')
+[ "$dkim_dns" = "$dkim_key" ] || echo "the DKIM record $selector._domainkey does not match the key on this server"
 [ "$(quad9 A)" = "$ip4 " ] || echo "A is now: $(quad9 A)"
 [ -n "$(quad9 AAAA)" ] || echo "AAAA is now empty"
 for a in $(quad9 AAAA); do echo "$ip6" | grep -qx "$a" || echo "AAAA is now: $a"; done

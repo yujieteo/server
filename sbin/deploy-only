@@ -10,7 +10,7 @@ tar -xzf - -C "$f.new"
 chmod -R u+w,go=rX "$f.new"
 # httpd sends these to clients that accept gzip (gzip-static). Files of 1 KB or less are not worth it.
 find "$f.new" -type f -size +2 \( -name '*.html' -o -name '*.css' -o -name '*.js' -o -name '*.mjs' -o -name '*.json' \
-	-o -name '*.svg' -o -name '*.xml' -o -name '*.txt' -o -name '*.wasm' \) \
+	-o -name '*.svg' -o -name '*.xml' -o -name '*.txt' \) \
 	-exec sh -ec 'for p; do gzip -9nc "$p" > "$p.gz"; done' sh {} +
 [ ! -d "$f" ] || mv "$f" "$f.old"
 mv "$f.new" "$f"

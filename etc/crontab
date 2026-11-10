@@ -5,6 +5,6 @@
 5	*	*	*	*	pfctl -q -t flood -T expire 86400
 ~	*	*	*	*	-s su deploy -c /usr/local/sbin/feed-update
 ~	*	*	*	*	-s su deploy -c /usr/local/sbin/edmw-update
-~	0	*	*	6	-s su deploy -c /usr/local/sbin/sg-update
-~	*	*	*	*	-s su deploy -c '/usr/local/sbin/sg-update --render'
+10	0	*	*	6	-s su deploy -c /usr/local/sbin/sg-update
+40	*	*	*	*	-s su deploy -c '/usr/local/sbin/sg-update --render'
 0	4	*	*	*	find /var/www/files/f -mindepth 1 -maxdepth 1 -mtime +30 -exec rm -rf {} +

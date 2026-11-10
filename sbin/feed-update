@@ -3,6 +3,8 @@ use strict;
 use warnings;
 use POSIX qw(strftime);
 use Time::Local qw(timegm);
+use FindBin;
+require "$FindBin::Bin/feed-common.pl";
 
 my $out = $ARGV[0] // '/var/www/web/feed/feed.xml';
 my $site = 'https://teoyujie.org';
@@ -42,52 +44,17 @@ push @forecaster_sources,
 my %months;
 @months{qw(Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec)} = (0 .. 11);
 
-sub character {
-	my ($code) = @_;
-	return '' if $code < 0x20 || $code > 0x10FFFF || ($code >= 0xD800 && $code <= 0xDFFF);
-	my $text = chr $code;
-	utf8::encode($text);
-	return $text;
-}
-
 sub plain {
 	my ($text) = @_;
 	my $wrapped = $text =~ s/<!\[CDATA\[(.*?)\]\]>/$1/gs;
 	$text =~ s/<\/?(?:p|br|pre)\b[^>]*>/ /gi if $wrapped;
 	$text =~ s/<[^>]*>//g if $wrapped;
-	$text =~ s/&#(\d+);/character($1)/ge;
-	$text =~ s/&#[xX]([0-9a-fA-F]+);/character(hex $1)/ge;
-	$text =~ s/&lt;/</g;
-	$text =~ s/&gt;/>/g;
-	$text =~ s/&quot;/"/g;
-	$text =~ s/&apos;/'/g;
-	$text =~ s/&nbsp;/ /g;
-	$text =~ s/&amp;/&/g;
+	$text = unescaped($text);
 	$text =~ s/<[^>]*>//g unless $wrapped;
 	$text =~ s/[\x00-\x08\x0b\x0c\x0e-\x1f]//g;
 	$text =~ s/\s+/ /g;
 	$text =~ s/^ | $//g;
 	return $text;
-}
-
-sub escaped {
-	my ($text) = @_;
-	$text =~ s/&/&amp;/g;
-	$text =~ s/</&lt;/g;
-	$text =~ s/>/&gt;/g;
-	$text =~ s/"/&quot;/g;
-	return $text;
-}
-
-sub excerpt {
-	my ($text) = @_;
-	my $characters = $text;
-	return $text unless utf8::decode($characters) && length $characters > $excerpt_length;
-	$characters = substr $characters, 0, $excerpt_length;
-	$characters =~ s/\s+\S*$//;
-	$characters .= "\x{2026}";
-	utf8::encode($characters);
-	return $characters;
 }
 
 sub field {
@@ -143,7 +110,7 @@ sub parse {
 		my ($source, $text) = ($name, '');
 		if ($title =~ /^New comment by (.+?) in "(.*)"$/) {
 			($source, $title) = ("$1 on $name", $2);
-			$text = excerpt(plain(field($block, 'description')));
+			$text = excerpt(plain(field($block, 'description')), $excerpt_length);
 		}
 		next unless $title ne '' && $link =~ m{^https?://} && defined $date;
 		push @items, { title => $title, link => $link, date => $date, label => $text eq '' ? $source : "$source: $text" };
@@ -212,25 +179,6 @@ $list</ol></section></main>
 EOF
 }
 
-sub publish {
-	my ($path, $content) = @_;
-	my $temporary = "$path.new";
-	open my $file, '>', $temporary or die "feed-update: $temporary: $!\n";
-	print {$file} $content or die "feed-update: write: $!\n";
-	close $file or die "feed-update: close: $!\n";
-	chmod 0644, $temporary or die "feed-update: chmod: $!\n";
-	rename $temporary, $path or die "feed-update: rename: $!\n";
-}
-
-# httpd ignores a .gz older than its original, so a failure here only means no compression.
-sub publish_gzipped {
-	my ($path, $content) = @_;
-	publish($path, $content);
-	system("gzip -9nc <\Q$path\E >\Q$path\E.gz.new") == 0 or die "feed-update: gzip $path failed\n";
-	chmod 0644, "$path.gz.new" or die "feed-update: chmod: $!\n";
-	rename "$path.gz.new", "$path.gz" or die "feed-update: rename: $!\n";
-}
-
 sub fetch {
 	my ($url) = @_;
 	if ($url =~ m{^/}) {
@@ -238,14 +186,14 @@ sub fetch {
 		local $/;
 		return scalar <$file>;
 	}
-	my $xml = qx{ftp -MV -w 20 -U teoyujie-feed/1.0 -o - '$url' 2>/dev/null};
-	return $? == 0 ? $xml : '';
+	return fetch_url($url, 20);
 }
 
 (my $cache = $out) =~ s{[^/]*$}{cache};
 mkdir $cache unless -d $cache;
 
 my $now = time;
+my %saved_names;
 
 # A source that fails falls back to its last good copy, saved under its cache key.
 sub gather {
@@ -257,7 +205,9 @@ sub gather {
 		sleep $pause if $pause;
 		my $xml = fetch($url);
 		my @items = parse($xml, $name, $limit);
-		(my $saved = "$cache/" . ($key // $name)) =~ s/[^\w\/.-]+/-/g;
+		(my $saved_name = $key // $name) =~ s/[^\w.-]+/-/g;
+		my $saved = "$cache/$saved_name";
+		$saved_names{$saved_name} = 1;
 		if (@items) {
 			$working++;
 			publish($saved, $xml);
@@ -306,3 +256,4 @@ my %forecasters = (
 publish_gzipped($forecasters_page, render_page($now, \%forecasters, @forecaster_items));
 (my $forecasters_xml = $out) =~ s{[^/]*$}{forecasters.xml};
 publish_gzipped($forecasters_xml, render($now, \%forecasters, @forecaster_items));
+prune($cache, %saved_names);

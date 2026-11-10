@@ -2,6 +2,8 @@
 use strict;
 use warnings;
 use POSIX qw(ceil strftime);
+use FindBin;
+require "$FindBin::Bin/feed-common.pl";
 
 # Runs hourly. Each run records reply counts from the EDMW thread list. Once a
 # day it scores them and writes the day's best threads and comments as RSS.
@@ -46,58 +48,17 @@ my $blocked = join '|', qw(
 );
 $blocked = qr/\b(?:$blocked)\b/i;
 
-sub fetch {
-	my ($url) = @_;
-	my $html = qx{ftp -MV -w 20 -U teoyujie-feed/1.0 -o - '$url' 2>/dev/null};
-	return $? == 0 ? $html : '';
-}
-
-sub character {
-	my ($code) = @_;
-	return '' if $code < 0x20 || $code > 0x10FFFF || ($code >= 0xD800 && $code <= 0xDFFF);
-	my $text = chr $code;
-	utf8::encode($text);
-	return $text;
-}
-
 sub text {
 	my ($html) = @_;
 	1 while $html =~ s/<blockquote\b(?:(?!<blockquote\b).)*?<\/blockquote>/ /gis;
 	$html =~ s/<(script|style|iframe)\b.*?<\/\1>/ /gis;
 	$html =~ s/<\/?(?:p|br|div|li)\b[^>]*>/ /gi;
 	$html =~ s/<[^>]*>//g;
-	$html =~ s/&#(\d+);/character($1)/ge;
-	$html =~ s/&#[xX]([0-9a-fA-F]+);/character(hex $1)/ge;
-	$html =~ s/&lt;/</g;
-	$html =~ s/&gt;/>/g;
-	$html =~ s/&quot;/"/g;
-	$html =~ s/&apos;/'/g;
-	$html =~ s/&nbsp;/ /g;
-	$html =~ s/&amp;/&/g;
+	$html = unescaped($html);
 	$html =~ s/[\x00-\x1f]/ /g;
 	$html =~ s/\s+/ /g;
 	$html =~ s/^ | $//g;
 	return $html;
-}
-
-sub excerpt {
-	my ($text) = @_;
-	my $characters = $text;
-	return $text unless utf8::decode($characters) && length $characters > $excerpt_length;
-	$characters = substr $characters, 0, $excerpt_length;
-	$characters =~ s/\s+\S*$//;
-	$characters .= "\x{2026}";
-	utf8::encode($characters);
-	return $characters;
-}
-
-sub escaped {
-	my ($text) = @_;
-	$text =~ s/&/&amp;/g;
-	$text =~ s/</&lt;/g;
-	$text =~ s/>/&gt;/g;
-	$text =~ s/"/&quot;/g;
-	return $text;
 }
 
 # XenForo shortens large counts, for example 1.2K.
@@ -193,22 +154,12 @@ sub read_state {
 	return (\@snapshots, \@picks, $published);
 }
 
-sub replace {
-	my ($path, $content) = @_;
-	my $temporary = "$path.new";
-	open my $file, '>', $temporary or die "edmw-update: $temporary: $!\n";
-	print {$file} $content or die "edmw-update: write: $!\n";
-	close $file or die "edmw-update: close: $!\n";
-	chmod 0644, $temporary or die "edmw-update: chmod: $!\n";
-	rename $temporary, $path or die "edmw-update: rename: $!\n";
-}
-
 sub write_state {
 	my ($snapshots, $picks, $published) = @_;
 	my $content = "published\t$published\n";
 	$content .= join("\t", 'snapshot', @$_{qw(time id replies start last path title)}) . "\n" for @$snapshots;
 	$content .= join("\t", 'pick', @$_{qw(picked date link title description)}) . "\n" for @$picks;
-	replace($state_file, $content);
+	publish($state_file, $content);
 }
 
 sub render {
@@ -261,7 +212,7 @@ sub choose {
 		my (%seen, @found);
 		for my $page (pages_for($thread, $thread->{gain})) {
 			sleep $pause;
-			my $html = fetch($base . $thread->{path} . ($page > 1 ? "page-$page" : ''));
+			my $html = fetch_url($base . $thread->{path} . ($page > 1 ? "page-$page" : ''), 20);
 			$fetched++ if $html =~ /<article class="message message--post /;
 			push @found, grep { !$seen{$_->{id}}++ } comments_in($html);
 		}
@@ -275,7 +226,7 @@ sub choose {
 			push @comments, {
 				picked => $now, date => $comment->{date}, link => $link, reactions => $comment->{reactions},
 				title => qq{New comment by $comment->{author} in "$thread->{title}"},
-				description => excerpt($comment->{body}),
+				description => excerpt($comment->{body}, $excerpt_length),
 			};
 			last if ++$kept == $comments_per_thread;
 		}
@@ -303,7 +254,7 @@ my ($snapshots, $picks, $published) = read_state();
 my @listed;
 for my $page (1 .. $list_pages) {
 	sleep $pause if $page > 1;
-	push @listed, threads_in(fetch($forum . ($page > 1 ? "page-$page" : '')));
+	push @listed, threads_in(fetch_url($forum . ($page > 1 ? "page-$page" : ''), 20));
 }
 if (!@listed) {
 	my $newest = 0;
@@ -333,5 +284,5 @@ if (!defined $chosen) {
 	die "edmw-update: no thread page could be loaded, trying again next hour\n";
 }
 my @all = (@$chosen, @current);
-replace($out, render($now, @all));
+publish($out, render($now, @all));
 write_state(\@kept, \@all, $now);

@@ -24,8 +24,9 @@ This repo is public and holds no secrets. The server generates its own TLS, ACME
 | `mail-alias` | Mac | `./mail-alias add NAME` or `del NAME` edits the mail aliases in `local.conf`. |
 | `local.conf.example` | | Template for `local.conf`, filled with test values. |
 | `etc/` | | Configs for httpd, smtpd, acme-client, pf, sshd, unbound, doas, sysctl and cron. |
-| `sbin/` | Server | Scheduled jobs and the forced command of the `deploy` user. |
+| `sbin/` | Server | Scheduled jobs, the Perl helpers they share (`feed-common.pl`) and the forced command of the `deploy` user. |
 | `www/` | | Public files: `security.txt`, the GPG key and WKD, the MTA-STS policy, the error page. |
+| `prompts/` | | Prompts to paste into a Claude session to change the sources or rules of `sg-update`. |
 | `ROLLBACK.md` | | The checkpoint and recovery plan for live installs. |
 | `LICENSE` | | The MIT License for this repository. |
 
@@ -89,6 +90,8 @@ To test the result, copy the source and `local.conf` to a private folder on the 
 
 Do not add a wildcard record, because it breaks GnuPG key lookup through WKD. If you change `www/.well-known/mta-sts.txt`, also change the `id` in `_mta-sts`.
 
+The `2026` in the record name is the DKIM selector. It is set as `dkim_selector` at the top of `install.sh`. To rotate the key, change it there and here, install, and add the new record.
+
 A new server makes a new DKIM key. To print `PUBLIC_KEY`, run this on the server:
 
 ```sh
@@ -114,7 +117,7 @@ AllowedIPs = 10.8.0.0/24
 PersistentKeepalive = 25
 ```
 
-The iPhone uses `Address = 10.8.0.3/32`. Only traffic to 10.8.0.0/24 goes through the VPN, but all DNS goes to the server. Turn on "On Demand" on both devices.
+The iPhone uses `Address = 10.8.0.3/32`. Only traffic to 10.8.0.0/24 goes through the VPN, but all DNS goes to the server. Clients reach the server only, not each other. Turn on "On Demand" on both devices.
 
 `apply` never changes WireGuard peers on a live server. To add one, open the Vultr web console, copy the source to the server, add the key to its `local.conf`, and run `sh install.sh` as root.
 
@@ -129,7 +132,7 @@ After the swap, `deploy-only` runs `sbin/link-check`, which prints any link betw
 ## Limits on visitors
 
 - httpd tells browsers to load scripts, styles, fonts and images only from this site. `/reading.html`, `/forecasters.html` and `/singapore-policy-actionables.html` show text from other sites, so they may run no script at all. If a page needs another host, add it to the `Content-Security-Policy` line in `etc/httpd.conf`.
-- pf puts a host in the `flood` table when it opens more than 100 web connections in 10 seconds or 30 mail connections in a minute, and blocks its TCP for a day. To let one out now, run `doas pfctl -t flood -T delete ADDRESS`.
+- pf puts a host in the `flood` table when it opens more than 100 web connections in 10 seconds or 30 mail connections in a minute, or holds more than 100 web or 20 mail connections open at once, and blocks its TCP for a day. To let one out now, run `doas pfctl -t flood -T delete ADDRESS`.
 - sshd gives the `deploy` user only `deploy-only`, whatever its key file says.
 
 ## Scheduled jobs
@@ -146,9 +149,8 @@ Root's crontab comes from `etc/crontab`:
 | Hourly | Let hosts out of the firewall's `flood` table after a day. |
 | Hourly | `feed-update` rebuilds `/feed.xml`, `/reading.html`, `/forecasters.html` and `/forecasters.xml` from public RSS feeds. They live outside the site folder, so deploys do not remove them. If a source fails, its last good copy is used. |
 | Hourly | `edmw-update` records reply counts from HardwareZone's EDMW forum. Once a day it writes the busiest threads and most-reacted comments to `/edmw.xml`, which `feed-update` includes. Its first output comes about a day after install. To stop bad words getting through, edit the list at the top of the script. |
-
 | Weekly | `sg-update` fetches Singapore government feeds and the Gazette on Saturday morning, Singapore time. It ranks the documents by the fixed rules at the top of the script and writes `/singapore-policy-actionables.html`, `/singapore-policy-actionables.xml` and `/singapore-policy-actionables.txt`. If a source fails, its last good copy is used. |
-| Hourly | `sg-update --render` ranks the saved copies again when the site's `sg-notes.tsv` is newer than the pages. Each line of that file adds or removes points for one document and gives a note to show. On the first run after install it fetches. |
+| Hourly | `sg-update --render` ranks the saved copies again when a deploy has brought a `sg-notes.tsv` newer than the pages. Each line of that file adds or removes points for one document and gives a note to show. On the first run after install it fetches. |
 
 Separately, `sbin/ssh-alert` mails root about any SSH login from an address outside `KNOWN_IPS`.
 
