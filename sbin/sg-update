@@ -15,7 +15,7 @@ require "$FindBin::Bin/feed-common.pl";
 
 my $render_only = @ARGV && $ARGV[0] eq '--render' ? shift @ARGV : 0;
 my $dir = $ARGV[0] // '/var/www/web/feed';
-my $notes_file = $ARGV[1] // '/var/www/web/site/sg-notes.tsv';
+my $notes_file = $ARGV[1] // '/var/www/web/site/notes/policy.tsv';
 my $site = 'https://teoyujie.org';
 my $cache = "$dir/sg-cache";
 my $stamp = "$cache/fetched";
@@ -57,7 +57,6 @@ my $data_points = 10;
 my $ceremony_points = -30;
 my $points_per_day = -2;
 my $open_age_limit = 5;
-my $boost_limit = 60;
 
 my @lenses = (
 	['money', qr/\b(?:tax\w*|gst|stamp dut\w+|absd|cpf|propert\w+|real estate|sale sites?|land sales|interest rates?|bonds?|t-bills?|reits?|invest\w*|inflation|gdp|budget|tariffs?|fiscal|reserves|gic|temasek|price index|coe|bank\w*|insur\w+|financial|econom\w+|trade|exports?|electricity market)\b/i],
@@ -188,28 +187,13 @@ sub rank {
 		push @why, 'age ' . $points_per_day * $age;
 	}
 	my $note = $notes->{$item->{id}};
-	if ($note && $note->{boost}) {
-		$score += $note->{boost};
-		push @why, sprintf 'claude %+d', $note->{boost};
+	if ($note && $note->{points}) {
+		$score += $note->{points};
+		push @why, sprintf 'claude %+d', $note->{points};
 	}
 	$item->{note} = $note ? $note->{text} : '';
 	$item->{score} = $score;
 	$item->{why} = join ', ', @why;
-}
-
-# One line per note: id, tab, points from -60 to 60, tab, one sentence.
-sub read_notes {
-	my %notes;
-	open my $file, '<', $notes_file or return \%notes;
-	while (my $line = <$file>) {
-		chomp $line;
-		my ($id, $boost, $text) = split /\t/, $line, 3;
-		next unless defined $boost && $id =~ /^[0-9a-f]{8}$/ && $boost =~ /^[+-]?\d{1,3}$/;
-		$boost = $boost_limit if $boost > $boost_limit;
-		$boost = -$boost_limit if $boost < -$boost_limit;
-		$notes{$id} = { boost => $boost + 0, text => plain($text // '') };
-	}
-	return \%notes;
 }
 
 sub local_date {
@@ -294,8 +278,8 @@ sub render_text {
 	my $text = <<"EOF";
 # Singapore primary documents, ranked by fixed rules. Fetched $built. Top $text_items of the last 28 days, with open consultations from the last 120.
 # Columns, split by tabs: id, score, date, source, kind, lenses, why, title, link.
-# To change the ranking, add lines to static/public/sg-notes.tsv in github.com/yujieteo/site and deploy.
-# A note line is: id, tab, points from -$boost_limit to $boost_limit, tab, one sentence on what to do and by when.
+# To change the ranking, add lines to notes/policy.tsv in github.com/yujieteo/site. The format is at $site/api/notes.md
+# A note line is: id, tab, points from -60 to 60, tab, one sentence on what to do and by when.
 # Judge each document for a Singapore resident: investing, career, and public services to use or respond to.
 EOF
 	for my $item (@items) {
@@ -353,7 +337,7 @@ publish($stamp, '') unless $render_only;
 
 # The fetch time is the clock, so the same saved copies and notes always give the same pages.
 my $now = (stat $stamp)[9];
-my $notes = read_notes();
+my $notes = read_notes($notes_file);
 my @items = grep { $_->{date} <= $now } values %seen;
 $_->{kind} = kind_of($_) for @items;
 # An open consultation stays listed for longer than other documents.

@@ -72,6 +72,31 @@ sub fetch_url {
 	return $? == 0 ? $text : '';
 }
 
+# Reads notes that agents wrote, from a file the site deploy brings. One line
+# per note: id, tab, points, tab, text. Later cells are for the site build.
+# The site build checks the file, so this only has to be safe with a bad one.
+my $note_points_limit = 60;
+
+sub read_notes {
+	my ($path) = @_;
+	my %notes;
+	open my $file, '<', $path or return \%notes;
+	while (my $line = <$file>) {
+		chomp $line;
+		my ($id, $points, $text) = split /\t/, $line;
+		next unless defined $points && $id =~ /^[0-9a-f]{8}$/ && $points =~ /^[+-]?\d{1,3}$/;
+		$points = $note_points_limit if $points > $note_points_limit;
+		$points = -$note_points_limit if $points < -$note_points_limit;
+		$text //= '';
+		$text =~ s/<[^>]*>//g;
+		$text =~ s/[\x00-\x1f]/ /g;
+		$text =~ s/\s+/ /g;
+		$text =~ s/^ | $//g;
+		$notes{$id} = { points => $points + 0, text => $text };
+	}
+	return \%notes;
+}
+
 # Deletes the saved copies of sources that have left the list, so health-check does not report them as stale.
 sub prune {
 	my ($folder, %kept) = @_;

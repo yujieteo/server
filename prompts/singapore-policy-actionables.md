@@ -23,4 +23,4 @@ Then commit and open a PR. Do not run ./apply --install.
 
 Not yet in the list: MAS, HDB, IRAS, CPF and Singapore Statutes Online. Parliament's bills page answers the server with a bot check, so the Gazette supplies the bills.
 
-To add the weekly notes, use the prompt in the [site repo](https://github.com/yujieteo/site/blob/main/prompts/singapore-policy-actionables.md).
+To add the weekly notes, use the prompt in the [site repo](https://github.com/yujieteo/site/blob/main/prompts/notes.md).

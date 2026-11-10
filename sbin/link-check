@@ -10,7 +10,7 @@ my $root = $ARGV[0] // die "usage: link-check DIR\n";
 $root =~ s{/+$}{};
 
 # httpd serves these from outside the site folder.
-my %served_elsewhere = map { $_ => 1 } qw(/feed.xml /reading.html /forecasters.html /forecasters.xml /edmw.xml /singapore-policy-actionables.html /singapore-policy-actionables.xml /singapore-policy-actionables.txt /contact.gpg);
+my %served_elsewhere = map { $_ => 1 } qw(/feed.xml /reading.html /reading.txt /forecasters.html /forecasters.xml /forecasters.txt /edmw.xml /singapore-policy-actionables.html /singapore-policy-actionables.xml /singapore-policy-actionables.txt /contact.gpg);
 
 sub resolve {
 	my ($page, $link) = @_;
