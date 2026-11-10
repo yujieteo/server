@@ -117,7 +117,7 @@ AllowedIPs = 10.8.0.0/24
 PersistentKeepalive = 25
 ```
 
-The iPhone uses `Address = 10.8.0.3/32`. Only traffic to 10.8.0.0/24 goes through the VPN, but all DNS goes to the server. Clients reach the server only, not each other. Turn on "On Demand" on both devices.
+The iPhone uses `Address = 10.8.0.3/32`. Only traffic to 10.8.0.0/24 goes through the VPN, but all DNS goes to the server. The server forwards between clients, so one device can reach another, for example SSH from the phone to the Mac. Turn on "On Demand" on both devices.
 
 `apply` never changes WireGuard peers on a live server. To add one, open the Vultr web console, copy the source to the server, add the key to its `local.conf`, and run `sh install.sh` as root.
 
