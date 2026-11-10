@@ -4,6 +4,8 @@ use warnings;
 use POSIX qw(strftime);
 use Time::Local qw(timegm);
 use Digest::MD5 qw(md5_hex);
+use FindBin;
+require "$FindBin::Bin/feed-common.pl";
 
 # Ranks new Singapore government documents by fixed rules. It reads primary
 # sources only: agency feeds and the Gazette.
@@ -73,38 +75,14 @@ my %gazette_kept = map { $_ => 1 } ('Subsidiary Legislation Supplement', 'Acts S
 my %months;
 @months{qw(Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec)} = (0 .. 11);
 
-sub character {
-	my ($code) = @_;
-	return '' if $code < 0x20 || $code > 0x10FFFF || ($code >= 0xD800 && $code <= 0xDFFF);
-	my $text = chr $code;
-	utf8::encode($text);
-	return $text;
-}
-
 sub plain {
 	my ($text) = @_;
 	$text =~ s/<!\[CDATA\[(.*?)\]\]>/$1/gs;
 	$text =~ s/<[^>]*>//g;
-	$text =~ s/&#(\d+);/character($1)/ge;
-	$text =~ s/&#[xX]([0-9a-fA-F]+);/character(hex $1)/ge;
-	$text =~ s/&lt;/</g;
-	$text =~ s/&gt;/>/g;
-	$text =~ s/&quot;/"/g;
-	$text =~ s/&apos;/'/g;
-	$text =~ s/&nbsp;/ /g;
-	$text =~ s/&amp;/&/g;
+	$text = unescaped($text);
 	$text =~ s/[\x00-\x1f]/ /g;
 	$text =~ s/\s+/ /g;
 	$text =~ s/^ | $//g;
-	return $text;
-}
-
-sub escaped {
-	my ($text) = @_;
-	$text =~ s/&/&amp;/g;
-	$text =~ s/</&lt;/g;
-	$text =~ s/>/&gt;/g;
-	$text =~ s/"/&quot;/g;
 	return $text;
 }
 
@@ -176,7 +154,7 @@ sub still_open {
 	return $item->{kind} eq 'consultation' && $item->{source} eq 'REACH';
 }
 
-# Sets the kind, the lenses, the score and the reasons for the score.
+# Sets the lenses, the note, the score and the reasons for the score.
 sub rank {
 	my ($item, $now, $notes) = @_;
 	my $kind = $item->{kind};
@@ -327,31 +305,6 @@ EOF
 	return $text;
 }
 
-sub publish {
-	my ($path, $content) = @_;
-	my $temporary = "$path.new";
-	open my $file, '>', $temporary or die "sg-update: $temporary: $!\n";
-	print {$file} $content or die "sg-update: write: $!\n";
-	close $file or die "sg-update: close: $!\n";
-	chmod 0644, $temporary or die "sg-update: chmod: $!\n";
-	rename $temporary, $path or die "sg-update: rename: $!\n";
-}
-
-# httpd ignores a .gz older than its original, so a failure here only means no compression.
-sub publish_gzipped {
-	my ($path, $content) = @_;
-	publish($path, $content);
-	system("gzip -9nc <\Q$path\E >\Q$path\E.gz.new") == 0 or die "sg-update: gzip $path failed\n";
-	chmod 0644, "$path.gz.new" or die "sg-update: chmod: $!\n";
-	rename "$path.gz.new", "$path.gz" or die "sg-update: rename: $!\n";
-}
-
-sub fetch {
-	my ($url) = @_;
-	my $text = qx{ftp -MV -w 30 -U teoyujie-feed/1.0 -o - '$url' 2>/dev/null};
-	return $? == 0 ? $text : '';
-}
-
 sub saved {
 	my ($path) = @_;
 	open my $file, '<', $path or return '';
@@ -363,21 +316,23 @@ sub saved {
 $render_only = 0 unless -e $stamp;
 if ($render_only) {
 	exit 0 unless -e $notes_file;
-	exit 0 if -e "$dir/singapore-policy-actionables.txt" && (stat $notes_file)[9] <= (stat "$dir/singapore-policy-actionables.txt")[9];
+	# The change time, because a deploy sets it whatever date the build gave the file.
+	exit 0 if -e "$dir/singapore-policy-actionables.txt" && (stat $notes_file)[10] <= (stat "$dir/singapore-policy-actionables.txt")[9];
 } else {
 	mkdir $cache unless -d $cache;
 }
 
 # A source that fails falls back to its last good copy.
-my ($working, %seen) = (0);
+my ($working, %seen, %copies) = (0);
 for my $source (@sources) {
 	my ($name, $url, $format) = @$source;
 	(my $key = lc $name) =~ s/\W+/-/g;
 	my $copy = "$cache/$key";
+	$copies{$key} = 1;
 	my @items;
 	unless ($render_only) {
 		sleep $pause;
-		my $text = fetch($url);
+		my $text = fetch_url($url, 30);
 		@items = parse($text, $name, $format);
 		publish($copy, $text) if @items;
 	}
@@ -393,6 +348,7 @@ for my $source (@sources) {
 	}
 }
 die "sg-update: only $working of " . scalar(@sources) . " sources worked, the old pages stay\n" if !$render_only && $working * 2 < @sources;
+prune($cache, %copies, fetched => 1) unless $render_only;
 publish($stamp, '') unless $render_only;
 
 # The fetch time is the clock, so the same saved copies and notes always give the same pages.
