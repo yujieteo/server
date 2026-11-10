@@ -39,7 +39,7 @@ case $days in '' | 0* | *[!0-9]*) usage ;; *) ;; esac
 offset=$((days - 30))
 [ "$offset" -lt 0 ] || offset=+$offset
 stamp=$(date -u -v"${offset}"d +%Y-%m-%dT%H:%M:%SZ)
-n=$(basename "$1" | tr -c 'A-Za-z0-9._\n-' _)
+n=$(basename "$1" | tr -d '\n' | tr -c 'A-Za-z0-9._-' _)
 d=$(openssl rand -hex 16)
 ssh "$server" "mkdir /var/www/files/f/$d && cat > /var/www/files/f/$d/$n && touch -d $stamp /var/www/files/f/$d" < "$1"
 echo "https://teoyujie.org/f/$d/$n"
