@@ -1,10 +1,42 @@
 #!/bin/sh
 set -eu
 d=/var/unbound/etc
-ftp -MVo $d/hosts.new https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts
-awk '$1 == "0.0.0.0" && $2 ~ /^[a-z0-9_-]+(\.[a-z0-9_-]+)*\.[a-z]+$/ { print "local-zone: \"" $2 ".\" always_nxdomain" }' \
-	$d/hosts.new | sort -u > $d/blocklist.new
-rm $d/hosts.new
-[ "$(wc -l < $d/blocklist.new)" -gt 10000 ] || { echo "blocklist too short, not changed"; exit 1; }
+# StevenBlack has hosts lines. HaGeZi Multi Pro has one name on each line.
+n=0
+for u in https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts \
+	https://raw.githubusercontent.com/hagezi/dns-blocklists/main/wildcard/pro-onlydomains.txt; do
+	n=$((n + 1))
+	ftp -MVo $d/list$n.new "$u"
+	[ "$(wc -l < $d/list$n.new)" -gt 50000 ] || { echo "$u is too short, blocklist not changed"; exit 1; }
+done
+# A blocked name takes its subdomains with it, so a name under another blocked name is left out.
+# A name in $d/allowlist resolves as normal, and so do its subdomains.
+awk -v allow=$d/allowlist '
+function ok(name) { return name ~ /^[a-z0-9_-]+(\.[a-z0-9_-]+)*\.([a-z]+|xn--[a-z0-9]+)$/ }
+function covered(name,    i) {
+	if (name in pass) return 1
+	while (i = index(name, ".")) {
+		name = substr(name, i + 1)
+		if (name in block || name in pass) return 1
+	}
+	return 0
+}
+BEGIN {
+	while ((getline name < allow) > 0) {
+		sub(/[ \t\r].*/, "", name)
+		if (ok(name)) pass[name] = 1
+	}
+}
+{ name = $1 == "0.0.0.0" ? $2 : NF == 1 ? $1 : "" }
+ok(name) { block[name] = 1 }
+END {
+	for (name in block) if (!covered(name)) print "local-zone: \"" name ".\" always_nxdomain"
+	for (name in pass) print "local-zone: \"" name ".\" always_transparent"
+}' $d/list1.new $d/list2.new | sort > $d/blocklist.new
+[ "$(wc -l < $d/blocklist.new)" -gt 100000 ] || { echo "blocklist too short, not changed"; exit 1; }
+# unbound must accept the new list before it replaces the old one.
+sed 's/blocklist\.conf/blocklist.new/' $d/unbound.conf > $d/check.conf
+unbound-checkconf $d/check.conf >/dev/null
+rm $d/check.conf $d/list1.new $d/list2.new
 mv $d/blocklist.new $d/blocklist.conf
 unbound-control -q reload

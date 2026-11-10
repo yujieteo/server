@@ -7,7 +7,7 @@ It does four things:
 - Serves the website and temporary file links with httpd.
 - Forwards mail for teoyujie.org with smtpd, and signs mail that starts on the server with DKIM.
 - Runs a WireGuard VPN, which is the only way to reach SSH.
-- Blocks ads and trackers for VPN clients with unbound.
+- Blocks ads, trackers and malware names for VPN clients with unbound.
 
 This repo is public and holds no secrets. The server generates its own TLS, ACME, SRS, DKIM and WireGuard keys, and they never leave it. Your personal settings live in `local.conf`, which git ignores.
 
@@ -121,6 +121,21 @@ The iPhone uses `Address = 10.8.0.3/32`. Only traffic to 10.8.0.0/24 goes throug
 
 `apply` never changes WireGuard peers on a live server. To add one, open the Vultr web console, copy the source to the server, add the key to its `local.conf`, and run `sh install.sh` as root.
 
+## DNS for VPN clients
+
+unbound resolves names itself, so no outside resolver sees the queries. It sends each name server only the part of the name that server needs, checks DNSSEC, and keeps no query log.
+
+It answers "no such name" for about 240,000 ad, tracker and malware names, and for their subdomains. `blocklist-update` builds the list each day from two sources:
+
+- [StevenBlack hosts](https://github.com/StevenBlack/hosts), kept by Steven Black.
+- [HaGeZi Multi Pro](https://github.com/hagezi/dns-blocklists), kept by HaGeZi.
+
+If a source fails or is too short, or unbound rejects the new list, the old list stays and cron mails the error.
+
+To unblock a name, add it to `/var/unbound/etc/allowlist` on the server, one name on each line, then run `doas /usr/local/sbin/blocklist-update`. The name and its subdomains resolve again. This file lives only on the server.
+
+The list works for apps that use the system DNS. An app that carries its own encrypted DNS goes around it. Firefox can turn this on by itself, so unbound also answers "no such name" for `use-application-dns.net`, which tells Firefox to use the system DNS.
+
 ## Site deploys
 
 The website comes from the [site repo](https://github.com/yujieteo/site). Its `scripts/deploy.sh` builds the site and sends a tarball over SSH to the `deploy` user, so a commit there changes nothing until you run that script. The `deploy` user can only run `sbin/deploy-only`, which accepts only `site` and swaps in the new folder by renaming it.
@@ -145,7 +160,7 @@ Root's crontab comes from `etc/crontab`:
 | Daily | `health-check` reports problems with disk, services, the firewall, the VPN, patches, certificates, domain expiry, DNS, the DKIM record, mail stuck in the queue, Spamhaus listing, unknown certificates, stale or missing feeds and an OpenBSD release that needs upgrading. |
 | Hourly | Renew the TLS certificate if needed. |
 | Daily | Delete shared links that have reached their end date. |
-| Weekly | Refresh the DNS blocklist. |
+| Daily | `blocklist-update` rebuilds the DNS blocklist. |
 | Hourly | Let hosts out of the firewall's `flood` table after a day. |
 | Hourly | `feed-update` rebuilds `/feed.xml`, `/reading.html`, `/reading.txt`, `/forecasters.html`, `/forecasters.xml` and `/forecasters.txt` from public RSS feeds. It reads `notes/reading.txt` from the deployed site: each line moves one item in the reading feed and gives a sentence to show. They live outside the site folder, so deploys do not remove them. If a source fails, its last good copy is used. |
 | Hourly | `edmw-update` records reply counts from HardwareZone's EDMW forum. Once a day it writes the busiest threads and most-reacted comments to `/edmw.xml`, which `feed-update` includes. Its first output comes about a day after install. To stop bad words getting through, edit the list at the top of the script. |
