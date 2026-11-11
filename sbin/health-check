@@ -52,6 +52,8 @@ find $feed/edmw.xml -mmin +2880 2>/dev/null | sed 's#.*/##; s/$/ has not been re
 find $feed/singapore-policy-actionables.txt -mmin +11520 2>/dev/null | sed 's#.*/##; s/$/ has not been rebuilt for 8 days/'
 find $feed/sg-cache -type f -mmin +30240 2>/dev/null | sed 's#.*/##; s/^/Singapore source has not loaded for 3 weeks: /'
 find $feed/cache -type f -mmin +4320 ! -name 'forecaster-*' 2>/dev/null | sed 's#.*/##; s/^/feed source has not loaded for 3 days: /'
+# A quiet forecaster still has a feed that loads, so none loading in a day means hnrss.org is down.
+find $feed/cache -type f -name 'forecaster-*' ! -name 'forecaster-lw-*' ! -name 'forecaster-blog-*' -mmin -1440 2>/dev/null | grep -q . || echo "no Hacker News forecaster feed has loaded for a day"
 
 # Only the two newest releases get patches. A release's folder appears when it comes out.
 following() { awk -v v="$1" 'BEGIN { printf "%.1f", v + 0.1 }'; }

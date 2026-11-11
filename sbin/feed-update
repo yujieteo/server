@@ -294,9 +294,10 @@ publish_gzipped($reading_text, render_text($now, 'The reading feed, newest first
 
 # Last, so a slow or failing forecaster feed cannot hold up the reading feed.
 my ($forecasters_working, $forecasters_seen) = gather($forecasters_pause, @forecaster_sources);
-die "feed-update: only $forecasters_working of " . scalar(@forecaster_sources) . " forecaster feeds worked, the old page stays\n" if $forecasters_working * 2 < @forecaster_sources;
 # A LessWrong writer with no posts has an empty feed, so a low count here is no reason to stop.
 my ($lesswrong_working, $lesswrong_seen) = gather($lesswrong_pause, @lesswrong_sources);
+# One host serves most of the Hacker News feeds. When it is down, their last good copies fill in and health-check reports it.
+die "feed-update: no forecaster feed worked, the old page stays\n" unless $forecasters_working + $lesswrong_working;
 warn "feed-update: no LessWrong feed worked\n" unless $lesswrong_working;
 $forecasters_seen->{$_} //= $lesswrong_seen->{$_} for keys %$lesswrong_seen;
 
