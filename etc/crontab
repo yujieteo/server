@@ -1,10 +1,12 @@
-30	20	*	*	*	syspatch >/dev/null; [ $? -eq 0 ] && shutdown -r +1
-45	20	*	*	*	/usr/local/sbin/health-check
-~	*	*	*	*	acme-client teoyujie.org && rcctl reload httpd >/dev/null && rcctl restart smtpd >/dev/null
-15	20	*	*	*	/usr/local/sbin/blocklist-update
-5	*	*	*	*	pfctl -q -t flood -T expire 86400
-~	*	*	*	*	-s su deploy -c /usr/local/sbin/feed-update
-~	*	*	*	*	-s su deploy -c /usr/local/sbin/edmw-update
-10	0	*	*	6	-s su deploy -c /usr/local/sbin/sg-update
-40	*	*	*	*	-s su deploy -c '/usr/local/sbin/sg-update --render'
-0	4	*	*	*	find /var/www/files/f -mindepth 1 -maxdepth 1 -mtime +30 -exec rm -rf {} +
+# The system crontab: the sixth field is the user that runs the job.
+20	20	*	*	*	root	-n a=$(pkg_info -q); pkg_add -Iux > /dev/null && { [ "$a" = "$(pkg_info -q)" ] || rcctl restart smtpd > /dev/null; }
+30	20	*	*	*	root	syspatch >/dev/null; [ $? -eq 0 ] && shutdown -r +1
+45	20	*	*	*	root	/usr/local/sbin/health-check
+~	*	*	*	*	root	acme-client teoyujie.org && rcctl reload httpd >/dev/null && rcctl restart smtpd >/dev/null
+15	20	*	*	*	root	/usr/local/sbin/blocklist-update
+5	*	*	*	*	root	pfctl -q -t flood -T expire 86400
+0	4	*	*	*	root	find /var/www/files/f -mindepth 1 -maxdepth 1 -mtime +30 -exec rm -rf {} +
+~	*	*	*	*	_feed	-s /usr/local/sbin/feed-update
+~	*	*	*	*	_feed	-s /usr/local/sbin/edmw-update
+10	0	*	*	6	_feed	-s /usr/local/sbin/sg-update
+40	*	*	*	*	_feed	-s /usr/local/sbin/sg-update --render

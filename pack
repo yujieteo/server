@@ -1,5 +1,0 @@
-#!/bin/sh
-set -eu
-cd "$(dirname "$0")"
-export COPYFILE_DISABLE=1
-tar -czf - install.sh wg-config wg-preflight local.conf sbin etc www
