@@ -16,9 +16,6 @@ stuck=$(smtpctl show queue | awk -F'|' -v now="$(date +%s)" '$8 < now - 21600 { 
 [ "$stuck" -eq 0 ] || echo "$stuck mails have waited in the queue for over 6 hours"
 lost=$(zcat -f /var/log/maillog.0.gz /var/log/maillog 2>/dev/null | grep -c 'mta delivery.*result="PermFail"')
 [ "$lost" -eq 0 ] || echo "$lost mails were refused for good since yesterday: grep PermFail /var/log/maillog"
-# Every line of this check travels by mail, so a server whose mail cannot leave looks like one with
-# nothing to report. The outside checks read this file: when the check last ran, and whether mail is leaving.
-echo "$(date +%s) stuck=$stuck lost=$lost" > /var/www/status/health.txt
 syspatch -c 2>&1 | sed 's/^/patch not installed: /'
 openssl x509 -checkend 1209600 -noout -in /etc/ssl/$d.fullchain.pem >/dev/null ||
 	echo "the certificate ends in less than 14 days"
@@ -85,3 +82,7 @@ ftp -MVo - "https://api.certspotter.com/v1/issuances?domain=$d&include_subdomain
 	$1 == "cert_sha256" { cert = $2 }
 	$1 == "pubkey_sha256" && $2 != key && new { print "certificate not made by this server: https://crt.sh/?q=" cert }
 	END { if (id) print id > s }'
+
+# Every line of this check travels by mail, so a server whose mail cannot leave looks like one with
+# nothing to report. The outside checks read this file: when the check last finished, and whether mail is leaving.
+echo "$(date +%s) stuck=$stuck lost=$lost" > /var/www/status/health.txt

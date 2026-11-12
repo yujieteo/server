@@ -144,10 +144,10 @@ valid pfctl -nf "${t}/etc/pf.conf"
 [ "${wg}" -ne 3 ] || exit 3
 [ -z "${check}" ] || exit 0
 
-# The copy.
+# The copy. mkdir -p leaves a folder that is already there as it is; install -D would reset its mode.
 while read -r f; do
 	case ${f} in
-	/*) if [ -e "${t}${f}" ]; then install -D -m "$(stat -f %Lp "${t}${f}")" "${t}${f}" "${f}"; else rm -f "${f}"; fi ;;
+	/*) if [ -e "${t}${f}" ]; then mkdir -p "${f%/*}"; install -m "$(stat -f %Lp "${t}${f}")" "${t}${f}" "${f}"; else rm -f "${f}"; fi ;;
 	*) ;;
 	esac
 done < "${w}/changed"

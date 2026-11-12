@@ -208,7 +208,8 @@ blocked() {
 	! as "$1" "nc -z -w 3 $2 $3" && [ "$(blocked_packets)" -gt "${before}" ]
 }
 logged() {
-	pkill -ALRM -u root -U root -x pflogd
+	# The pflogd process that writes the file runs as _pflogd: both processes get the signal to flush.
+	pkill -ALRM -x pflogd
 	sleep 3
 	tcpdump -ner /var/log/pflog outbound 2> /dev/null | grep -q .
 }
