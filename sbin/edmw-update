@@ -77,7 +77,7 @@ sub threads_in {
 	for my $block (@blocks) {
 		next if $block =~ /structItem-status--sticky/;
 		next unless $block =~ m{<a href="(/threads/(?:[a-z0-9-]+\.)?(\d+)/)"[^>]*data-tp-primary="on"[^>]*>(.*?)</a>}s;
-		my ($path, $id, $title) = ($1, $2, text($3));
+		my ($path, $id, $title) = ($1, $2, headline(text($3)));
 		next unless $block =~ /structItem-startDate.*?data-time="(\d+)"/s;
 		my $start = $1;
 		next unless $block =~ m{<dt>Replies</dt>\s*<dd>(.*?)</dd>}s;
@@ -103,7 +103,7 @@ sub comments_in {
 	my @comments;
 	for my $block (@blocks) {
 		next unless $block =~ /data-author="([^"]*)"/;
-		my $author = text($1);
+		my $author = headline(text($1));
 		next unless $block =~ /data-content="post-(\d+)"/;
 		my $id = $1;
 		next unless $block =~ /data-time="(\d+)"[^>]*itemprop="datePublished"/;
@@ -138,13 +138,16 @@ sub read_state {
 	while (my $line = <$file>) {
 		chomp $line;
 		my ($type, @fields) = split /\t/, $line, -1;
+		# A damaged line would put text where the job counts, or a path that is no thread into an address.
 		if ($type eq 'published') {
-			$published = $fields[0];
+			$published = $fields[0] if @fields && $fields[0] =~ /^\d+$/;
 		} elsif ($type eq 'snapshot') {
+			next unless @fields == 7 && !grep { !/^\d+$/ } @fields[0 .. 4] and $fields[5] =~ m{^/threads/[a-z0-9.-]+/$};
 			my %row;
 			@row{qw(time id replies start last path title)} = @fields;
 			push @snapshots, \%row;
 		} elsif ($type eq 'pick') {
+			next unless @fields == 5 && !grep { !/^\d+$/ } @fields[0, 1];
 			my %row;
 			@row{qw(picked date link title description)} = @fields;
 			push @picks, \%row;
@@ -266,8 +269,6 @@ for my $page (1 .. $list_pages) {
 my @threads = $due ? ranked($now, \@kept) : ();
 my %pages;
 for my $thread (grep { defined } @threads[0 .. $threads_scanned - 1]) {
-	# The path comes from the state file, which holds text from the forum.
-	next unless $thread->{path} =~ m{^/threads/[a-z0-9.-]+/$};
 	for my $page (pages_for($thread, $thread->{gain})) {
 		sleep $pause;
 		$pages{"$thread->{id} $page"} = fetch_url($base . $thread->{path} . ($page > 1 ? "page-$page" : ''), 20);

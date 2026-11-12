@@ -37,7 +37,16 @@ sub character {
 	return $text;
 }
 
-# Turns HTML entities into the characters they name.
+# Keeps what is valid UTF-8 and allowed in XML: no stray bytes, control characters, surrogates or
+# non-characters. One such byte from one source would make a whole page unreadable for a feed reader.
+my $valid = qr/[\x09\x0a\x0d\x20-\x7e]|[\xc2-\xdf][\x80-\xbf]|\xe0[\xa0-\xbf][\x80-\xbf]|[\xe1-\xec\xee][\x80-\xbf]{2}|\xed[\x80-\x9f][\x80-\xbf]|\xef[\x80-\xbe][\x80-\xbf]|\xef\xbf[\x80-\xbd]|\xf0[\x90-\xbf][\x80-\xbf]{2}|[\xf1-\xf3][\x80-\xbf]{3}|\xf4[\x80-\x8f][\x80-\xbf]{2}/;
+
+sub valid {
+	my ($text) = @_;
+	return join '', $text =~ /$valid/g;
+}
+
+# Turns HTML entities into the characters they name. Every text from a source passes through here.
 sub unescaped {
 	my ($text) = @_;
 	$text =~ s/&#(\d+);/character($1)/ge;
@@ -48,11 +57,13 @@ sub unescaped {
 	$text =~ s/&apos;/'/g;
 	$text =~ s/&nbsp;/ /g;
 	$text =~ s/&amp;/&/g;
-	return $text;
+	return valid($text);
 }
 
+# The last step before a page: whatever path a text took, the page stays well-formed.
 sub escaped {
 	my ($text) = @_;
+	$text = valid($text);
 	$text =~ s/&/&amp;/g;
 	$text =~ s/</&lt;/g;
 	$text =~ s/>/&gt;/g;
@@ -69,6 +80,12 @@ sub excerpt {
 	$characters .= "\x{2026}";
 	utf8::encode($characters);
 	return $characters;
+}
+
+# A title is one line of a page, however long its source makes it.
+sub headline {
+	my ($text) = @_;
+	return excerpt($text, 300);
 }
 
 sub publish {
@@ -109,7 +126,7 @@ sub read_notes {
 		next unless defined $points && $id =~ /^[0-9a-f]{8}$/ && $points =~ /^[+-]?\d{1,3}$/;
 		$points = $note_points_limit if $points > $note_points_limit;
 		$points = -$note_points_limit if $points < -$note_points_limit;
-		$text //= '';
+		$text = valid($text // '');
 		$text =~ s/<[^>]*>//g;
 		$text =~ s/[\x00-\x1f]/ /g;
 		$text =~ s/\s+/ /g;

@@ -135,7 +135,7 @@ sub parse {
 	my @items;
 	while ($xml =~ /<(item|entry)[\s>](.*?)<\/\1>/gs) {
 		my $block = $2;
-		my $title = plain(field($block, 'title'));
+		my $title = headline(plain(field($block, 'title')));
 		my $link = link_of($block);
 		my $date = epoch(plain(field($block, qw(pubDate published updated dc:date))));
 		my ($source, $text) = ($name, '');
@@ -147,7 +147,7 @@ sub parse {
 			(my $body = plain(field($block, 'description'))) =~ s/\s*Discuss$//;
 			$text = excerpt($body, $excerpt_length);
 		}
-		next unless $title ne '' && $link =~ m{^https?://} && defined $date;
+		next unless $title ne '' && $link =~ m{^https?://\S{1,2000}$} && defined $date;
 		push @items, { id => substr(md5_hex($link), 0, 8), title => $title, link => $link, date => $date, source => $source, label => $text eq '' ? $source : "$source: $text" };
 		last if @items == $limit;
 	}
