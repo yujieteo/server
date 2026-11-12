@@ -9,8 +9,8 @@ require "$FindBin::Bin/feed-common.pl";
 # day it scores them and writes the day's best threads and comments as RSS.
 # feed-update reads that file, and httpd serves it at /edmw.xml.
 
-my $out = $ARGV[0] // '/var/www/web/feed/edmw.xml';
-my $state_file = $ARGV[1] // '/home/deploy/edmw-state';
+my $out = $ARGV[0] // '/var/www/feed/edmw.xml';
+my $state_file = $ARGV[1] // '/var/www/feed/edmw-state';
 my $site = 'https://teoyujie.org';
 my $base = 'https://forums.hardwarezone.com.sg';
 my $forum = "$base/forums/eat-drink-man-woman.16/";
@@ -204,15 +204,14 @@ sub ranked {
 }
 
 sub choose {
-	my ($now, $threads, $previous) = @_;
+	my ($now, $threads, $previous, $pages) = @_;
 	my %used = map { $_->{link} => 1 } @$previous;
 	my @scanned = grep { defined } @$threads[0 .. $threads_scanned - 1];
 	my (@comments, $fetched);
 	for my $thread (@scanned) {
 		my (%seen, @found);
 		for my $page (pages_for($thread, $thread->{gain})) {
-			sleep $pause;
-			my $html = fetch_url($base . $thread->{path} . ($page > 1 ? "page-$page" : ''), 20);
+			my $html = $pages->{"$thread->{id} $page"} // '';
 			$fetched++ if $html =~ /<article class="message message--post /;
 			push @found, grep { !$seen{$_->{id}}++ } comments_in($html);
 		}
@@ -249,13 +248,34 @@ sub choose {
 }
 
 my $now = time;
+(my $folder = $out) =~ s{/[^/]*$}{};
+confine($folder);
 my ($snapshots, $picks, $published) = read_state();
+my @kept = grep { $_->{time} >= $now - $day - 2 * $hour } @$snapshots;
+my $oldest = $now;
+for (@kept) { $oldest = $_->{time} if $_->{time} < $oldest; }
+my $due = $now - $published >= $publish_every && $now - $oldest >= $history_needed;
 
-my @listed;
+# Every fetch comes first: the thread list and, on the daily run, pages of the busiest threads
+# as the saved counts rank them. With the texts in memory the job gives up ftp, and only then parses them.
+my @list_html;
 for my $page (1 .. $list_pages) {
 	sleep $pause if $page > 1;
-	push @listed, threads_in(fetch_url($forum . ($page > 1 ? "page-$page" : ''), 20));
+	push @list_html, fetch_url($forum . ($page > 1 ? "page-$page" : ''), 20);
 }
+my @threads = $due ? ranked($now, \@kept) : ();
+my %pages;
+for my $thread (grep { defined } @threads[0 .. $threads_scanned - 1]) {
+	# The path comes from the state file, which holds text from the forum.
+	next unless $thread->{path} =~ m{^/threads/[a-z0-9.-]+/$};
+	for my $page (pages_for($thread, $thread->{gain})) {
+		sleep $pause;
+		$pages{"$thread->{id} $page"} = fetch_url($base . $thread->{path} . ($page > 1 ? "page-$page" : ''), 20);
+	}
+}
+fetched();
+
+my @listed = map { threads_in($_) } @list_html;
 if (!@listed) {
 	my $newest = 0;
 	for (@$snapshots) { $newest = $_->{time} if $_->{time} > $newest; }
@@ -263,22 +283,18 @@ if (!@listed) {
 	exit 0;
 }
 
-my @kept = grep { $_->{time} >= $now - $day - 2 * $hour } @$snapshots;
-my $oldest = $now;
-for (@kept) { $oldest = $_->{time} if $_->{time} < $oldest; }
 my %listed_ids;
 for my $thread (grep { !$listed_ids{$_->{id}}++ } @listed) {
 	push @kept, { %$thread, time => $now };
 }
 
-if ($now - $published < $publish_every || $now - $oldest < $history_needed) {
+if (!$due) {
 	write_state(\@kept, $picks, $published);
 	exit 0;
 }
 
 my @current = grep { $_->{picked} >= $now - $picks_kept } @$picks;
-my @threads = ranked($now, \@kept);
-my $chosen = choose($now, \@threads, \@current);
+my $chosen = choose($now, \@threads, \@current, \%pages);
 if (!defined $chosen) {
 	write_state(\@kept, $picks, $published);
 	die "edmw-update: no thread page could be loaded, trying again next hour\n";

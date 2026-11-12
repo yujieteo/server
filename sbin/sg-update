@@ -14,7 +14,7 @@ require "$FindBin::Bin/feed-common.pl";
 # It writes singapore-policy-actionables.html, singapore-policy-actionables.xml and singapore-policy-actionables.txt for httpd.
 
 my $render_only = @ARGV && $ARGV[0] eq '--render' ? shift @ARGV : 0;
-my $dir = $ARGV[0] // '/var/www/web/feed';
+my $dir = $ARGV[0] // '/var/www/feed';
 my $notes_file = $ARGV[1] // '/var/www/web/site/notes/policy.txt';
 my $site = 'https://teoyujie.org';
 my $cache = "$dir/sg-cache";
@@ -289,41 +289,39 @@ EOF
 	return $text;
 }
 
-sub saved {
-	my ($path) = @_;
-	open my $file, '<', $path or return '';
-	local $/;
-	return scalar <$file>;
-}
-
 # The first run after install has no saved copies, so it fetches.
 $render_only = 0 unless -e $stamp;
 if ($render_only) {
 	exit 0 unless -e $notes_file;
 	# The change time, because a deploy sets it whatever date the build gave the file.
 	exit 0 if -e "$dir/singapore-policy-actionables.txt" && (stat $notes_file)[10] <= (stat "$dir/singapore-policy-actionables.txt")[9];
-} else {
-	mkdir $cache unless -d $cache;
 }
+my $notes_text = slurp($notes_file);
+confine($dir);
+mkdir $cache unless -d $cache;
+
+# Every fetch comes first. With the texts in memory the job gives up ftp, and only then parses them.
+unless ($render_only) {
+	for my $source (@sources) {
+		sleep $pause;
+		$source->[3] = fetch_url($source->[1], 30);
+	}
+}
+fetched();
 
 # A source that fails falls back to its last good copy.
 my ($working, %seen, %copies) = (0);
 for my $source (@sources) {
-	my ($name, $url, $format) = @$source;
+	my ($name, $url, $format, $text) = @$source;
 	(my $key = lc $name) =~ s/\W+/-/g;
 	my $copy = "$cache/$key";
 	$copies{$key} = 1;
-	my @items;
-	unless ($render_only) {
-		sleep $pause;
-		my $text = fetch_url($url, 30);
-		@items = parse($text, $name, $format);
-		publish($copy, $text) if @items;
-	}
+	my @items = $render_only ? () : parse($text, $name, $format);
 	if (@items) {
 		$working++;
+		publish($copy, $text);
 	} else {
-		@items = parse(saved($copy), $name, $format);
+		@items = parse(slurp($copy), $name, $format);
 	}
 	for my $item (@items) {
 		$item->{source} = $name;
@@ -337,7 +335,7 @@ publish($stamp, '') unless $render_only;
 
 # The fetch time is the clock, so the same saved copies and notes always give the same pages.
 my $now = (stat $stamp)[9];
-my $notes = read_notes($notes_file);
+my $notes = read_notes($notes_text);
 my @items = grep { $_->{date} <= $now } values %seen;
 $_->{kind} = kind_of($_) for @items;
 # An open consultation stays listed for longer than other documents.
@@ -348,6 +346,6 @@ die "sg-update: no documents in the window, the old pages stay\n" unless @items;
 
 my @top = @items > $page_items ? @items[0 .. $page_items - 1] : @items;
 my @listed = @items > $text_items ? @items[0 .. $text_items - 1] : @items;
-publish_gzipped("$dir/singapore-policy-actionables.html", render_page($now, @top));
-publish_gzipped("$dir/singapore-policy-actionables.xml", render_rss($now, @top));
-publish_gzipped("$dir/singapore-policy-actionables.txt", render_text($now, @listed));
+publish("$dir/singapore-policy-actionables.html", render_page($now, @top));
+publish("$dir/singapore-policy-actionables.xml", render_rss($now, @top));
+publish("$dir/singapore-policy-actionables.txt", render_text($now, @listed));
