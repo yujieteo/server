@@ -238,6 +238,7 @@ sub fetch {
 mkdir $cache unless -d $cache;
 
 my $now = time;
+my $clock_slack = 86400;
 my %saved_names;
 
 # A source that fails falls back to its last good copy, saved under its cache key.
@@ -260,7 +261,11 @@ sub gather {
 			@items = parse(fetch($saved), $name, $limit);
 		}
 		for my $item (@items) {
-			$seen{$item->{link}} //= $item if $item->{date} <= $now;
+			# A feed's clock can run ahead: Stallman's dates are five hours early. Such an item is new now.
+			# A date over a day ahead is a mistake, so that item is left out.
+			next if $item->{date} > $now + $clock_slack;
+			$item->{date} = $now if $item->{date} > $now;
+			$seen{$item->{link}} //= $item;
 		}
 	}
 	return ($working, \%seen);
