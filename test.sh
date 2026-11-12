@@ -2,7 +2,8 @@
 # Two sets of checks, one for each place a fault can show:
 #   sh test.sh [DEPLOY_KEY]   on the server, as root, from the source folder (./apply --test runs it).
 #                             With DEPLOY_KEY it also deploys test pages, which replaces the site.
-#   sh test.sh --outside      on any other machine: what the internet sees, and what a VPN peer sees.
+#   sh test.sh --outside [ADDRESS]   on any other machine: what the internet sees, and what a VPN peer sees.
+#                             ADDRESS tests a server that DNS does not point at yet.
 cd "$(dirname "$0")" || exit 1
 fails=0
 t() {
@@ -54,7 +55,7 @@ finish() {
 }
 
 if [ "${1-}" = --outside ]; then
-	web=teoyujie.org
+	web=${2:-teoyujie.org}
 	open() {
 		nc -z -w 8 "$@"
 	}
@@ -64,15 +65,19 @@ if [ "${1-}" = --outside ]; then
 	certificate_lasts() {
 		openssl s_client -connect "$1" -servername teoyujie.org < /dev/null 2> /dev/null | openssl x509 -noout -checkend 1209600
 	}
-	for family in 4 6; do
+	# A name is tested over each address family. An address has one family, and -n only stops nc looking it up.
+	families='-4 -6'
+	[ -z "${2-}" ] || families=-n
+	for family in ${families}; do
+		via="IPv${family#-}"
 		# A machine with no IPv6 route cannot judge the IPv6 address. The line stays visible.
-		if [ "${family}" = 6 ] && ! open -6 2620:fe::fe 443 2> /dev/null; then echo "SKIP IPv6: this machine has no IPv6 route"; continue; fi
-		for port in 80 443; do t "IPv${family}: port ${port} is open" open "-${family}" teoyujie.org "${port}"; done
-		t "IPv${family}: port 25 answers as a mail server" banner "-${family}" teoyujie.org 25
-		for port in 22 53 465 587; do t "IPv${family}: port ${port} is closed" not open "-${family}" teoyujie.org "${port}"; done
+		if [ "${family}" = -6 ] && ! open -6 2620:fe::fe 443 2> /dev/null; then echo "SKIP IPv6: this machine has no IPv6 route"; continue; fi
+		for port in 80 443; do t "${via}: port ${port} is open" open "${family}" "${web}" "${port}"; done
+		t "${via}: port 25 answers as a mail server" banner "${family}" "${web}" 25
+		for port in 22 53 465 587; do t "${via}: port ${port} is closed" not open "${family}" "${web}" "${port}"; done
 	done
-	t "TLS: the certificate lasts 14 days or more" certificate_lasts teoyujie.org:443
-	t "TLS: version 1.1 is refused" not sh -c 'openssl s_client -tls1_1 -connect teoyujie.org:443 < /dev/null 2>&1 | grep -q "Cipher is [A-Z]"'
+	t "TLS: the certificate lasts 14 days or more" certificate_lasts "${web}:443"
+	t "TLS: version 1.1 is refused" not sh -c "openssl s_client -tls1_1 -connect ${web}:443 < /dev/null 2>&1 | grep -q 'Cipher is [A-Z]'"
 	web_checks
 	if open 10.8.0.1 22 2> /dev/null; then
 		t "VPN: the resolver blocks a listed name" sh -c 'dig @10.8.0.1 use-application-dns.net | grep -q NXDOMAIN'
@@ -83,7 +88,7 @@ if [ "${1-}" = --outside ]; then
 	finish
 fi
 
-[ $# -le 1 ] || { echo "usage: sh test.sh [DEPLOY_KEY] | sh test.sh --outside" >&2; exit 2; }
+[ $# -le 1 ] || { echo "usage: sh test.sh [DEPLOY_KEY] | sh test.sh --outside [ADDRESS]" >&2; exit 2; }
 . ./local.conf
 web=$(ifconfig egress | awk '$1 == "inet" { print $2; exit }')
 as() {
@@ -128,20 +133,23 @@ t "web: file link" is_eq '200 ' status 443 teoyujie.org "/f/${d}/a.txt"
 rm -r "/var/www/files/f/${d}"
 
 # Each user writes its own folder and no other. A feed job, once confined, reaches nothing else at all.
+# The confined checks run as nobody: health-check reports each such refusal of the feed user as a fault.
 confined="require '/usr/local/sbin/feed-common.pl'; confine('/var/www/feed');"
 t "feed user: writes the feed folder" as _feed 'touch /var/www/feed/.test && rm /var/www/feed/.test'
 t "feed user: cannot write the site" not as _feed 'touch /var/www/web/site/.test'
 t "deploy user: cannot write the feed folder" not as deploy 'touch /var/www/feed/.test'
 t "web server: cannot write the site or the feed folder" not as www 'touch /var/www/web/site/.test || touch /var/www/feed/.test'
-t "feed job: cannot write outside its folder" not as _feed "perl -e \"${confined} open(F, '>', '/tmp/.test') or exit 1\""
-t "feed job: cannot read outside its folder" not as _feed "perl -e \"${confined} open(F, '<', '/etc/passwd') or exit 1\""
-t "feed job: runs no program but ftp" not as _feed "perl -e \"${confined} exec('/bin/sh', '-c', 'true'); exit 1\""
+t "feed job: cannot write outside its folder" not as nobody "perl -e \"${confined} open(F, '>', '/tmp/.test') or exit 1\""
+t "feed job: cannot read outside its folder" not as nobody "perl -e \"${confined} open(F, '<', '/etc/passwd') or exit 1\""
+t "feed job: runs no program but ftp" not as nobody "perl -e \"${confined} exec('/bin/sh', '-c', 'true'); exit 1\""
 # Once a job parses, the kernel kills it for running any program: status 134.
 killed() {
-	as _feed "$1"
+	as nobody "$1"
 	[ "$?" -eq 134 ]
 }
 t "feed job: the kernel kills it if it runs a program once it parses" killed "perl -e \"${confined} fetched(); exec('/usr/bin/ftp', '-h')\""
+
+t "feed job: accounting records the kill and the refused file" sh -c "sleep 1; lastcomm perl | awk '\$3 == \"nobody\" { print \$2 }' | tr -d '\n' | grep -q 'P.*U'"
 
 mail_to() {
 	printf 'From: test@example.org\nSubject: test.sh\n\ntest\n' | smtp -C -s "smtp://$1" -F test@example.org "$2" 2>&1 | grep -q "$3"

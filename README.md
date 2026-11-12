@@ -70,7 +70,7 @@ Do not pass `test.sh` a deploy key on a live server, because that replaces the s
    ```
 
 8. Deploy the site by running `scripts/deploy.sh` in the site repo with the VPN on.
-9. Run both tests from [Change the live server](#change-the-live-server).
+9. Run both tests from [Change the live server](#change-the-live-server). Before DNS points at the new server, `sh test.sh --outside NEW_IPV4` tests it by address.
 
 ## What a rebuild loses
 
@@ -179,7 +179,7 @@ The website comes from the [site repo](https://github.com/yujieteo/site). Its `s
 - pf puts a host in the `flood` table when it opens more than 100 web connections in 10 seconds or 30 mail connections in a minute, or holds more than 100 web or 20 mail connections open at once, and blocks its TCP for a day. To let one out now, run `doas pfctl -t flood -T delete ADDRESS`.
 - pf logs every packet it blocks. To read the log, run `doas tcpdump -ner /var/log/pflog`.
 - The users that handle text from outside open only what their job needs: `_feed` reaches HTTPS, `_smtpd` reaches mail servers, and `www`, `deploy` and `_dkimsign` reach nothing. None of them reaches a VPN peer.
-- The feed jobs run as `_feed`, which can write only `/var/www/feed`. Each job fetches first. Then it gives up running programs, and only then reads what it fetched. The kernel kills a job that breaks this (`pledge` and `unveil` in `sbin/feed-common.pl`).
+- The feed jobs run as `_feed`, which can write only `/var/www/feed`. Each job fetches first. Then it gives up running programs, and only then reads what it fetched. The kernel kills a job that breaks this (`pledge` and `unveil` in `sbin/feed-common.pl`), and process accounting records it: `lastcomm perl` shows `P` for a kill and `U` for a refused file.
 - sshd gives the `deploy` user only `deploy-only`, whatever its key file says.
 
 ## Scheduled jobs
@@ -190,7 +190,7 @@ The system crontab comes from `etc/crontab`. It names the user that runs each jo
 |---|---|
 | Daily | Update the package, and restart smtpd if it changed. |
 | Daily | Install OpenBSD patches, and reboot if any were applied. |
-| Daily | `health-check` reports problems with disk, services, the firewall, outbound packets that pf blocked, the VPN, patches, certificates, domain expiry, DNS, the DKIM record, mail stuck in the queue, Spamhaus listing, unknown certificates, stale or missing feeds and an OpenBSD release that needs upgrading. |
+| Daily | `health-check` reports problems with disk, services, the firewall, outbound packets that pf blocked, feed jobs that broke their limits, the VPN, patches, certificates, domain expiry, DNS, the DKIM record, mail stuck in the queue, Spamhaus listing, unknown certificates, stale or missing feeds and an OpenBSD release that needs upgrading. |
 | Hourly | Renew the TLS certificate if needed. |
 | Daily | Delete shared links that have reached their end date. |
 | Daily | `blocklist-update` rebuilds the DNS blocklist. |

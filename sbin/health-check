@@ -8,6 +8,9 @@ df -kl | awk 'NR > 1 && $5 + 0 > 85 { print "disk " $6 " is " $5 " full" }'
 rcctl ls failed | sed 's/^/not running: /'
 pfctl -si | grep -q '^Status: Enabled' || echo "the firewall is off"
 pfctl -sl | awk '$1 == "outbound" { n += $3 } END { if (n) print "pf blocked " n " outbound packets of a confined user since its rules loaded: tcpdump -ner /var/log/pflog outbound, then pfctl -f /etc/pf.conf" }'
+# Process accounting marks a program that the kernel killed for its pledge (P) or kept from a file outside its unveil (U).
+for f in /var/account/acct.0 /var/account/acct; do lastcomm -f $f perl; done 2>/dev/null |
+	awk '$2 ~ /[PU]/ && $3 == "_feed" { n++ } END { if (n) print n " runs of a feed job broke their limits in the last two days: lastcomm perl" }'
 ifconfig wg0 2>/dev/null | grep -q 'flags=.*<.*UP' || echo "wg0 is down: SSH is unreachable"
 smtpctl show queue | awk -F'|' -v now="$(date +%s)" '$8 < now - 21600 { n++ } END { if (n) print n " mails have waited in the queue for over 6 hours" }'
 syspatch -c 2>&1 | sed 's/^/patch not installed: /'
