@@ -1,0 +1,4 @@
+inet autoconf
+# The address that DNS and the reverse DNS at Vultr name: made from the MAC, with no temporary ones.
+inet6 -soii -temporary
+inet6 autoconf

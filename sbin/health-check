@@ -7,6 +7,7 @@ less_than_30_days_away() { [ $(($(date -j -f %Y-%m-%d "$1" +%s) - $(date +%s))) 
 df -kl | awk 'NR > 1 && $5 + 0 > 85 { print "disk " $6 " is " $5 " full" }'
 rcctl ls failed | sed 's/^/not running: /'
 pfctl -si | grep -q '^Status: Enabled' || echo "the firewall is off"
+pfctl -sl | awk '$1 == "outbound" { n += $3 } END { if (n) print "pf blocked " n " outbound packets of a confined user since its rules loaded: tcpdump -ner /var/log/pflog outbound, then pfctl -f /etc/pf.conf" }'
 ifconfig wg0 2>/dev/null | grep -q 'flags=.*<.*UP' || echo "wg0 is down: SSH is unreachable"
 smtpctl show queue | awk -F'|' -v now="$(date +%s)" '$8 < now - 21600 { n++ } END { if (n) print n " mails have waited in the queue for over 6 hours" }'
 syspatch -c 2>&1 | sed 's/^/patch not installed: /'
@@ -27,7 +28,7 @@ less_than_30_days_away "$e" && echo "security.txt ends on $e: change Expires in 
 quad9() { dig +short @9.9.9.9 $d "$1" | sort | tr '\n' ' '; }
 [ "$(quad9 NS)" = "ns-126-c.gandi.net. ns-130-a.gandi.net. ns-225-b.gandi.net. " ] || echo "NS is now: $(quad9 NS)"
 [ "$(quad9 MX)" = "10 $d. " ] || echo "MX is now: $(quad9 MX)"
-selector=@DKIM_SELECTOR@
+selector=$(sed -n 's/.*filter-dkimsign.* -s \([^ ]*\) .*/\1/p' /etc/mail/smtpd.conf)
 dkim_key=$(openssl pkey -in /etc/mail/dkim/$d.$selector.rsa.key -pubout -outform DER | openssl base64 -A)
 dkim_dns=$(dig +short @9.9.9.9 $selector._domainkey.$d TXT | tr -d '" \n' | sed 's/.*p=//; s/;.*//')
 [ "$dkim_dns" = "$dkim_key" ] || echo "the DKIM record $selector._domainkey does not match the key on this server"
@@ -44,7 +45,7 @@ esac
 
 # Ages in minutes: find rounds up, so -mtime +0 would match every file.
 # feed-update hides a failing source behind its last good copy, so only the age of that copy shows it.
-feed=/var/www/web/feed
+feed=/var/www/feed
 find $feed/feed.xml -mmin +360 | sed 's#.*/##; s/$/ has not been rebuilt for 6 hours/'
 find $feed/edmw.xml -mmin +2880 2>/dev/null | sed 's#.*/##; s/$/ has not been rebuilt for 2 days/'
 # edmw-update writes its first file about a day after install, and install gives the script a new date.
