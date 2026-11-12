@@ -10,7 +10,8 @@ case ${check} in '' | --check) ;; *) echo 'usage: sh install.sh [--check]' >&2; 
 : "${ADMIN_USER:?local.conf needs ADMIN_USER}" "${FORWARD_TO:?local.conf needs FORWARD_TO}"
 d=teoyujie.org
 dkim_key=$(sed -n 's/.* -k \([^" ]*\).*/\1/p' etc/smtpd.conf)
-umask 077
+umask 022
+# mktemp makes the folder for its owner alone, so the private files staged in it stay private.
 w=$(mktemp -d)
 trap 'rm -rf "${w}"' EXIT
 t=${w}/root
@@ -106,21 +107,23 @@ folder "${ADMIN_USER}" 700 "/home/${ADMIN_USER}/.ssh"
 folder root 755 /home/deploy/.ssh
 folder deploy 755 /var/www/web
 folder _feed 755 /var/www/feed
+folder root 755 /var/www/files
 folder "${ADMIN_USER}" 755 /var/www/files/f
 folder _dkimsign 700 /etc/mail/dkim
 ensure 'site folder' '[ -d /var/www/web/site ]' 'install -d -o deploy -m 755 /var/www/web/site'
 ensure 'TLS key and a one-day certificate, which acme-client replaces' "[ -e /etc/ssl/${d}.fullchain.pem ]" \
-	"openssl ecparam -genkey -name prime256v1 -out /etc/ssl/private/${d}.key && openssl req -x509 -new -key /etc/ssl/private/${d}.key -days 1 -subj /CN=${d} -out /etc/ssl/${d}.fullchain.pem"
-ensure 'SRS key' '[ -e /etc/mail/srs.conf ]' 'echo "srs key $(openssl rand -hex 32)" > /etc/mail/srs.conf'
-ensure 'DKIM key' "[ -e ${dkim_key} ]" "openssl genrsa -out ${dkim_key} 2048 2> /dev/null && chown _dkimsign ${dkim_key}"
+	"(umask 077; openssl ecparam -genkey -name prime256v1 -out /etc/ssl/private/${d}.key) && openssl req -x509 -new -key /etc/ssl/private/${d}.key -days 1 -subj /CN=${d} -out /etc/ssl/${d}.fullchain.pem"
+ensure 'SRS key' '[ -e /etc/mail/srs.conf ]' '(umask 077; echo "srs key $(openssl rand -hex 32)" > /etc/mail/srs.conf)'
+ensure 'DKIM key' "[ -e ${dkim_key} ]" "(umask 077; openssl genrsa -out ${dkim_key} 2048 2> /dev/null) && chown _dkimsign ${dkim_key}"
 ensure 'empty DNS blocklist' '[ -e /var/unbound/etc/blocklist.conf ]' 'install -m 644 /dev/null /var/unbound/etc/blocklist.conf'
+ensure 'DNSSEC root key' '[ -e /var/unbound/db/root.key ]' 'unbound-anchor; chown _unbound /var/unbound/db/root.key'
 ensure 'httpd, smtpd and unbound start at boot' '[ "$(rcctl ls on | grep -cxE "httpd|smtpd|unbound")" -eq 3 ]' 'rcctl enable httpd smtpd unbound'
 ensure 'sndiod off: a server plays no sound' '! rcctl ls on | grep -qx sndiod' 'rcctl disable sndiod && rcctl stop sndiod'
 
 # A change of WireGuard over SSH would cut the session that makes it.
 wg=0
 if grep -qx /etc/hostname.wg0 "${w}/changed" && [ -e /etc/hostname.wg0 ]; then
-	case $(tty || :) in /dev/ttyC*) wg=1 ;; *) wg=3; echo 'The WireGuard peers would change. Run install.sh on the console of the server.' ;; esac
+	case $(tty || :) in /dev/ttyC* | /dev/console) wg=1 ;; *) wg=3; echo 'The WireGuard peers would change. Run install.sh on the console of the server.' ;; esac
 fi
 [ -s "${w}/changed" ] || echo 'No drift.'
 
@@ -130,7 +133,9 @@ valid() {
 }
 valid sshd -t -f "${t}/etc/ssh/sshd_config"
 valid httpd -n -f "${t}/etc/httpd.conf"
-valid smtpd -n -f "${t}/etc/mail/smtpd.conf"
+# smtpd reads its tables while it checks, and on a new server they are only in the stage tree yet.
+sed "s#file:/etc/mail/#file:${t}/etc/mail/#" "${t}/etc/mail/smtpd.conf" > "${w}/smtpd.conf"
+valid smtpd -n -f "${w}/smtpd.conf"
 valid unbound-checkconf "${t}/var/unbound/etc/unbound.conf"
 valid acme-client -n -f "${t}/etc/acme-client.conf"
 valid pfctl -nf "${t}/etc/pf.conf"
@@ -138,7 +143,6 @@ valid pfctl -nf "${t}/etc/pf.conf"
 [ -z "${check}" ] || exit 0
 
 # The copy.
-umask 022
 while read -r f; do
 	case ${f} in
 	/*) if [ -e "${t}${f}" ]; then install -D -m "$(stat -f %Lp "${t}${f}")" "${t}${f}" "${f}"; else rm -f "${f}"; fi ;;
@@ -146,6 +150,10 @@ while read -r f; do
 	esac
 done < "${w}/changed"
 find /var/www/htdocs/server -depth -type d -empty -exec rmdir {} +
+
+# wg0 comes first: smtpd and unbound listen on its address.
+if [ "${wg}" -eq 1 ]; then ifconfig wg0 destroy; fi
+if ! ifconfig wg0 > /dev/null 2>&1; then sh /etc/netstart wg0; fi
 
 # Each service starts again only when a file of its own changed.
 while read -r paths action; do
@@ -161,7 +169,7 @@ done <<EOF
 /etc/mail/ rcctl restart smtpd
 /var/unbound/ rcctl restart unbound
 EOF
-if [ "${wg}" -eq 1 ]; then ifconfig wg0 destroy; fi
-if ! ifconfig wg0 > /dev/null 2>&1; then sh /etc/netstart wg0; fi
+# A run that stopped half way can leave a service down with no file left to change.
+for service in httpd smtpd unbound; do rcctl check "${service}" > /dev/null || rcctl start "${service}"; done
 [ -s /var/unbound/etc/blocklist.conf ] || /usr/local/sbin/blocklist-update
 echo "Done. WireGuard public key of the server: $(ifconfig wg0 | awk '$1 == "wgpubkey" { print $2 }')"

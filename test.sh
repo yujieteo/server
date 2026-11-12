@@ -193,7 +193,7 @@ blocked() {
 }
 logged() {
 	pkill -ALRM -u root -U root -x pflogd
-	sleep 1
+	sleep 3
 	tcpdump -ner /var/log/pflog outbound 2> /dev/null | grep -q .
 }
 start=$(blocked_packets)
