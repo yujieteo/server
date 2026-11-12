@@ -190,7 +190,7 @@ The system crontab comes from `etc/crontab`. It names the user that runs each jo
 |---|---|
 | Daily | Update the package, and restart smtpd if it changed. |
 | Daily | Install OpenBSD patches, and reboot if any were applied. |
-| Daily | `health-check` reports problems with disk, services, the firewall, outbound packets that pf blocked, feed jobs that broke their limits, the VPN, patches, certificates, domain expiry, DNS, the DKIM record, mail stuck in the queue, Spamhaus listing, unknown certificates, stale or missing feeds and an OpenBSD release that needs upgrading. |
+| Daily | `health-check` reports problems with disk, services, the firewall, outbound packets that pf blocked, feed jobs that broke their limits, the VPN, patches, certificates, domain expiry, DNS, the DKIM record, mail stuck in the queue or refused for good, Spamhaus listing, unknown certificates, stale or missing feeds and an OpenBSD release that needs upgrading. |
 | Hourly | Renew the TLS certificate if needed. |
 | Daily | Delete shared links that have reached their end date. |
 | Daily | `blocklist-update` rebuilds the DNS blocklist. |
@@ -204,7 +204,7 @@ Separately, `sbin/ssh-alert` mails root about any SSH login from an address outs
 
 ## Watch from outside
 
-A server that is down sends no mail, so `health-check` cannot report it. `sh test.sh --outside` needs only `nc`, `openssl` and `dig`, and exits with a failure when the server does not answer as it should. Run it on a timer on a machine at home and alert on a failure.
+A server that is down sends no mail, and neither does one whose mail cannot leave, so `health-check` cannot report either. `sh test.sh --outside` needs only `nc`, `openssl` and `dig`, and exits with a failure when the server does not answer as it should. It also reads `/health.txt`, where `health-check` writes the time it ran and the count of mail that is stuck or was refused. Run it on a timer on a machine at home and alert on a failure.
 
 ## Upgrade OpenBSD
 

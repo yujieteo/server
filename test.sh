@@ -80,6 +80,13 @@ if [ "${1-}" = --outside ]; then
 	t "TLS: the certificate lasts 14 days or more" certificate_lasts "${web}:443"
 	t "TLS: version 1.1 is refused" not sh -c "openssl s_client -tls1_1 -connect ${web}:443 < /dev/null 2>&1 | grep -q 'Cipher is [A-Z]'"
 	web_checks
+	# health-check writes the time it ran and the mail it could not send. Mail cannot report its own failure.
+	health_is_good() {
+		# shellcheck disable=SC2046
+		set -- $(get teoyujie.org /health.txt | tail -n 1)
+		[ "${2-} ${3-}" = 'stuck=0 lost=0' ] && [ $(($(date +%s) - $1)) -lt 93600 ]
+	}
+	t "health: the daily check ran in the last 26 hours, and no mail is stuck or lost" health_is_good
 	if open 10.8.0.1 22 2> /dev/null; then
 		t "VPN: the resolver blocks a listed name" sh -c 'dig @10.8.0.1 use-application-dns.net | grep -q NXDOMAIN'
 		t "VPN: the resolver answers for other names" sh -c 'dig +short @10.8.0.1 openbsd.org | grep -q .'
@@ -232,4 +239,5 @@ t "DNS: blocklist loaded" no_such_name "${blocked_name}"
 t "DNS: Firefox is told to use this resolver" no_such_name use-application-dns.net
 t "DNS: other names resolve" sh -c 'dig +short @10.8.0.1 openbsd.org | grep -q .'
 t "health-check runs" /usr/local/sbin/health-check
+t "health-check publishes the time it ran" sh -c '[ $(($(date +%s) - $(cut -d" " -f1 /var/www/status/health.txt))) -lt 60 ]'
 finish

@@ -108,6 +108,7 @@ folder root 755 /home/deploy/.ssh
 folder deploy 755 /var/www/web
 folder _feed 755 /var/www/feed
 folder root 755 /var/www/files
+folder root 755 /var/www/status
 folder "${ADMIN_USER}" 755 /var/www/files/f
 folder _dkimsign 700 /etc/mail/dkim
 ensure 'site folder' '[ -d /var/www/web/site ]' 'install -d -o deploy -m 755 /var/www/web/site'

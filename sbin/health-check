@@ -12,7 +12,13 @@ pfctl -sl | awk '$1 == "outbound" { n += $3 } END { if (n) print "pf blocked " n
 for f in /var/account/acct.0 /var/account/acct; do lastcomm -f $f perl; done 2>/dev/null |
 	awk '$2 ~ /[PU]/ && $3 == "_feed" { n++ } END { if (n) print n " runs of a feed job broke their limits in the last two days: lastcomm perl" }'
 ifconfig wg0 2>/dev/null | grep -q 'flags=.*<.*UP' || echo "wg0 is down: SSH is unreachable"
-smtpctl show queue | awk -F'|' -v now="$(date +%s)" '$8 < now - 21600 { n++ } END { if (n) print n " mails have waited in the queue for over 6 hours" }'
+stuck=$(smtpctl show queue | awk -F'|' -v now="$(date +%s)" '$8 < now - 21600 { n++ } END { print n + 0 }')
+[ "$stuck" -eq 0 ] || echo "$stuck mails have waited in the queue for over 6 hours"
+lost=$(zcat -f /var/log/maillog.0.gz /var/log/maillog 2>/dev/null | grep -c 'mta delivery.*result="PermFail"')
+[ "$lost" -eq 0 ] || echo "$lost mails were refused for good since yesterday: grep PermFail /var/log/maillog"
+# Every line of this check travels by mail, so a server whose mail cannot leave looks like one with
+# nothing to report. The outside checks read this file: when the check last ran, and whether mail is leaving.
+echo "$(date +%s) stuck=$stuck lost=$lost" > /var/www/status/health.txt
 syspatch -c 2>&1 | sed 's/^/patch not installed: /'
 openssl x509 -checkend 1209600 -noout -in /etc/ssl/$d.fullchain.pem >/dev/null ||
 	echo "the certificate ends in less than 14 days"
