@@ -9,7 +9,7 @@ It does four things:
 - Runs a WireGuard VPN, which is the only way to reach SSH.
 - Blocks ads, trackers and malware names for VPN clients with unbound.
 
-This repo is public and holds no secrets. The server generates its own TLS, ACME, SRS, DKIM and WireGuard keys, and they never leave it. Your personal settings live in `local.conf`, which git ignores.
+This repo is public and holds no secrets. The server generates its own TLS, ACME, SRS, DKIM, SSH and WireGuard keys. The TLS and ACME keys never leave it. A backup of the others goes to your password vault and nowhere else. Your personal settings live in `local.conf`, which git ignores.
 
 ## Files
 
@@ -59,37 +59,47 @@ Do not pass `test.sh` a deploy key on a live server, because that replaces the s
 
 1. At Vultr, deploy OpenBSD 8.0 (plan vc2-1c-1gb, Singapore) with the Mac's SSH key and the hostname `teoyujie.org`. Set reverse DNS for the IPv4 and IPv6 addresses to `teoyujie.org`.
 2. Run `cp local.conf.example local.conf` and fill in the real values. Create the Mac and iPhone tunnels in the WireGuard app first, so you can add their public keys to `WG_PEERS`. After the next step, SSH only works through the VPN.
-3. Run `./apply --bootstrap root@NEW_IPV4`. It asks you to set the admin's doas password, prints the server's WireGuard public key, and turns off root login.
-4. Add that key to the WireGuard clients, turn on the tunnel, and test `ssh ADMIN_USER@10.8.0.1`. If the VPN fails, log in as the admin in the Vultr web console.
-5. Create the DNS records below in Gandi LiveDNS.
-6. Once `dig +short teoyujie.org` shows the new address, get the real certificate:
+3. To keep the old keys, put the backup on the new server first: `ssh root@NEW_IPV4 'tar -xzpf - -C /' < keys.tgz`. Skip this after a break-in, and follow the last column of [What a rebuild loses](#what-a-rebuild-loses).
+4. Run `./apply --bootstrap root@NEW_IPV4`. It asks you to set the admin's doas password, prints the server's WireGuard public key, and turns off root login.
+5. Add that key to the WireGuard clients if it is new, turn on the tunnel, and test `ssh ADMIN_USER@10.8.0.1`. If the VPN fails, log in as the admin in the Vultr web console.
+6. Create the DNS records below in Gandi LiveDNS.
+7. Once `dig +short teoyujie.org` shows the new address, get the real certificate:
 
    ```sh
    ssh -t ADMIN_USER@10.8.0.1 'doas acme-client -v teoyujie.org && doas rcctl reload httpd && doas rcctl restart smtpd'
    ```
 
-7. Deploy the site by running `scripts/deploy.sh` in the site repo with the VPN on.
-8. Run both tests from [Change the live server](#change-the-live-server).
+8. Deploy the site by running `scripts/deploy.sh` in the site repo with the VPN on.
+9. Run both tests from [Change the live server](#change-the-live-server).
 
 ## What a rebuild loses
 
 The repo and `local.conf` rebuild everything except this state. The plan column is a choice, not a fact: change it when the choice changes.
 
-| State | Lives | Plan | After a rebuild |
+| State | Lives | Plan | After a rebuild without it |
 |---|---|---|---|
-| `local.conf` | The Mac only | Back up | Without it there is no rebuild. |
-| WireGuard key of the server | `/etc/hostname.wg0` | Accept the loss | Put the new public key in each client. |
-| DKIM key | `/etc/mail/dkim` | Accept the loss | Publish the new record from the DNS table. |
-| TLS key and ACME account | `/etc/ssl/private`, `/etc/acme` | Accept the loss | Step 6 gets a new certificate. |
-| SRS key | `/etc/mail/srs.conf` | Accept the loss | A bounce of mail forwarded before the rebuild cannot return. |
-| SSH host keys | `/etc/ssh` | Accept the loss | Clients warn once: remove the old line from `known_hosts`. |
+| `local.conf` | The Mac only | Back up | There is no rebuild. |
+| WireGuard key of the server | `/etc/hostname.wg0` | Back up | Put the new public key in each client. Until then, use the console. |
+| DKIM key | `/etc/mail/dkim` | Back up | Publish the new record from the DNS table. |
+| SRS key | `/etc/mail/srs.conf` | Back up | A bounce of mail forwarded before the rebuild cannot return. |
+| SSH host keys | `/etc/ssh` | Back up | Clients warn once: remove the old line from `known_hosts`. |
+| TLS key and ACME account | `/etc/ssl/private`, `/etc/acme` | Accept the loss | Step 7 gets a new certificate. |
 | Public addresses | Vultr | Rebuild | New A, AAAA and reverse DNS records. |
 | Saved feed copies and the EDMW counts | `/var/www/feed` | Accept the loss | The jobs fetch again. EDMW needs a day of counts first. |
 | Shared files | `/var/www/files/f` | Accept the loss | Their links stop working. |
 | DNS allowlist | `/var/unbound/etc/allowlist` | Accept the loss | Add the names again. |
 | Mail in the queue, and the logs | `/var/spool/smtpd`, `/var/log` | Accept the loss | |
-| The site | The site repo | Rebuild | Step 7. |
+| The site | The site repo | Rebuild | Step 8. |
 | DNS zone, DNSSEC, the domain | Gandi | Outside the server | The table below lists the records. |
+
+To back up the keys, run this with the VPN on. Do it again when you add a WireGuard peer or change the DKIM selector:
+
+```sh
+ssh -t ADMIN_USER@10.8.0.1 "doas sh -c 'umask 077; cd / && tar -czf /home/ADMIN_USER/keys.tgz etc/hostname.wg0 etc/mail/dkim etc/mail/srs.conf etc/ssh/ssh_host_* && chown ADMIN_USER /home/ADMIN_USER/keys.tgz'"
+ssh ADMIN_USER@10.8.0.1 'cat keys.tgz && rm keys.tgz' > keys.tgz
+```
+
+Attach `keys.tgz` and `local.conf` to an entry in your password vault, then delete `keys.tgz` from the Mac. `install.sh` makes a key only when none is there, so a restored key stays.
 
 ## DNS records
 
