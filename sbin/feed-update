@@ -7,13 +7,14 @@ use Digest::MD5 qw(md5_hex);
 use FindBin;
 require "$FindBin::Bin/feed-common.pl";
 
-my $out = $ARGV[0] // '/var/www/web/feed/feed.xml';
+my $out = $ARGV[0] // '/var/www/feed/feed.xml';
 my $notes_file = $ARGV[1] // '/var/www/web/site/notes/reading.txt';
 my $site = 'https://teoyujie.org';
 my $max_items = 70;
 my $excerpt_length = 600;
 my $about = "Mathematics, Stallman's political notes and the best Hacker News and EDMW comments, gathered from public feeds.";
-(my $edmw = $out) =~ s{[^/]*$}{edmw.xml};
+(my $folder = $out) =~ s{/[^/]*$}{};
+my $edmw = "$folder/edmw.xml";
 
 my $categories = join '+OR+', map { "cat:$_" } qw(math.NT math.AG math.AT math.KT math.RT hep-th);
 my $titles = join '+OR+', map { "ti:$_" } qw(Langlands motivic motives homotopy K-theory cohomology anomaly Chern-Simons %22class+field%22);
@@ -134,7 +135,7 @@ sub parse {
 	my @items;
 	while ($xml =~ /<(item|entry)[\s>](.*?)<\/\1>/gs) {
 		my $block = $2;
-		my $title = plain(field($block, 'title'));
+		my $title = headline(plain(field($block, 'title')));
 		my $link = link_of($block);
 		my $date = epoch(plain(field($block, qw(pubDate published updated dc:date))));
 		my ($source, $text) = ($name, '');
@@ -146,7 +147,7 @@ sub parse {
 			(my $body = plain(field($block, 'description'))) =~ s/\s*Discuss$//;
 			$text = excerpt($body, $excerpt_length);
 		}
-		next unless $title ne '' && $link =~ m{^https?://} && defined $date;
+		next unless $title ne '' && $link =~ m{^https?://\S{1,2000}$} && defined $date;
 		push @items, { id => substr(md5_hex($link), 0, 8), title => $title, link => $link, date => $date, source => $source, label => $text eq '' ? $source : "$source: $text" };
 		last if @items == $limit;
 	}
@@ -226,16 +227,24 @@ sub render_text {
 
 sub fetch {
 	my ($url) = @_;
-	if ($url =~ m{^/}) {
-		open my $file, '<', $url or return '';
-		local $/;
-		return scalar <$file>;
-	}
-	return fetch_url($url, 20);
+	return $url =~ m{^/} ? slurp($url) : fetch_url($url, 20);
 }
 
-(my $cache = $out) =~ s{[^/]*$}{cache};
+my $cache = "$folder/cache";
+my $notes_text = slurp($notes_file);
+confine($folder);
 mkdir $cache unless -d $cache;
+
+# Every fetch comes first. With the texts in memory the job gives up ftp, and only then parses them.
+# hnrss and LessWrong get a pause between requests.
+for my $group ([0, \@sources], [$forecasters_pause, \@forecaster_sources], [$lesswrong_pause, \@lesswrong_sources]) {
+	my ($pause, $list) = @$group;
+	for my $source (@$list) {
+		sleep $pause if $pause;
+		$source->[4] = fetch($source->[1]);
+	}
+}
+fetched();
 
 my $now = time;
 my $clock_slack = 86400;
@@ -243,13 +252,11 @@ my %saved_names;
 
 # A source that fails falls back to its last good copy, saved under its cache key.
 sub gather {
-	my ($pause, @list) = @_;
+	my (@list) = @_;
 	my $working = 0;
 	my %seen;
 	for my $source (@list) {
-		my ($name, $url, $limit, $key) = @$source;
-		sleep $pause if $pause;
-		my $xml = fetch($url);
+		my ($name, $url, $limit, $key, $xml) = @$source;
 		my @items = parse($xml, $name, $limit);
 		(my $saved_name = $key // $name) =~ s/[^\w.-]+/-/g;
 		my $saved = "$cache/$saved_name";
@@ -271,11 +278,11 @@ sub gather {
 	return ($working, \%seen);
 }
 
-my ($working, $seen) = gather(0, @sources);
+my ($working, $seen) = gather(@sources);
 die "feed-update: only $working of " . scalar(@sources) . " sources worked, the old feed stays\n" if $working * 2 < @sources;
 
 # A note moves an item by one hour for each point, and its text goes first in the label.
-my $notes = read_notes($notes_file);
+my $notes = read_notes($notes_text);
 for my $item (values %$seen) {
 	my $note = $notes->{$item->{id}} or next;
 	$item->{rank} = $note->{points} * 3600;
@@ -283,7 +290,6 @@ for my $item (values %$seen) {
 }
 my @sorted = sort { $b->{date} + ($b->{rank} // 0) <=> $a->{date} + ($a->{rank} // 0) || $a->{id} cmp $b->{id} } values %$seen;
 splice @sorted, $max_items if @sorted > $max_items;
-(my $page = $out) =~ s{[^/]*$}{reading.html};
 my %reading = (
 	title => 'Reading',
 	id => 'reading',
@@ -292,15 +298,14 @@ my %reading = (
 	head => qq{<link rel="alternate" type="application/rss+xml" title="Reading feed" href="/feed.xml">\n},
 	note => 'Newest first, moved by <a href="/api/notes.txt">notes from an AI model</a>. <a href="/feed.xml">RSS feed</a>. <a href="/reading.txt">Plain text</a>',
 );
-publish_gzipped($page, render_page($now, \%reading, @sorted));
-publish_gzipped($out, render($now, \%reading, @sorted));
-(my $reading_text = $out) =~ s{[^/]*$}{reading.txt};
-publish_gzipped($reading_text, render_text($now, 'The reading feed, newest first after notes.', 'To move an item or add a sentence to it, add a line to notes/reading.tsv in github.com/yujieteo/site.', @sorted));
+publish("$folder/reading.html", render_page($now, \%reading, @sorted));
+publish($out, render($now, \%reading, @sorted));
+publish("$folder/reading.txt", render_text($now, 'The reading feed, newest first after notes.', 'To move an item or add a sentence to it, add a line to notes/reading.tsv in github.com/yujieteo/site.', @sorted));
 
-# Last, so a slow or failing forecaster feed cannot hold up the reading feed.
-my ($forecasters_working, $forecasters_seen) = gather($forecasters_pause, @forecaster_sources);
+# Last, so a failing forecaster feed cannot stop the reading feed.
+my ($forecasters_working, $forecasters_seen) = gather(@forecaster_sources);
 # A LessWrong writer with no posts has an empty feed, so a low count here is no reason to stop.
-my ($lesswrong_working, $lesswrong_seen) = gather($lesswrong_pause, @lesswrong_sources);
+my ($lesswrong_working, $lesswrong_seen) = gather(@lesswrong_sources);
 # One host serves most of the Hacker News feeds. When it is down, their last good copies fill in and health-check reports it.
 die "feed-update: no forecaster feed worked, the old page stays\n" unless $forecasters_working + $lesswrong_working;
 warn "feed-update: no LessWrong feed worked\n" unless $lesswrong_working;
@@ -308,7 +313,6 @@ $forecasters_seen->{$_} //= $lesswrong_seen->{$_} for keys %$lesswrong_seen;
 
 my @forecaster_items = sort { $b->{date} <=> $a->{date} } values %$forecasters_seen;
 splice @forecaster_items, $forecasters_max_items if @forecaster_items > $forecasters_max_items;
-(my $forecasters_page = $out) =~ s{[^/]*$}{forecasters.html};
 my %forecasters = (
 	title => 'Forecasters',
 	id => 'forecasters',
@@ -317,9 +321,7 @@ my %forecasters = (
 	head => qq{<link rel="alternate" type="application/rss+xml" title="Forecasters feed" href="/forecasters.xml">\n},
 	note => 'The latest from the people in the <a href="/essays/hn-forecasters/">Hacker News</a> and <a href="/essays/lw-forecasters/">LessWrong</a> forecasting rankings. <a href="/forecasts/">Forecasts to check</a>. <a href="/forecasters.xml">RSS feed</a>. <a href="/forecasters.txt">Plain text</a>. OPML of all feeds: <a href="/hn-forecasters.opml">Hacker News</a>, <a href="/lw-forecasters.opml">LessWrong</a>',
 );
-publish_gzipped($forecasters_page, render_page($now, \%forecasters, @forecaster_items));
-(my $forecasters_xml = $out) =~ s{[^/]*$}{forecasters.xml};
-publish_gzipped($forecasters_xml, render($now, \%forecasters, @forecaster_items));
-(my $forecasters_text = $out) =~ s{[^/]*$}{forecasters.txt};
-publish_gzipped($forecasters_text, render_text($now, 'The latest from the ranked Hacker News and LessWrong forecasters, newest first.', 'To record a forecast one of them makes, add a line to notes/forecasts.tsv in github.com/yujieteo/site.', @forecaster_items));
+publish("$folder/forecasters.html", render_page($now, \%forecasters, @forecaster_items));
+publish("$folder/forecasters.xml", render($now, \%forecasters, @forecaster_items));
+publish("$folder/forecasters.txt", render_text($now, 'The latest from the ranked Hacker News and LessWrong forecasters, newest first.', 'To record a forecast one of them makes, add a line to notes/forecasts.tsv in github.com/yujieteo/site.', @forecaster_items));
 prune($cache, %saved_names);

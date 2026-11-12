@@ -4,6 +4,6 @@ while read -r line; do
 	case ${line#*": "} in "Accepted "*" from "*) ;; *) continue ;; esac
 	ip=${line##* from }
 	ip=${ip%% *}
-	case $ip in @KNOWN_IPS@) continue ;; *) ;; esac
+	case $ip in 10.8.0.*) continue ;; *) ;; esac
 	echo "$line" | mail -s "SSH login from $ip" root
 done

@@ -1,32 +1,36 @@
 #!/bin/sh
+# Sends the source to a private stage folder on the server and runs one script there.
 set -eu
 cd "$(dirname "$0")"
-mode=--check
-checkpoint=
+run='install.sh --check'
 case ${1-} in
---install) mode=--live; checkpoint=${2:?name the full offline checkpoint}; shift 2 ;;
---bootstrap) mode=--bootstrap; shift ;;
+--install)
+	run=install.sh
+	case ${2:?name the full offline checkpoint} in *[!A-Za-z0-9._-]*) echo 'Use a plain checkpoint id.' >&2; exit 2 ;; *) ;; esac
+	echo "Offline checkpoint acknowledged: $2. Restore it from the provider console if needed."
+	shift 2 ;;
+--bootstrap) run=install.sh; shift ;;
+--test) run=test.sh; shift ;;
 --check) shift ;;
 *) ;;
 esac
-host=${1:?usage: ./apply [--check | --install CHECKPOINT | --bootstrap] USER@HOST}
-[ "$#" -eq 1 ] || exit 2
-case ${host} in -*) exit 2 ;; *) ;; esac
-case ${checkpoint} in *[!A-Za-z0-9._-]*) echo 'Use a plain checkpoint id.' >&2; exit 2 ;; *) ;; esac
-work=$(mktemp -d)
-trap 'rm -rf "${work}"' EXIT HUP INT TERM
-umask 077
-sh ./pack > "${work}/payload.tgz"
-stage=$(ssh "${host}" 'set -eu; umask 077; stage=$(mktemp -d server-stage.XXXXXXXXXX); trap '\''rm -rf "${stage}"'\'' EXIT HUP INT TERM; tar -xpzf - -C "${stage}"; chmod 600 "${stage}/local.conf"; printf "%s\n" "${stage}"; trap - EXIT HUP INT TERM' < "${work}/payload.tgz")
+[ "$#" -eq 1 ] || { echo 'usage: ./apply [--check | --install CHECKPOINT | --bootstrap | --test] USER@HOST' >&2; exit 2; }
+host=$1
+case ${host} in -*) exit 2 ;; root@*) doas= ;; *) doas=doas ;; esac
+# An older stage folder goes first, so at most one copy of local.conf stays on the server.
+stage=$(COPYFILE_DISABLE=1 tar -czf - --exclude .DS_Store install.sh test.sh local.conf sbin etc www |
+	ssh "${host}" 'umask 077; rm -rf server-stage.*; stage=$(mktemp -d server-stage.XXXXXXXXXX) && tar -xzf - -C "${stage}" && echo "${stage}"')
 case ${stage} in
-*[!A-Za-z0-9.-]*) echo 'Bad stage path; no install.' >&2; exit 1 ;;
+server-stage.*[!A-Za-z0-9]* | '') echo 'Bad stage path; nothing ran.' >&2; exit 1 ;;
 server-stage.*) ;;
-*) echo 'Bad stage path; no install.' >&2; exit 1 ;;
+*) echo 'Bad stage path; nothing ran.' >&2; exit 1 ;;
 esac
-privilege=doas
-case ${host} in root@*) privilege= ;; *) ;; esac
-if [ "${mode}" = --live ]; then
-	printf 'Offline checkpoint acknowledged: %s. Restore it from the provider console if needed.\n' "${checkpoint}"
+status=0
+ssh -t "${host}" "${doas} sh ${stage}/${run}" || status=$?
+# Status 3: the WireGuard peers would change. The stage stays, for the console.
+if [ "${status}" -eq 3 ]; then
+	echo "On the console of the server, run: doas sh ~/${stage}/install.sh"
+else
+	ssh "${host}" "rm -rf ${stage}"
 fi
-remote="status=0; ${privilege} sh '${stage}/install.sh' '${mode}' || status=\$?; rm -rf '${stage}' || exit 1; exit \"\$status\""
-ssh -t "${host}" "${remote}"
+exit "${status}"

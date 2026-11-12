@@ -1,7 +1,6 @@
 PermitRootLogin no
 AuthenticationMethods publickey
 AuthorizedKeysFile .ssh/authorized_keys
-Subsystem sftp /usr/libexec/sftp-server
 AllowGroups wheel deploy
 AllowTcpForwarding no
 AllowAgentForwarding no

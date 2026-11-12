@@ -8,12 +8,6 @@ rm -rf "$f.new" "$f.old"
 mkdir "$f.new"
 tar -xzf - -C "$f.new"
 chmod -R u+w,go=rX "$f.new"
-# httpd sends these to clients that accept gzip (gzip-static). Files of 1 KB or less are not worth it.
-find "$f.new" -type f -size +2 \( -name '*.html' -o -name '*.css' -o -name '*.js' -o -name '*.mjs' -o -name '*.json' \
-	-o -name '*.svg' -o -name '*.xml' -o -name '*.txt' \) \
-	-exec sh -ec 'for p; do gzip -9nc "$p" > "$p.gz"; done' sh {} +
 [ ! -d "$f" ] || mv "$f" "$f.old"
 mv "$f.new" "$f"
 rm -rf "$f.old"
-# A report only: a broken link in one page is no reason to refuse the deploy.
-/usr/local/sbin/link-check "$f" || true

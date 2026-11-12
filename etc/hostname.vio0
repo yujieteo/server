@@ -1,0 +1,6 @@
+inet autoconf
+# Use the address that the AAAA record and the reverse DNS at Vultr name: made from the MAC.
+# The order matters: autoconf turns temporary addresses back on.
+inet6 -soii
+inet6 autoconf
+inet6 -temporary
