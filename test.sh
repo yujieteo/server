@@ -70,6 +70,7 @@ if [ "${1-}" = --outside ]; then
 	[ -z "${2-}" ] || families=-n
 	for family in ${families}; do
 		via="IPv${family#-}"
+		[ "${family}" != -n ] || via=address
 		# A machine with no IPv6 route cannot judge the IPv6 address. The line stays visible.
 		if [ "${family}" = -6 ] && ! open -6 2620:fe::fe 443 2> /dev/null; then echo "SKIP IPv6: this machine has no IPv6 route"; continue; fi
 		for port in 80 443; do t "${via}: port ${port} is open" open "${family}" "${web}" "${port}"; done
