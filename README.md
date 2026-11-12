@@ -78,7 +78,7 @@ To test the result, copy the source and `local.conf` to a private folder on the 
 | `@` | AAAA | Server IPv6 |
 | `@` | MX | `10 teoyujie.org.` |
 | `@` | TXT | `"v=spf1 mx -all"` |
-| `_dmarc` | TXT | `"v=DMARC1; p=reject"` |
+| `_dmarc` | TXT | `"v=DMARC1; p=reject; rua=mailto:contact@teoyujie.org"` |
 | `2026._domainkey` | TXT | `"v=DKIM1; k=rsa; p=PUBLIC_KEY"` |
 | `www` | CNAME | `teoyujie.org.` |
 | `mta-sts` | CNAME | `teoyujie.org.` |
