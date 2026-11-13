@@ -83,7 +83,7 @@ The repo and `local.conf` rebuild everything except this state. The plan column 
 | DKIM key | `/etc/mail/dkim` | Back up | Publish the new record from the DNS table. |
 | SRS key | `/etc/mail/srs.conf` | Back up | A bounce of mail forwarded before the rebuild cannot return. |
 | SSH host keys | `/etc/ssh` | Back up | Clients warn once: remove the old line from `known_hosts`. |
-| TLS key and ACME account | `/etc/ssl/private`, `/etc/acme` | Accept the loss | Step 7 gets a new certificate. |
+| TLS key and ACME account | `/etc/ssl/private`, `/etc/acme` | Accept the loss | Publish the new TLSA record from the DNS table at step 6, or DANE senders hold mail. Step 7 gets a new certificate. |
 | Public addresses | Vultr | Rebuild | New A, AAAA and reverse DNS records. |
 | Saved feed copies and the EDMW counts | `/var/www/feed` | Accept the loss | The jobs fetch again. EDMW needs a day of counts first. |
 | Shared files | `/var/www/files/f` | Accept the loss | Their links stop working. |
@@ -115,6 +115,7 @@ Attach `keys.tgz` and `local.conf` to an entry in your password vault, then dele
 | `mta-sts` | CNAME | `teoyujie.org.` |
 | `_mta-sts` | TXT | `"v=STSv1; id=20261101"` |
 | `_smtp._tls` | TXT | `"v=TLSRPTv1; rua=mailto:contact@teoyujie.org"` |
+| `_25._tcp` | TLSA | `3 1 1 KEY_HASH` |
 | `@` | CAA | `0 issue "letsencrypt.org"` |
 | `@` | CAA | `0 issuewild ";"` |
 | `@` | CAA | `0 iodef "mailto:contact@teoyujie.org"` |
@@ -129,6 +130,12 @@ A new server makes a new DKIM key. To print `PUBLIC_KEY`, run this on the server
 
 ```sh
 doas openssl pkey -in /etc/mail/dkim/teoyujie.org.2026.rsa.key -pubout -outform DER | openssl base64 -A
+```
+
+The TLSA record lets a sending server that checks DANE refuse a forged mail server. `KEY_HASH` is the SHA-256 of the TLS key, which acme-client keeps when it renews. To print it, run this on the server:
+
+```sh
+doas openssl pkey -in /etc/ssl/private/teoyujie.org.key -pubout -outform DER | openssl dgst -sha256
 ```
 
 smtpd refuses connections from hosts with no reverse DNS, so less spam gets forwarded from this server's address. It sends mail on only over TLS, to a host whose certificate checks out.
@@ -176,7 +183,8 @@ The website comes from the [site repo](https://github.com/yujieteo/site). Its `s
 ## Limits
 
 - httpd tells browsers to load scripts, styles, fonts and images only from this site. `/reading.html`, `/forecasters.html` and `/singapore-policy-actionables.html` show text from other sites, so they may run no script at all. If a page needs another host, add it to the `Content-Security-Policy` line in `etc/httpd.conf`.
-- pf puts a host in the `flood` table when it opens more than 100 web connections in 10 seconds or 30 mail connections in a minute, or holds more than 100 web or 20 mail connections open at once, and blocks its TCP for a day. To let one out now, run `doas pfctl -t flood -T delete ADDRESS`.
+- pf puts a host in the `flood` table when it opens more than 100 web connections in 10 seconds or 100 mail connections in a minute, or holds more than 100 web or mail connections open at once, and blocks its TCP for a day. To let one out now, run `doas pfctl -t flood -T delete ADDRESS`.
+- httpd and smtpd speak only TLS 1.3, because LibreSSL's TLS 1.2 signs with SHA-1 on request and lacks Extended Master Secret. Browsers from before 2018 and mail servers without TLS 1.3 cannot connect. A sender that checks DANE or MTA-STS then holds the mail and retries; one that checks neither may send it without TLS.
 - pf logs every packet it blocks. To read the log, run `doas tcpdump -ner /var/log/pflog`.
 - The users that handle text from outside open only what their job needs: `_feed` reaches HTTPS, `_smtpd` reaches mail servers, and `www`, `deploy` and `_dkimsign` reach nothing. None of them reaches a VPN peer.
 - The feed jobs run as `_feed`, which can write only `/var/www/feed`. Each job fetches first. Then it gives up running programs, and only then reads what it fetched. The kernel kills a job that breaks this (`pledge` and `unveil` in `sbin/feed-common.pl`), and process accounting records it: `lastcomm perl` shows `P` for a kill and `U` for a refused file.

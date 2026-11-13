@@ -78,7 +78,14 @@ if [ "${1-}" = --outside ]; then
 		for port in 22 53 465 587; do t "${via}: port ${port} is closed" not open "${family}" "${web}" "${port}"; done
 	done
 	t "TLS: the certificate lasts 14 days or more" certificate_lasts "${web}:443"
-	t "TLS: version 1.1 is refused" not sh -c "openssl s_client -tls1_1 -connect ${web}:443 < /dev/null 2>&1 | grep -q 'Cipher is [A-Z]'"
+	t "TLS: version 1.2 is refused" not sh -c "openssl s_client -tls1_2 -connect ${web}:443 < /dev/null 2>&1 | grep -q 'Cipher is [A-Z]'"
+	# DANE senders check the key of the mail server against this record. Web and mail share the key.
+	tlsa_matches() {
+		key=$(openssl s_client -connect "${web}:443" -servername teoyujie.org < /dev/null 2> /dev/null |
+			openssl x509 -pubkey -noout | openssl pkey -pubin -outform DER | openssl dgst -sha256 | sed 's/.* //')
+		dig +short TLSA _25._tcp.teoyujie.org | tr -d ' ' | tr 'A-F' 'a-f' | grep -qx "311${key}"
+	}
+	t "DNS: the TLSA record matches the TLS key" tlsa_matches
 	web_checks
 	# health-check writes the time it ran and the mail it could not send. Mail cannot report its own failure.
 	health_is_good() {
@@ -174,6 +181,8 @@ sleep 2
 t "mail: forwarded to the mailbox" grep -q "to=<${FORWARD_TO:?}> rcpt=<contact@teoyujie.org>" /var/log/maillog
 t "mail: each listener for this server's own mail signs with DKIM" not sh -c "grep '^listen' /etc/mail/smtpd.conf | grep -v 'tag internet' | grep -qv dkimsign"
 t "mail: leaves only over checked TLS" grep -q '^action "outbound" relay srs tls$' /etc/mail/smtpd.conf
+t "mail: STARTTLS works with TLS 1.3" sh -c "openssl s_client -starttls smtp -tls1_3 -connect ${web}:25 < /dev/null 2>&1 | grep -q 'Cipher is [A-Z]'"
+t "mail: STARTTLS refuses TLS 1.2" not sh -c "openssl s_client -starttls smtp -tls1_2 -connect ${web}:25 < /dev/null 2>&1 | grep -q 'Cipher is [A-Z]'"
 
 alert_mails_exceed() {
 	count=$(grep -c 'from=<_syslogd@' /var/log/maillog)
