@@ -40,6 +40,8 @@ web_checks() {
 	t "web: a missing page is 404" is_eq '404 ' status 443 teoyujie.org /no-such-page.html
 	t "web: HSTS is on" has_header / 'Strict-Transport-Security: max-age=31536000'
 	t "web: nosniff is on" has_header / X-Content-Type-Options:
+	t "web: no referrer" has_header / "Referrer-Policy: no-referrer"
+	t "web: no framing by others" has_header / "X-Frame-Options: SAMEORIGIN"
 	t "web: pages load only from this site" has_header / "Content-Security-Policy: default-src 'self'"
 	t "web: feed pages run no script" has_header /reading.html "Content-Security-Policy: default-src 'none'"
 	t "web: www to bare" is_eq '301 https://teoyujie.org/a' status 443 www.teoyujie.org /a

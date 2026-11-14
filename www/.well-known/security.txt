@@ -1,5 +1,16 @@
+-----BEGIN PGP SIGNED MESSAGE-----
+Hash: SHA512
+
 Contact: mailto:contact@teoyujie.org
 Expires: 2027-10-01T00:00:00Z
 Encryption: https://teoyujie.org/contact.gpg
 Preferred-Languages: en
 Canonical: https://teoyujie.org/.well-known/security.txt
+
+-----BEGIN PGP SIGNATURE-----
+
+iHUEARYKAB0WIQRedpaj3ddkNQfdPrjyT38NeOvicAUCavelFAAKCRDyT38NeOvi
+cF9uAQC9ViOfgBPs0kp/rV9HPHBthv9Vu2R+zihWcJrth4BIpAD/du/dn88DhLmg
+l039SklFec4CVJJO2Fqeyc0bUWeFBwE=
+=pUpL
+-----END PGP SIGNATURE-----

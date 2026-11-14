@@ -22,7 +22,7 @@ This repo is public and holds no secrets. The server generates its own TLS, ACME
 | `local.conf.example` | | Template for `local.conf`, filled with test values. |
 | `etc/` | | Configs for httpd, smtpd, acme-client, pf, sshd, unbound, doas, sysctl, cron and the public network interface. |
 | `sbin/` | Server | Scheduled jobs, the Perl helpers they share (`feed-common.pl`) and the forced command of the `deploy` user. |
-| `www/` | | Public files: `security.txt`, the GPG key and WKD, the MTA-STS policy. |
+| `www/` | | Public files: `security.txt`, the GPG key and WKD, the MTA-STS policy. `security.txt` carries your GPG signature: before its `Expires` date, or after any edit, strip the signature, edit and run `gpg --clearsign` again. |
 | `ROLLBACK.md` | | The checkpoint and recovery plan for live installs. |
 | `LICENSE` | | The MIT License for this repository. |
 
