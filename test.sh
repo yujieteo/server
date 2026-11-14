@@ -43,6 +43,7 @@ web_checks() {
 	t "web: no referrer" has_header / "Referrer-Policy: no-referrer"
 	t "web: no framing by others" has_header / "X-Frame-Options: SAMEORIGIN"
 	t "web: pages load only from this site" has_header / "Content-Security-Policy: default-src 'self'"
+	t "web: no page may run an inline script or style" not has_header / "Content-Security-Policy:.*unsafe-inline"
 	t "web: feed pages run no script" has_header /reading.html "Content-Security-Policy: default-src 'none'"
 	t "web: www to bare" is_eq '301 https://teoyujie.org/a' status 443 www.teoyujie.org /a
 	t "web: HTTP to HTTPS" is_eq '301 https://teoyujie.org/a' status 80 teoyujie.org /a
