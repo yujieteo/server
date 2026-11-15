@@ -4,6 +4,7 @@ use warnings;
 use POSIX qw(strftime);
 use Time::Local qw(timegm);
 use Digest::MD5 qw(md5_hex);
+use Digest::SHA qw(sha256_hex);
 use FindBin;
 require "$FindBin::Bin/feed-common.pl";
 
@@ -510,4 +511,14 @@ for my $item (@candidates) {
 	$text .= join("\t", $item->{id}, strftime('%Y-%m-%d', gmtime $item->{date}), map { my $x = $_; $x =~ s/[\t\n]/ /g; $x } $item->{source}, $item->{title}, $item->{link}, $item->{match}) . "\n";
 }
 publish("$folder/forecasters.txt", $text);
+
+# The manifest lets an agent ask once whether any text file changed. It lists what is in the folder now:
+# sg-update writes the policy file weekly, so that entry can be older than the others.
+my @manifest;
+for my $name (qw(reading.txt forecasters.txt singapore-policy-actionables.txt)) {
+	my $content = slurp("$folder/$name");
+	next if $content eq '';
+	push @manifest, sprintf('{"path": "/%s", "bytes": %d, "sha256": "%s"}', $name, length $content, sha256_hex($content));
+}
+publish("$folder/feeds-manifest.json", sprintf(qq{{"built_at": "%s", "files": [%s]}\n}, strftime('%Y-%m-%dT%H:%M:%SZ', gmtime $now), join(', ', @manifest)));
 prune($cache, %saved_names);

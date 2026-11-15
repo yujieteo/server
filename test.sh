@@ -45,6 +45,9 @@ web_checks() {
 	t "web: pages load only from this site" has_header / "Content-Security-Policy: default-src 'self'"
 	t "web: no page may run an inline script or style" not has_header / "Content-Security-Policy:.*unsafe-inline"
 	t "web: feed pages run no script" has_header /reading.html "Content-Security-Policy: default-src 'none'"
+	t "web: feed files may be reused for five minutes" has_header /reading.txt "Cache-Control: max-age=300, must-revalidate"
+	t "web: the feed manifest is served" has_header /feeds-manifest.json "Content-Type: application/json"
+	t "web: a cached feed keeps the security headers" has_header /reading.txt "X-Content-Type-Options: nosniff"
 	t "web: www to bare" is_eq '301 https://teoyujie.org/a' status 443 www.teoyujie.org /a
 	t "web: HTTP to HTTPS" is_eq '301 https://teoyujie.org/a' status 80 teoyujie.org /a
 	t "web: ACME on HTTP" is_eq '404 ' status 80 teoyujie.org /.well-known/acme-challenge/x
