@@ -9,6 +9,8 @@ require "$FindBin::Bin/feed-common.pl";
 
 my $out = $ARGV[0] // '/var/www/feed/feed.xml';
 my $notes_file = $ARGV[1] // '/var/www/web/site/notes/reading.txt';
+# The bet ledger, scored by the site build. It comes with each deploy of the site.
+my $bets_file = $ARGV[2] // '/var/www/web/site/api/bets.txt';
 my $site = 'https://teoyujie.org';
 my $max_items = 70;
 my $excerpt_length = 600;
@@ -29,7 +31,10 @@ my @sources = (
 	['EDMW', $edmw, 15],
 );
 
-my $forecasters_about = 'The latest comments and posts from the 20 Hacker News commenters and the 20 LessWrong writers with the best forecasting records.';
+my $forecasters_about = "Checkable bets by the 20 Hacker News commenters and 20 LessWrong writers of the two forecasting rankings, each with that day's market price, the source that settles it and a due date.";
+my $contact = 'contact@teoyujie.org';
+my $audit = 'https://github.com/yujieteo/site/tree/main/audits/forecasters';
+my $ledger = 'https://github.com/yujieteo/site/blob/main/notes/forecasts.tsv';
 my $forecasters_max_items = 90;
 my $forecasters_per_feed = 6;
 # hnrss starts refusing after about ten quick requests.
@@ -139,16 +144,18 @@ sub parse {
 		my $link = link_of($block);
 		my $date = epoch(plain(field($block, qw(pubDate published updated dc:date))));
 		my ($source, $text) = ($name, '');
+		my $description = field($block, qw(description content:encoded content summary));
+		(my $body = plain($description)) =~ s/\s*Discuss$//;
 		if ($title =~ /^New comment by (.+?) in "(.*)"$/) {
 			($source, $title) = ("$1 on $name", $2);
-			$text = excerpt(plain(field($block, 'description')), $excerpt_length);
+			$text = excerpt($body, $excerpt_length);
 		} elsif ($link =~ m{^https://www\.lesswrong\.com/.*[?&]commentId=} && $title =~ /^Comment on (.+)$/) {
 			$title = $1;
-			(my $body = plain(field($block, 'description'))) =~ s/\s*Discuss$//;
 			$text = excerpt($body, $excerpt_length);
 		}
 		next unless $title ne '' && $link =~ m{^https?://\S{1,2000}$} && defined $date;
-		push @items, { id => substr(md5_hex($link), 0, 8), title => $title, link => $link, date => $date, source => $source, label => $text eq '' ? $source : "$source: $text" };
+		push @items, { id => substr(md5_hex($link), 0, 8), title => $title, link => $link, date => $date, source => $source, label => $text eq '' ? $source : "$source: $text",
+			body => $body, market => $description =~ m{(?:manifold\.markets|polymarket\.com|kalshi\.com)/} ? 1 : 0 };
 		last if @items == $limit;
 	}
 	return @items;
@@ -164,7 +171,8 @@ sub render {
 		my $title = escaped($item->{title});
 		my $label = escaped($item->{label});
 		my $date = strftime($format, gmtime $item->{date});
-		$body .= qq{<item><title>$title</title><link>$link</link><guid isPermaLink="true">$link</guid><pubDate>$date</pubDate><description>$label</description></item>\n};
+		my $guid = defined $item->{guid} ? '<guid isPermaLink="false">' . escaped($item->{guid}) : qq{<guid isPermaLink="true">$link};
+		$body .= qq{<item><title>$title</title><link>$link</link>$guid</guid><pubDate>$date</pubDate><description>$label</description></item>\n};
 	}
 	my $description = escaped($feed->{about});
 	return <<"EOF";
@@ -232,6 +240,7 @@ sub fetch {
 
 my $cache = "$folder/cache";
 my $notes_text = slurp($notes_file);
+my $bets_text = slurp($bets_file);
 confine($folder);
 mkdir $cache unless -d $cache;
 
@@ -311,17 +320,194 @@ die "feed-update: no forecaster feed worked, the old page stays\n" unless $forec
 warn "feed-update: no LessWrong feed worked\n" unless $lesswrong_working;
 $forecasters_seen->{$_} //= $lesswrong_seen->{$_} for keys %$lesswrong_seen;
 
-my @forecaster_items = sort { $b->{date} <=> $a->{date} } values %$forecasters_seen;
-splice @forecaster_items, $forecasters_max_items if @forecaster_items > $forecasters_max_items;
-my %forecasters = (
-	title => 'Forecasters',
-	id => 'forecasters',
-	xml => 'forecasters.xml',
-	about => $forecasters_about,
-	head => qq{<link rel="alternate" type="application/rss+xml" title="Forecasters feed" href="/forecasters.xml">\n},
-	note => 'The latest from the people in the <a href="/essays/hn-forecasters/">Hacker News</a> and <a href="/essays/lw-forecasters/">LessWrong</a> forecasting rankings. <a href="/forecasts/">Forecasts to check</a>. <a href="/forecasters.xml">RSS feed</a>. <a href="/forecasters.txt">Plain text</a>. OPML of all feeds: <a href="/hn-forecasters.opml">Hacker News</a>, <a href="/lw-forecasters.opml">LessWrong</a>',
-);
-publish("$folder/forecasters.html", render_page($now, \%forecasters, @forecaster_items));
-publish("$folder/forecasters.xml", render($now, \%forecasters, @forecaster_items));
-publish("$folder/forecasters.txt", render_text($now, 'The latest from the ranked Hacker News and LessWrong forecasters, newest first.', 'To record a forecast one of them makes, add a line to notes/forecasts.tsv in github.com/yujieteo/site.', @forecaster_items));
+# The page keeps only bets: checkable claims in the ledger, each with a market price, a source and a due date.
+# The site build checks and scores the ledger. Here every cell is still treated as text from outside.
+sub read_bets {
+	my ($text) = @_;
+	my @lines = split /\n/, $text;
+	my @columns = split /\t/, shift(@lines) // '';
+	return () unless @columns && $columns[0] eq 'id';
+	my @bets;
+	for my $line (@lines) {
+		my %bet;
+		@bet{@columns} = map { valid($_) } split /\t/, $line, -1;
+		next unless ($bet{id} // '') =~ /^[0-9a-f]{8}$/ && ($bet{made} // '') =~ /^\d{4}-\d\d-\d\dT\d\d:\d\d/;
+		next unless grep { ($bet{$_} // '') =~ m{^https://\S+$} } qw(url archive market source);
+		$bet{$_} = '' for grep { ($bet{$_} // '') ne '' && $bet{$_} !~ m{^https://\S+$} } qw(url archive market source evidence fermi_url);
+		push @bets, \%bet;
+	}
+	return @bets;
+}
+my @bets = read_bets($bets_text);
+die "feed-update: no bet ledger at $bets_file, the old page stays\n" unless $bets_text =~ /^id\t/;
+
+# Hourly, for a bet whose item is still in its feed: is the quote still in the text? Spaces are ignored,
+# because a feed and an API lay out the same text differently.
+my %live = map { $_->{link} => $_ } values %$forecasters_seen;
+for my $bet (@bets) {
+	my $item = $live{$bet->{url}} or next;
+	(my $quote = $bet->{quote}) =~ s/\s+//g;
+	(my $body = $item->{body}) =~ s/\s+//g;
+	$bet->{live} = index($body, $quote) >= 0 ? 'present' : 'missing';
+}
+
+# New items that may make or revise a claim, for an agent to record or pass over: a stated chance, a
+# commitment to a forecast or a bet (the candidate rule of the audit), or a link to a market.
+my $apos = qr/(?:'|\xe2\x80\x99)/;
+my $claim_rule = qr/\bI\s+(?:confidently\s+)?(?:predict|forecast)\b
+	|\bmy\s+(?:prediction|forecast|bet)\s+(?:is|would\s+be)\b
+	|\bI(?:${apos}d|\s+would|${apos}ll|\s+will)\s+(?:happily\s+|gladly\s+)?(?:bet|wager|put\s+money)\b
+	|\bI(?:${apos}m|\s+am)\s+(?:betting|predicting|calling\s+it)\b
+	|\b(?:willing|happy)\s+to\s+bet\b|\bmark\s+my\s+words\b|\bcalling\s+it\s+now\b
+	|\b\d{1,3}(?:\.\d+)?\s?%\s+(?:chance|probability|likely|likelihood|odds|confiden\w*|sure|certain)\b
+	|\b(?:chance|probability|likelihood|odds|credence|confiden\w*)\s+(?:of\s+|is\s+|at\s+|that\s+[^.?!]{0,60}?)?(?:about\s+|around\s+|roughly\s+|maybe\s+)?\d{1,3}(?:\.\d+)?\s?%
+	|\b\d{1,3}\s?(?:to|:)\s?\d{1,3}\s+odds\b|\bodds\s+(?:of|are|at)\s+\d{1,3}\s?(?:to|:)\s?\d{1,3}\b/xi;
+my %recorded = map { $_->{url} => 1 } @bets;
+my @candidates;
+for my $item (sort { $b->{date} <=> $a->{date} || $a->{id} cmp $b->{id} } values %$forecasters_seen) {
+	next if $recorded{$item->{link}};
+	my $match = '';
+	if ($item->{body} =~ $claim_rule) {
+		my $at = $-[0] > 150 ? $-[0] - 150 : 0;
+		$match = substr($item->{body}, $at, 400);
+		$match =~ s/^[\x80-\xbf]+//;
+		$match = excerpt($match, 300);
+	} elsif ($item->{market}) {
+		$match = 'links a market';
+	}
+	push @candidates, { %$item, match => $match } if $match ne '';
+}
+
+sub percent {
+	my ($x) = @_;
+	return $x < 0.01 || $x > 0.99 ? sprintf('%.1f%%', 100 * $x) : sprintf('%.0f%%', 100 * $x);
+}
+
+sub stamp {
+	my ($iso) = @_;
+	return $iso =~ /^(\d{4}-\d\d-\d\d)T(\d\d:\d\d)/ ? "$1 $2 UTC" : escaped($iso);
+}
+
+sub anchor {
+	my ($url, $text) = @_;
+	return escaped($text) if ($url // '') eq '';
+	return '<a href="' . escaped($url) . '" rel="noopener noreferrer">' . escaped($text) . '</a>';
+}
+
+# The people of the rankings, by the names they give, with what their settled bets multiplied.
+my @people = (@forecasters, map { $_->[0] } @lesswrong);
+my %person = map { $_ => { bets => 0, settled => 0, e => 1 } } @people;
+for my $bet (@bets) {
+	my $p = $person{$bet->{by}} or next;
+	$p->{bets}++;
+	$p->{settled}++ if $bet->{factor} ne '';
+	$p->{e} = $bet->{running_e} if $bet->{running_e} =~ /^\d+(?:\.\d+)?(?:e[+-]?\d+)?$/;
+}
+
+sub render_bets {
+	my ($now, @list) = @_;
+	my $built = strftime('%d %b %Y, %H:%M UTC', gmtime $now);
+	my $today = strftime('%Y-%m-%d', gmtime $now);
+	my $rows = '';
+	for my $name (sort { $person{$b}{bets} <=> $person{$a}{bets} || lc $a cmp lc $b } grep { $person{$_}{bets} } @people) {
+		my $p = $person{$name};
+		my $e = $p->{settled} ? sprintf('%.3g', $p->{e}) : '';
+		$rows .= '<tr><td>' . escaped($name) . "</td><td>$p->{bets}</td><td>$p->{settled}</td><td>$e</td></tr>\n";
+	}
+	my @none = sort { lc $a cmp lc $b } grep { !$person{$_}{bets} } @people;
+	my $none = @none ? '<p>No priced bet yet: ' . join(', ', map { escaped($_) } @none) . '.</p>' : '';
+	my $cards = '';
+	for my $bet (reverse @list) {
+		my $id = $bet->{id};
+		my ($snapshot) = $bet->{archive} =~ m{/web/(\d{4})(\d\d)(\d\d)};
+		$snapshot = $snapshot ? join('-', $bet->{archive} =~ m{/web/(\d{4})(\d\d)(\d\d)}) : '';
+		my $view = $bet->{p} ne '' ? 'Stated chance of YES: ' . percent($bet->{p}) : 'Takes the ' . uc($bet->{side}) . ' side, with no stated chance';
+		my $edited = $bet->{edited} ne '' ? " The site reports an edit on $bet->{edited}." : '';
+		my $live = !defined $bet->{live} ? '' : $bet->{live} eq 'present' ? " Still in its feed at $built, and the quote is still there." : " Still in its feed at $built, but the quote is no longer in the text.";
+		my $verdict;
+		if ($bet->{outcome} eq 'open') {
+			$verdict = $bet->{due} lt $today ? "Open: the due date has passed and the source has not resolved." : 'Open.';
+		} elsif ($bet->{outcome} eq 'void') {
+			$verdict = 'Void: the source cancelled or only partly resolved it (' . anchor($bet->{evidence}, $bet->{settled}) . ').';
+		} else {
+			$verdict = 'Resolved ' . uc($bet->{outcome}) . ' on ' . anchor($bet->{evidence}, $bet->{settled}) . '. Factor against the market: ' . sprintf('%.3g', $bet->{factor}) . '. Running e-value of ' . escaped($bet->{by}) . ': ' . sprintf('%.3g', $bet->{running_e}) . '.';
+		}
+		my $revises = $bet->{revises} =~ /^[0-9a-f]{8}$/ ? qq{ Revises <a href="#bet-$bet->{revises}">bet $bet->{revises}</a>.} : '';
+		my $correction = $bet->{correction} ne '' ? '<p>Correction: ' . escaped($bet->{correction}) . '</p>' : '';
+		my $by = escaped($bet->{by});
+		$cards .= qq{<li id="bet-$id"><h3>} . escaped($bet->{claim}) . qq{</h3>\n}
+			. '<p class="quote">“' . escaped($bet->{quote}) . "” — $by, " . anchor($bet->{url}, stamp($bet->{made})) . "</p>\n"
+			. "<p>$view. Market price that day: " . anchor($bet->{market}, percent($bet->{price})) . ' at ' . stamp($bet->{price_at}) . ".</p>\n"
+			. '<p>Fermi check: ' . anchor($bet->{fermi_url}, $bet->{fermi}) . "</p>\n"
+			. '<p>Settled only by ' . anchor($bet->{source}, 'the market\'s own resolution') . ", due $bet->{due}. $verdict$revises</p>\n$correction"
+			. '<p>Text: ' . anchor($bet->{archive}, "archive.org snapshot $snapshot") . ", SHA-256 <code>" . substr($bet->{sha256}, 0, 16) . "…</code>.$edited$live"
+			. qq{ <a href="mailto:$contact?subject=Dispute%20of%20bet%20$id">Dispute this</a></p></li>\n};
+	}
+	$cards = '<p class="muted">No bets are recorded yet.</p>' if $cards eq '';
+	my $description = escaped($forecasters_about);
+	my $count = @list;
+	return <<"EOF";
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="only light">
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="/style.css">
+<link rel="alternate" type="application/rss+xml" title="Forecasters feed" href="/forecasters.xml">
+<title>Forecasters</title>
+<meta name="description" content="$description">
+</head>
+<body>
+<header class="wrap"><a class="name" href="/">Yu Jie Teo</a></header>
+<main class="wrap page"><article id="forecasters"><h1>Forecasters</h1>
+<p class="meta muted">Updated $built. $count bets. <a href="/forecasters.xml">RSS feed</a>. <a href="/forecasters.txt">New items to check</a>. <a href="/api/bets.txt">Scored bets as text</a>. <a href="$ledger">The ledger</a></p>
+<p>These are the 20 Hacker News commenters and 20 LessWrong writers of the <a href="/essays/hn-forecasters/">Hacker News</a> and <a href="/essays/lw-forecasters/">LessWrong</a> rankings. <a href="$audit">A pre-registered test</a> found that chance explains the top ranks of both rankings. So this page judges them only by what they forecast and what happened, in time order, and keeps only checkable claims that a market priced on the day they were made.</p>
+<h2>How a bet is scored</h2>
+<ul>
+<li>A bet is a claim that one of the 40 made or revised, in their own words, on a question a market resolves. The quote, the posting time, an archive.org snapshot and a SHA-256 of the text are stored when it is recorded.</li>
+<li>The price is the market's YES price just before the item was posted. A stated chance p is scored against it: the factor is p/price if YES, and (1 − p)/(1 − price) if NO. With no stated chance, the bet stakes half at the market price on the side the person takes.</li>
+<li>Only the named source settles a bet: the market's own resolution. A cancelled or partial resolution is void and scores 1.</li>
+<li>A person's running e-value multiplies the factors of their settled bets. If the market prices are right, its expected value is 1. An e-value of 20 is evidence of skill at the 5% level for one person chosen in advance. For the best of 40, it takes 800.</li>
+<li>The Fermi check compares any physical quantity a claim implies with the most ever built or made in a year, from EIA, IAEA and SEC EDGAR filings.</li>
+<li>Names are as the people give them. If you are named and a quote, price or verdict is wrong, use the dispute link of the bet. Corrections are made in the ledger and shown on the bet.</li>
+</ul>
+<h2>People</h2>
+<table><thead><tr><th>Person</th><th>Bets</th><th>Settled</th><th>e-value against the market</th></tr></thead><tbody>
+$rows</tbody></table>
+$none
+<h2>Bets, newest first</h2>
+<ol class="bets">
+$cards</ol></article></main>
+</body>
+</html>
+EOF
+}
+
+# The feed carries a bet when it is made and again when it is settled.
+my @feed_items;
+for my $bet (@bets) {
+	my $made = epoch($bet->{made}) // next;
+	my $title = "$bet->{by}: $bet->{claim}";
+	my $view = $bet->{p} ne '' ? 'stated ' . percent($bet->{p}) : "takes $bet->{side}";
+	my $link = "$site/forecasters.html#bet-$bet->{id}";
+	push @feed_items, { link => $link, guid => "bet-$bet->{id}", title => $title, date => $made, label => "“$bet->{quote}” Market " . percent($bet->{price}) . ", $view. Due $bet->{due}." };
+	if ($bet->{outcome} ne 'open' && $bet->{settled} =~ /^\d{4}-\d\d-\d\d$/) {
+		push @feed_items, { link => $link, guid => "bet-$bet->{id}-$bet->{outcome}", title => "Settled $bet->{outcome}: $title", date => epoch("$bet->{settled}T00:00:00Z"), label => "Factor against the market: $bet->{factor}. Running e-value of $bet->{by}: $bet->{running_e}." };
+	}
+}
+@feed_items = sort { $b->{date} <=> $a->{date} || $a->{guid} cmp $b->{guid} } @feed_items;
+splice @feed_items, $forecasters_max_items if @feed_items > $forecasters_max_items;
+
+my %forecasters = (title => 'Forecasters', id => 'forecasters', xml => 'forecasters.xml', about => $forecasters_about);
+publish("$folder/forecasters.html", render_bets($now, @bets));
+publish("$folder/forecasters.xml", render($now, \%forecasters, @feed_items));
+my $queue = strftime('%Y-%m-%d %H:%M UTC', gmtime $now);
+my $text = "# New items by the 40 ranked forecasters that may make or revise a checkable claim and are not in the bet ledger yet. Built $queue.\n"
+	. "# Columns, split by tabs: id, date, source, title, link, match. To record a bet, give scripts/bets/bets.py a proposal in github.com/yujieteo/site.\n";
+for my $item (@candidates) {
+	$text .= join("\t", $item->{id}, strftime('%Y-%m-%d', gmtime $item->{date}), map { my $x = $_; $x =~ s/[\t\n]/ /g; $x } $item->{source}, $item->{title}, $item->{link}, $item->{match}) . "\n";
+}
+publish("$folder/forecasters.txt", $text);
 prune($cache, %saved_names);
