@@ -175,6 +175,18 @@ t "feed job: accounting records the kill and the refused file" sh -c "sleep 1; l
 mail_to() {
 	printf 'From: test@example.org\nSubject: test.sh\n\ntest\n' | smtp -C -s "smtp://$1" -F test@example.org "$2" 2>&1 | grep -q "$3"
 }
+forwards() {
+	grep -c "to=<${FORWARD_TO:?}> rcpt=<contact@teoyujie.org>" /var/log/maillog
+}
+# The relay to the mailbox can take a quarter of a minute, so the check waits for this run's message.
+forwarded() {
+	for _ in $(jot 30); do
+		[ "$(forwards)" -gt "$1" ] && return 0
+		sleep 2
+	done
+	return 1
+}
+mail_before=$(forwards)
 for a in contact postmaster ${ALIASES-}; do
 	t "mail: ${a}@ is accepted" mail_to "${web}" "${a}@teoyujie.org" ' 250 '
 done
@@ -183,8 +195,7 @@ for a in root "nobody-${d}"; do
 done
 t "mail: VPN to contact@ is accepted" mail_to 10.8.0.1 contact@teoyujie.org ' 250 '
 t "mail: VPN to another domain is refused" mail_to 10.8.0.1 test@example.net 'RCPT: 550'
-sleep 2
-t "mail: forwarded to the mailbox" grep -q "to=<${FORWARD_TO:?}> rcpt=<contact@teoyujie.org>" /var/log/maillog
+t "mail: forwarded to the mailbox" forwarded "${mail_before}"
 t "mail: each listener for this server's own mail signs with DKIM" not sh -c "grep '^listen' /etc/mail/smtpd.conf | grep -v 'tag internet' | grep -qv dkimsign"
 t "mail: leaves only over checked TLS" grep -q '^action "outbound" relay srs tls$' /etc/mail/smtpd.conf
 t "mail: STARTTLS works with TLS 1.3" sh -c "openssl s_client -starttls smtp -tls1_3 -connect ${web}:25 < /dev/null 2>&1 | grep -q 'Cipher is [A-Z]'"
@@ -222,13 +233,22 @@ blocked() {
 	before=$(blocked_packets)
 	! as "$1" "nc -z -w 3 $2 $3" && [ "$(blocked_packets)" -gt "${before}" ]
 }
+logged_packets() {
+	tcpdump -ner /var/log/pflog outbound 2> /dev/null | wc -l
+}
+# The packets this run blocked reach the file. pflogd writes its buffer only on a later signal or tick,
+# which can take a few seconds, and just after newsyslog turns the file over it holds no old packets.
 logged() {
-	# The pflogd process that writes the file runs as _pflogd: both processes get the signal to flush.
-	pkill -ALRM -x pflogd
-	sleep 3
-	tcpdump -ner /var/log/pflog outbound 2> /dev/null | grep -q .
+	for _ in $(jot 10); do
+		# The pflogd process that writes the file runs as _pflogd: both processes get the signal to flush.
+		pkill -ALRM -x pflogd
+		sleep 3
+		[ "$(logged_packets)" -gt "$1" ] && return 0
+	done
+	return 1
 }
 start=$(blocked_packets)
+logged_before=$(logged_packets)
 t "pf: the internet reaches only the public services on the public addresses" pf_public_only
 t "pf: the flood table exists" pfctl -t flood -T show
 t "pf: the feed user reaches HTTPS" as _feed 'nc -z -w 8 cdn.openbsd.org 443'
@@ -236,7 +256,7 @@ t "pf: the feed user reaches no other port" blocked _feed cdn.openbsd.org 80
 t "pf: the feed user reaches no VPN peer" blocked _feed 10.8.0.2 22
 t "pf: the web server user reaches nothing" blocked www cdn.openbsd.org 443
 t "pf: the mail user reaches only mail servers" blocked _smtpd cdn.openbsd.org 443
-t "pf: blocked packets are in the log" logged
+t "pf: blocked packets are in the log" logged "${logged_before}"
 # These checks made the count that health-check reports. Clear it, unless it held a real one before.
 [ "${start}" -ne 0 ] || pfctl -z
 
