@@ -33,11 +33,19 @@ status() {
 has_header() {
 	get teoyujie.org "$1" | grep -i "^$2"
 }
+has_body() {
+	get teoyujie.org "$1" | grep -F "$2"
+}
 web_checks() {
 	for u in / /.well-known/security.txt /contact.gpg /.well-known/openpgpkey/hu/dj3498u4hyyarh35rkjfnghbjxug6b19; do
 		t "web: ${u}" is_eq '200 ' status 443 teoyujie.org "${u}"
 	done
 	t "web: a missing page is 404" is_eq '404 ' status 443 teoyujie.org /no-such-page.html
+	# The site build makes the error pages. Test pages from a test deploy have none, so on the server this needs the folder.
+	if [ ! -d /var/www/web ] || [ -f /var/www/web/site/errdocs/404.html ]; then
+		t "web: a missing page has the site's look" has_body /no-such-page.html 'href="/style.css"'
+		t "web: /f/ errors have the site's look" has_body /f/ 'href="/style.css"'
+	fi
 	t "web: HSTS is on" has_header / 'Strict-Transport-Security: max-age=31536000'
 	t "web: nosniff is on" has_header / X-Content-Type-Options:
 	t "web: no referrer" has_header / "Referrer-Policy: no-referrer"
