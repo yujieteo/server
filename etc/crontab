@@ -5,7 +5,7 @@
 ~	*	*	*	*	root	acme-client teoyujie.org && rcctl reload httpd >/dev/null && rcctl restart smtpd >/dev/null
 15	20	*	*	*	root	/usr/local/sbin/blocklist-update
 5	*	*	*	*	root	pfctl -q -t flood -T expire 86400
-0	4	*	*	*	root	find /var/www/files/f -mindepth 1 -maxdepth 1 -mtime +30 -exec rm -rf {} +
+0	4	*	*	*	root	find /var/www/files/f -mindepth 1 -maxdepth 1 -mtime +30 -exec sh -c 'for folder do [ -f "$folder/.keep" ] || rm -rf -- "$folder"; done' sh {} +
 ~	*	*	*	*	_feed	-s /usr/local/sbin/feed-update
 ~	*	*	*	*	_feed	-s /usr/local/sbin/edmw-update
 10	0	*	*	6	_feed	-s /usr/local/sbin/sg-update
