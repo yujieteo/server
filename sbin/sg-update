@@ -201,9 +201,19 @@ sub local_date {
 	return strftime('%Y-%m-%d', gmtime $time + $singapore_offset);
 }
 
+sub reach_snapshot_date {
+	my ($time) = @_;
+	return defined $time && $time > 0 ? local_date($time) . ' SGT' : 'unknown';
+}
+
 sub label {
 	my ($item) = @_;
 	my @parts = ("$kind_name{$item->{kind}}, $item->{source}");
+	if ($item->{source} eq 'REACH') {
+		my $status = still_open($item) ? 'Marked open' : 'Not marked open';
+		@parts = ("$status in REACH snapshot (as of " . reach_snapshot_date($item->{reach_fetched}) . ')',
+			'Check the REACH page for the deadline');
+	}
 	push @parts, join ', ', @{$item->{lenses}} if @{$item->{lenses}};
 	my $text = join(' · ', @parts) . '.';
 	$text .= " $item->{note}" if $item->{note} ne '';
@@ -273,15 +283,17 @@ EOF
 
 # The file an AI model reads to add its judgment. Short fields keep it cheap to read.
 sub render_text {
-	my ($now, @items) = @_;
+	my ($now, $reach_fetched, @items) = @_;
 	my $built = local_date($now);
 	my $text = <<"EOF";
-# Singapore primary documents, ranked by fixed rules. Fetched $built. Top $text_items of the last 28 days, with open consultations from the last 120.
+# Singapore primary documents, ranked by fixed rules. Fetched $built. Top $text_items of the last 28 days, with consultations marked open from the last 120.
 # Columns, split by tabs: id, score, date, source, kind, lenses, why, title, link.
 # To change the ranking, add lines to notes/policy.tsv in github.com/yujieteo/site. The format is at $site/api/notes.txt
 # A note line is: id, tab, points from -60 to 60, tab, one sentence on what to do and by when.
 # Judge each document for a Singapore resident: investing, career, and public services to use or respond to.
 EOF
+	$text .= '# REACH kind reflects its saved snapshot (as of ' . reach_snapshot_date($reach_fetched)
+		. '), not current status. Check the REACH page for the deadline.' . "\n";
 	for my $item (@items) {
 		$text .= join("\t", $item->{id}, $item->{score}, local_date($item->{date}), $item->{source}, $item->{kind},
 			join(',', @{$item->{lenses}}), $item->{why}, $item->{title}, $item->{link}) . "\n";
@@ -311,6 +323,7 @@ fetched();
 
 # A source that fails falls back to its last good copy.
 my ($working, %seen, %copies) = (0);
+my $reach_fetched;
 for my $source (@sources) {
 	my ($name, $url, $format, $text) = @$source;
 	(my $key = lc $name) =~ s/\W+/-/g;
@@ -323,8 +336,11 @@ for my $source (@sources) {
 	} else {
 		@items = parse(slurp($copy), $name, $format);
 	}
+	# The overall fetch stamp can advance even when this source fails.
+	$reach_fetched = (stat $copy)[9] if $name eq 'REACH' && @items;
 	for my $item (@items) {
 		$item->{source} = $name;
+		$item->{reach_fetched} = $reach_fetched if $name eq 'REACH';
 		$item->{id} = substr md5_hex($item->{link}), 0, 8;
 		$seen{$item->{link}} //= $item;
 	}
@@ -348,4 +364,4 @@ my @top = @items > $page_items ? @items[0 .. $page_items - 1] : @items;
 my @listed = @items > $text_items ? @items[0 .. $text_items - 1] : @items;
 publish("$dir/singapore-policy-actionables.html", render_page($now, @top));
 publish("$dir/singapore-policy-actionables.xml", render_rss($now, @top));
-publish("$dir/singapore-policy-actionables.txt", render_text($now, @listed));
+publish("$dir/singapore-policy-actionables.txt", render_text($now, $reach_fetched, @listed));
