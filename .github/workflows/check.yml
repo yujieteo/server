@@ -1,4 +1,4 @@
-# Offline checks of the scripts and configs. They never contact the server,
+# Checks of the scripts and configs. They never contact the server,
 # deploy or use secrets, because the repository is public.
 name: check
 
@@ -38,4 +38,18 @@ jobs:
         env:
           # Each job runs as a new user with no home folder, so nix keeps its cache in the job's temporary folder.
           XDG_CACHE_HOME: ${{ runner.temp }}/cache
-        run: nix shell nixpkgs#oksh nixpkgs#shellcheck nixpkgs#perl nixpkgs#openssh nixpkgs#unbound -c bash .github/ci/check
+        run: nix shell nixpkgs#oksh nixpkgs#shellcheck nixpkgs#perl nixpkgs#openssh nixpkgs#unbound nixpkgs#python3 -c bash .github/ci/check
+  openbsd:
+    # install.sh, test.sh and the faults on OpenBSD itself: see .github/ci/openbsd. It downloads the release, so it is not offline.
+    runs-on: [self-hosted, desktop]
+    # About 30 minutes with KVM. The runner's sandbox hides /dev/kvm, and without it qemu is about six times slower.
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Rebuild in an OpenBSD 8.0 VM, restore the keys, test, and inject the faults
+        env:
+          XDG_CACHE_HOME: ${{ runner.temp }}/cache
+          TMPDIR: ${{ runner.temp }}
+        run: nix shell nixpkgs#qemu nixpkgs#openssh -c python3 -I .github/ci/openbsd

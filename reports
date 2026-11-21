@@ -1,0 +1,101 @@
+#!/usr/bin/env python3
+"""Read the DMARC reports (RFC 7489) and TLS reports (RFC 8460) that other providers send to contact@.
+
+  python3 -I reports FILE...      files as they come: .xml, .json, .gz or .zip
+
+It prints each failure, and each address that sent mail as teoyujie.org but is not this server.
+It exits 1 when it prints any. The server's addresses come from DNS when it runs.
+"""
+import gzip, io, ipaddress, json, subprocess, sys, zipfile
+import xml.etree.ElementTree as ET
+
+DOMAIN = 'teoyujie.org'
+LIMIT = 50 << 20  # A report is a few kilobytes. This stops a file that unpacks to gigabytes.
+
+
+def server_addresses():
+    # dig, not the system resolver: macOS answers an IPv6 question with a mapped IPv4 address when it has no IPv6 route.
+    out = subprocess.run(['dig', '+short', DOMAIN, 'A', DOMAIN, 'AAAA'], capture_output=True, text=True, check=True).stdout
+    return {ipaddress.ip_address(line) for line in out.split()}
+
+
+def unpack(name, data):
+    """Yield (name, text) for each report in a file."""
+    if data[:2] == b'\x1f\x8b':
+        yield from unpack(name, gzip.GzipFile(fileobj=io.BytesIO(data)).read(LIMIT + 1))
+    elif data[:4] == b'PK\x03\x04':
+        with zipfile.ZipFile(io.BytesIO(data)) as z:
+            for member in z.infolist():
+                with z.open(member) as f:
+                    yield from unpack(f'{name}:{member.filename}', f.read(LIMIT + 1))
+    elif len(data) > LIMIT:
+        raise ValueError('larger than 50 MB unpacked')
+    else:
+        yield name, data
+
+
+def dmarc(name, root, ours):
+    org = root.findtext('report_metadata/org_name', '?')
+    for record in root.iter('record'):
+        ip = record.findtext('row/source_ip', '').strip()
+        count = record.findtext('row/count', '?').strip()
+        policy = {k: record.findtext(f'row/policy_evaluated/{k}', '?').strip() for k in ('disposition', 'dkim', 'spf')}
+        sender = record.findtext('identifiers/header_from', '?').strip()
+        where = f'{org}: {count} mail from {ip} as {sender}'
+        # DMARC passes when DKIM or SPF passes and is aligned with the From domain (RFC 7489, section 4.2).
+        if policy['dkim'] != 'pass' and policy['spf'] != 'pass':
+            yield f'DMARC fail: {where}: dkim={policy["dkim"]} spf={policy["spf"]} disposition={policy["disposition"]}'
+        elif policy['dkim'] != 'pass':
+            yield f'DKIM fail: {where} (passed on SPF alone)'
+        try:
+            outside = ipaddress.ip_address(ip) not in ours
+        except ValueError:
+            outside = True
+        if outside:
+            yield f'not this server: {where}: dkim={policy["dkim"]} spf={policy["spf"]}'
+
+
+def tlsrpt(name, report, ours):
+    org = report.get('organization-name', '?')
+    for p in report.get('policies', []):
+        policy = p.get('policy', {})
+        kind = policy.get('policy-type', '?')
+        failed = p.get('summary', {}).get('total-failure-session-count', 0)
+        if failed:
+            yield f'TLS fail: {org}: {failed} sessions failed under the {kind} policy'
+        for d in p.get('failure-details', []):
+            yield (f'TLS fail: {org}: {d.get("result-type", "?")} x{d.get("failed-session-count", "?")} '
+                   f'from {d.get("sending-mta-ip", "?")} to {d.get("receiving-mx-hostname", "?")} {d.get("receiving-ip", "")}'
+                   f' {d.get("failure-reason-code", "")} {d.get("additional-information", "")}'.rstrip())
+            ip = d.get('receiving-ip')
+            if ip and ipaddress.ip_address(ip) not in ours:
+                yield f'not this server: {org}: mail for {DOMAIN} went to {ip}'
+
+
+def main(paths):
+    if not paths:
+        sys.exit(__doc__.strip())
+    ours = server_addresses()
+    found = reports = 0
+    for path in paths:
+        with open(path, 'rb') as f:
+            data = f.read(LIMIT + 1)
+        try:
+            for name, text in unpack(path, data):
+                reports += 1
+                if text.lstrip()[:1] == b'{':
+                    lines = tlsrpt(name, json.loads(text), ours)
+                else:
+                    lines = dmarc(name, ET.fromstring(text), ours)
+                for line in lines:
+                    print(f'{line}    [{name}]')
+                    found += 1
+        except (ValueError, KeyError, AttributeError, ET.ParseError, zipfile.BadZipFile, OSError) as e:
+            print(f'unreadable: {path}: {e}')
+            found += 1
+    print(f'{reports} reports, {found} findings; this server is {", ".join(sorted(map(str, ours)))}')
+    return 1 if found else 0
+
+
+if __name__ == '__main__':
+    sys.exit(main(sys.argv[1:]))

@@ -23,6 +23,8 @@ This repo is public and holds no secrets. The server generates its own TLS, ACME
 | `etc/` | | Configs for httpd, smtpd, acme-client, pf, sshd, unbound, doas, sysctl, cron and the public network interface. |
 | `sbin/` | Server | Scheduled jobs, the Perl helpers they share (`feed-common.pl`) and the forced command of the `deploy` user. |
 | `www/` | | Public files: `security.txt`, the GPG key and WKD, the MTA-STS policy. `security.txt` carries your GPG signature: before its `Expires` date, or after any edit, strip the signature, edit and run `gpg --clearsign` again. |
+| `reports` | Mac | `python3 -I reports FILE...` prints each failure in the DMARC and TLS reports that other providers send, and each sender that is not this server. Keep the reports out of the repo. |
+| `.github/` | Desktop | The offline check, the OpenBSD VM rebuild with its faults, and the hourly outside watch. |
 | `ROLLBACK.md` | | The checkpoint and recovery plan for live installs. |
 | `LICENSE` | | The MIT License for this repository. |
 
@@ -180,16 +182,36 @@ The list works for apps that use the system DNS. An app that carries its own enc
 
 The website comes from the [site repo](https://github.com/yujieteo/site). Its `scripts/deploy.sh` builds the site and sends a tarball over SSH to the `deploy` user, so a commit there changes nothing until you run that script. The `deploy` user can only run `sbin/deploy-only`, which accepts only `site` and swaps in the new folder by renaming it.
 
-## Limits
+## Rules
 
-- httpd tells browsers to load scripts, styles, fonts and images only from this site. `/reading.html`, `/forecasters.html` and `/singapore-policy-actionables.html` show text from other sites, so they may run no script at all. If a page needs another host, add it to the `Content-Security-Policy` line in `etc/httpd.conf`.
-- httpd sends `Cache-Control: no-cache` by itself. `etc/httpd.conf` replaces it with `max-age=300, must-revalidate` for `/llms.txt`, `/robots.txt`, `/api/*`, `/notes/*`, `/feeds-manifest.json` and the feed files, so an agent can reuse a copy for five minutes and then ask again with `If-Modified-Since`. httpd sends `Last-Modified` and answers that with 304, but sends no `ETag`. A `header set` in a `location` keeps the server's `always` headers. Fonts keep 30 days.
-- pf puts a host in the `flood` table when it opens more than 100 web connections in 10 seconds or 100 mail connections in a minute, or holds more than 100 web or mail connections open at once, and blocks its TCP for a day. To let one out now, run `doas pfctl -t flood -T delete ADDRESS`.
-- httpd and smtpd speak only TLS 1.3, because LibreSSL's TLS 1.2 signs with SHA-1 on request and lacks Extended Master Secret. Browsers from before 2018 and mail servers without TLS 1.3 cannot connect. A sender that checks DANE or MTA-STS then holds the mail and retries; one that checks neither may send it without TLS.
-- pf logs every packet it blocks. To read the log, run `doas tcpdump -ner /var/log/pflog`.
-- The users that handle text from outside open only what their job needs: `_feed` reaches HTTPS, `_smtpd` reaches mail servers, and `www`, `deploy` and `_dkimsign` reach nothing. None of them reaches a VPN peer.
-- The feed jobs run as `_feed`, which can write only `/var/www/feed`. Each job fetches first. Then it gives up running programs, and only then reads what it fetched. The kernel kills a job that breaks this (`pledge` and `unveil` in `sbin/feed-common.pl`), and process accounting records it: `lastcomm perl` shows `P` for a kill and `U` for a refused file.
-- sshd gives the `deploy` user only `deploy-only`, whatever its key file says.
+These are the rules the server keeps. The first twelve are rebuilt from #49, which did not keep its own list. Each check is in `test.sh` unless the row names another file. `.github/ci/openbsd-faults` injects each fault in an OpenBSD VM and requires exactly those checks to fail.
+
+| Rule | Check that fails | Fault that makes it fail |
+|---|---|---|
+| The live server is what `install.sh` renders from this repo. | `live equals rendered` | Any edit to a managed file. |
+| A rebuild from the README backup keeps the SSH, WireGuard, DKIM and SRS keys. | `.github/ci/openbsd` compares the key fingerprints | A backup that leaves out a key. |
+| SSH is reachable only through the VPN, with a key, and never as root. | `sshd: no root login`, `sshd: keys only`, `admin keys: VPN only`, outside: `port 22 is closed` | `PermitRootLogin yes`, `AuthenticationMethods any`, a key with no `from=`, a pf rule that passes port 22. |
+| The internet reaches only TCP ports 25, 80 and 443, and UDP port 51820. | `pf: the internet reaches only the public services`, outside: the closed ports, `.github/ci/outside`: nmap | The same pf rule. |
+| `_feed` reaches only HTTPS, `_smtpd` only mail servers, and `www`, `deploy` and `_dkimsign` nothing; none reaches a VPN peer, and pf logs each packet it blocks. | `pf: the feed user …`, `pf: the web server user reaches nothing`, `pf: the mail user …`, `pf: blocked packets are in the log`, `health-check`: blocked packets | pf rules that pass more for `_feed`, `www` and `_smtpd`, or drop one; `log` taken off the block rule. |
+| A feed job writes only `/var/www/feed`, gives up running programs before it parses, and process accounting records each kill (`lastcomm perl`: `P` a kill, `U` a refused file). | `feed job: …`, `health-check`: runs that broke their limits | `unveil('/', 'rwcx')` and no `pledge` in `feed-common.pl`, or `accton` off. |
+| Each user writes only its own folder. | `feed user: …`, `deploy user: …`, `web server: …` | Mode 777 on the feed folder, `a+w` in `deploy-only`. |
+| Mail leaves only over TLS to a checked certificate, and mail that starts on the server or the VPN is signed with DKIM. | `mail: leaves only over checked TLS`, `mail: each listener … signs with DKIM` | `relay srs` without `tls`, `dkimsign` taken off the VPN listener. |
+| DNS names this server: A, AAAA from the MAC, MX, NS and the DKIM key. | `health-check`: `A is now`, `AAAA is now`, `MX is now`, `NS is now`, the DKIM record | A guest with other addresses and keys, and no answer from Quad9. |
+| A dead server shows from outside within an hour. | `.github/workflows/outside.yml` opens an issue; outside: `health` | `test.sh --outside 192.0.2.1`, an address with no server. |
+| No text from a source can break a feed page or run a script there. | `.github/ci/check`: `a hostile source can break a page`, `web: feed pages run no script` | `escaped()` that returns its input, the `$no_script` lines removed. |
+| The package and the OpenBSD patches stay current. | `health-check`: `patch not installed` | A fresh guest, which has none of the patches. |
+| The `deploy` user can only swap in a new `site` folder. | `sshd: deploy …`, `deploy: …` | No `ForceCommand` or `AllowTcpForwarding`, a `deploy-only` that runs the command or takes any folder. |
+| smtpd takes mail only for the listed addresses and relays nothing for others. | `mail: … is accepted`, `mail: … is refused`, `mail: VPN to another domain is refused`, `mail: forwarded to the mailbox` | An alias removed or added, a VPN listener that relays, a guest with no mailbox. |
+| Web and mail speak only TLS 1.3, with a certificate that lasts 14 days or more and a TLSA record that matches its key and is signed from the root. | `mail: STARTTLS …`, outside: `TLS: …`, `DNS: the TLSA record …`, `.github/ci/outside`: testssl.sh and delv, `health-check`: the certificate | `protocols "tlsv1.2"` on the mail listener, the guest's one-day certificate. |
+| A host that opens connections too fast is blocked for a day; `doas pfctl -t flood -T delete ADDRESS` lets it out. | `pf: the flood table exists` | The table deleted. |
+| VPN clients get a resolver that checks DNSSEC and answers "no such name" for the blocklist and `use-application-dns.net`. | `DNS: …` | An empty blocklist, the canary zone removed, `insecure_add`. |
+| VPN peers are all on wg0 and reach each other through the server. | `VPN: …` | A peer removed, forwarding off. |
+| Every page carries HSTS, nosniff, no referrer, no framing, and a CSP that loads only from this site and allows no inline code. | `web: HSTS is on` … `web: no page may run an inline script or style`, `web: a cached feed keeps the security headers` | Each header line removed, `unsafe-inline` added. |
+| httpd sends www and HTTP to `https://teoyujie.org`, answers ACME on HTTP, serves the public files, file links and MTA-STS policy, keeps file links out of search engines, lists no folder, and lets feed files be reused for five minutes. | the other `web: …` checks | Each redirect, location, header or file removed; `directory auto index`; mode 700 on the share folder. |
+| `health-check` runs each day, reports each problem it names, and publishes the time it ran. | `health-check runs`, `health-check publishes the time it ran`, the `health-check` part of `openbsd-faults` | Mode 644 on the script, an old `health.txt`, and one fault for each report. |
+| An SSH login from outside the VPN mails root, and a user name cannot fake one. | `SSH alert …` | `exit 0` in `ssh-alert`, a match on the whole log line. |
+| Each job runs from `/etc/crontab`, and root's own crontab is empty. | `root's own crontab holds none of these jobs` | A job in root's crontab. |
+| The repo holds no private key. | `.github/ci/check`: `a private key is tracked` | A tracked key. |
 
 ## Scheduled jobs
 
@@ -209,11 +231,9 @@ The system crontab comes from `etc/crontab`. It names the user that runs each jo
 | Weekly | `sg-update` fetches Singapore government feeds and the Gazette on Saturday morning, Singapore time. It ranks the documents by the fixed rules at the top of the script and writes `/singapore-policy-actionables.html`, `/singapore-policy-actionables.xml` and `/singapore-policy-actionables.txt`. If a source fails, its last good copy is used. |
 | Hourly | `sg-update --render` ranks the saved copies again when a deploy has brought a `notes/policy.txt` newer than the pages. Each line of that file adds or removes points for one document and gives a note to show. On the first run after install it fetches. |
 
-Separately, `sbin/ssh-alert` mails root about any SSH login from an address outside the VPN.
-
 ## Watch from outside
 
-A server that is down sends no mail, and neither does one whose mail cannot leave, so `health-check` cannot report either. `sh test.sh --outside` needs only `nc`, `openssl` and `dig`, and exits with a failure when the server does not answer as it should. It also reads `/health.txt`, where `health-check` writes the time it ran and the count of mail that is stuck or was refused. Run it on a timer on a machine at home and alert on a failure.
+A server that is down sends no mail, and neither does one whose mail cannot leave, so `health-check` cannot report either. `sh test.sh --outside` needs only `nc`, `openssl` and `dig`, and exits with a failure when the server does not answer as it should. It also reads `/health.txt`, where `health-check` writes the time it ran and the count of mail that is stuck or was refused. `.github/workflows/outside.yml` runs it each hour on the desktop and opens an issue when it fails; GitHub stops a schedule after 60 days without a commit, and the watch is silent while the desktop is off.
 
 ## Upgrade OpenBSD
 
