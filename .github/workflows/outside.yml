@@ -1,0 +1,55 @@
+# The outside watch. A dead server sends no mail, so health-check cannot report it, and this job does.
+# Every hour it runs the outside set of test.sh. Once a day it also scans all TCP ports, runs testssl.sh
+# and checks the DNSSEC chain of the TLSA record. When a check fails, it opens an issue or adds to the open one.
+name: outside
+
+on:
+  schedule:
+    - cron: '17 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+# Two runs at once would each open an issue.
+concurrency:
+  group: outside
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  outside:
+    # The owner's desktop: a machine at home, not the server. It has no IPv6 route, so the IPv6 checks print SKIP.
+    runs-on: [self-hosted, desktop]
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Outside checks, and the scans at 03:17 UTC
+        env:
+          XDG_CACHE_HOME: ${{ runner.temp }}/cache
+        run: |
+          scan=
+          [ "$(date -u +%H)" != 03 ] || scan=--scan
+          nix shell nixpkgs#netcat nixpkgs#openssl nixpkgs#bind.dnsutils nixpkgs#nmap nixpkgs#testssl nixpkgs#jq \
+            -c bash .github/ci/outside ${scan} | tee "${RUNNER_TEMP}/outside.txt"
+      - name: Open an issue, or add to the open one
+        if: failure()
+        env:
+          XDG_CACHE_HOME: ${{ runner.temp }}/cache
+          GH_TOKEN: ${{ github.token }}
+          RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          gh() { nix shell nixpkgs#gh -c gh "$@"; }
+          title='The outside watch failed'
+          { echo "${RUN}"; echo; echo '```'; grep -E '^(FAIL|SKIP)' "${RUNNER_TEMP}/outside.txt" || echo 'The job failed before any check ran.'; echo '```'; } > "${RUNNER_TEMP}/body.md"
+          n=$(gh issue list --repo "${GITHUB_REPOSITORY}" --state open --search "in:title \"${title}\"" --json number --jq '.[0].number // empty')
+          if [ -n "${n}" ]; then
+            gh issue comment "${n}" --repo "${GITHUB_REPOSITORY}" --body-file "${RUNNER_TEMP}/body.md"
+          else
+            gh issue create --repo "${GITHUB_REPOSITORY}" --title "${title}" --body-file "${RUNNER_TEMP}/body.md"
+          fi
