@@ -337,6 +337,14 @@ sub read_bets {
 		$bet{$_} = '' for grep { ($bet{$_} // '') ne '' && $bet{$_} !~ m{^https://\S+$} } qw(url archive market source evidence fermi_url);
 		push @bets, \%bet;
 	}
+	my %by_id = map { $_->{id} => $_ } @bets;
+	for my $bet (@bets) {
+		my $id = $bet->{repeat_of} // '';
+		my $first = $id =~ /\A[0-9a-f]{8}\z/ ? $by_id{$id} : undef;
+		delete $bet->{repeat_of} unless $first && $id ne $bet->{id}
+			&& ($bet->{by} // '') ne '' && ($first->{by} // '') eq $bet->{by}
+			&& ($bet->{market} // '') ne '' && ($first->{market} // '') eq $bet->{market};
+	}
 	return @bets;
 }
 my @bets = read_bets($bets_text);
@@ -395,14 +403,15 @@ sub anchor {
 	return '<a href="' . escaped($url) . '" rel="noopener noreferrer">' . escaped($text) . '</a>';
 }
 
-# The people of the rankings, by the names they give, with what their settled bets multiplied.
+# Settlements and scored forecasts are separate: a repeated bet is still kept in the ledger.
 my @people = (@forecasters, map { $_->[0] } @lesswrong);
-my %person = map { $_ => { bets => 0, settled => 0, e => 1 } } @people;
+my %person = map { $_ => { bets => 0, settled => 0, scored => 0, score => 1 } } @people;
 for my $bet (@bets) {
 	my $p = $person{$bet->{by}} or next;
 	$p->{bets}++;
-	$p->{settled}++ if $bet->{factor} ne '';
-	$p->{e} = $bet->{running_e} if $bet->{running_e} =~ /^\d+(?:\.\d+)?(?:e[+-]?\d+)?$/;
+	$p->{settled}++ if $bet->{outcome} ne 'open';
+	$p->{scored}++ if $bet->{factor} ne '' && $bet->{outcome} ne 'void' && !$bet->{repeat_of};
+	$p->{score} = $bet->{running_e} if $bet->{running_e} =~ /^\d+(?:\.\d+)?(?:e[+-]?\d+)?$/;
 }
 
 sub render_bets {
@@ -412,8 +421,8 @@ sub render_bets {
 	my $rows = '';
 	for my $name (sort { $person{$b}{bets} <=> $person{$a}{bets} || lc $a cmp lc $b } grep { $person{$_}{bets} } @people) {
 		my $p = $person{$name};
-		my $e = $p->{settled} ? sprintf('%.3g', $p->{e}) : '';
-		$rows .= '<tr><td>' . escaped($name) . "</td><td>$p->{bets}</td><td>$p->{settled}</td><td>$e</td></tr>\n";
+		my $score = $p->{scored} ? sprintf('%.3g', $p->{score}) : '';
+		$rows .= '<tr><td>' . escaped($name) . "</td><td>$p->{bets}</td><td>$p->{settled}</td><td>$p->{scored}</td><td>$score</td></tr>\n";
 	}
 	my @none = sort { lc $a cmp lc $b } grep { !$person{$_}{bets} } @people;
 	my $none = @none ? '<p>No priced bet yet: ' . join(', ', map { escaped($_) } @none) . '.</p>' : '';
@@ -431,7 +440,11 @@ sub render_bets {
 		} elsif ($bet->{outcome} eq 'void') {
 			$verdict = 'Void: the source cancelled or only partly resolved it (' . anchor($bet->{evidence}, $bet->{settled}) . ').';
 		} else {
-			$verdict = 'Resolved ' . uc($bet->{outcome}) . ' on ' . anchor($bet->{evidence}, $bet->{settled}) . '. Factor against the market: ' . sprintf('%.3g', $bet->{factor}) . '. Running e-value of ' . escaped($bet->{by}) . ': ' . sprintf('%.3g', $bet->{running_e}) . '.';
+			$verdict = 'Resolved ' . uc($bet->{outcome}) . ' on ' . anchor($bet->{evidence}, $bet->{settled}) . '.';
+			$verdict .= ' Factor against the market: ' . sprintf('%.3g', $bet->{factor}) . '. Running score of ' . escaped($bet->{by}) . ': ' . sprintf('%.3g', $bet->{running_e}) . '.' unless $bet->{repeat_of};
+		}
+		if (my $first = $bet->{repeat_of}) {
+			$verdict .= qq{ Not scored separately: uses the same recorded market as <a href="#bet-$first">bet $first</a>.};
 		}
 		my $revises = $bet->{revises} =~ /^[0-9a-f]{8}$/ ? qq{ Revises <a href="#bet-$bet->{revises}">bet $bet->{revises}</a>.} : '';
 		my $correction = $bet->{correction} ne '' ? '<p>Correction: ' . escaped($bet->{correction}) . '</p>' : '';
@@ -469,13 +482,14 @@ sub render_bets {
 <ul>
 <li>A bet is a claim that one of the 40 made or revised, in their own words, on a question a market resolves. The quote, the posting time, an archive.org snapshot and a SHA-256 of the text are stored when it is recorded.</li>
 <li>The price is the market's YES price just before the item was posted. A stated chance p is scored against it: the factor is p/price if YES, and (1 − p)/(1 − price) if NO. With no stated chance, the bet stakes half at the market price on the side the person takes.</li>
-<li>Only the named source settles a bet: the market's own resolution. A cancelled or partial resolution is void and scores 1.</li>
-<li>A person's running e-value multiplies the factors of their settled bets. If the market prices are right, its expected value is 1. An e-value of 20 is evidence of skill at the 5% level for one person chosen in advance. For the best of 40, it takes 800.</li>
+<li>Only the named source settles a bet: the market's own resolution. A cancelled or partial resolution is void and does not change the score.</li>
+<li>Where marked, later bets by the same person on the same recorded market stay visible but do not add another score factor. Older ledger exports may not identify repeats.</li>
+<li>A person's running score multiplies the recorded factors. It describes the recorded bets; it does not establish statistical significance.</li>
 <li>The Fermi check compares any physical quantity a claim implies with the most ever built or made in a year, from EIA, IAEA and SEC EDGAR filings.</li>
 <li>Names are as the people give them. If you are named and a quote, price or verdict is wrong, use the dispute link of the bet. Corrections are made in the ledger and shown on the bet.</li>
 </ul>
 <h2>People</h2>
-<table><thead><tr><th>Person</th><th>Bets</th><th>Settled</th><th>e-value against the market</th></tr></thead><tbody>
+<table><thead><tr><th>Person</th><th>Bets</th><th>Settled</th><th>Scored</th><th>Running score against the market</th></tr></thead><tbody>
 $rows</tbody></table>
 $none
 <h2>Bets, newest first</h2>
@@ -494,8 +508,13 @@ for my $bet (@bets) {
 	my $view = $bet->{p} ne '' ? 'stated ' . percent($bet->{p}) : "takes $bet->{side}";
 	my $link = "$site/forecasters.html#bet-$bet->{id}";
 	push @feed_items, { link => $link, guid => "bet-$bet->{id}", title => $title, date => $made, label => "“$bet->{quote}” Market " . percent($bet->{price}) . ", $view. Due $bet->{due}." };
+	my $repeat = $bet->{repeat_of} ? "Not scored separately: uses the same recorded market as bet $bet->{repeat_of}." : '';
+	$feed_items[-1]{label} .= " $repeat" if $repeat ne '';
 	if ($bet->{outcome} ne 'open' && $bet->{settled} =~ /^\d{4}-\d\d-\d\d$/) {
-		push @feed_items, { link => $link, guid => "bet-$bet->{id}-$bet->{outcome}", title => "Settled $bet->{outcome}: $title", date => epoch("$bet->{settled}T00:00:00Z"), label => "Factor against the market: $bet->{factor}. Running e-value of $bet->{by}: $bet->{running_e}." };
+		my $label = $bet->{outcome} eq 'void' ? 'Void: no change to the running score.' . ($repeat ne '' ? " $repeat" : '')
+			: $repeat ne '' ? $repeat
+			: "Factor against the market: $bet->{factor}. Running score of $bet->{by}: $bet->{running_e}.";
+		push @feed_items, { link => $link, guid => "bet-$bet->{id}-$bet->{outcome}", title => "Settled $bet->{outcome}: $title", date => epoch("$bet->{settled}T00:00:00Z"), label => $label };
 	}
 }
 @feed_items = sort { $b->{date} <=> $a->{date} || $a->{guid} cmp $b->{guid} } @feed_items;

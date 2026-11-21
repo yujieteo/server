@@ -1,0 +1,41 @@
+# Offline checks of the scripts and configs. They never contact the server,
+# deploy or use secrets, because the repository is public.
+name: check
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# The job only reads the repository.
+permissions:
+  contents: read
+
+# A new push to a pull request makes its older run useless, so that run stops.
+# Runs on main are left to finish, so each commit there keeps its result.
+concurrency:
+  group: check-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+defaults:
+  run:
+    # bash with pipefail, so a failure inside a pipeline fails the step.
+    shell: bash
+
+jobs:
+  check:
+    # The owner's self-hosted runner on the NixOS desktop. It is Linux, not OpenBSD,
+    # so the checks that need OpenBSD's own tools stay in install.sh on the server.
+    runs-on: [self-hosted, desktop]
+    # The checks take about a minute. The limit stops a hung job from holding the runner.
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The job never pushes, so it keeps no token in the clone.
+          persist-credentials: false
+      - name: Shell, Perl, sshd and unbound checks
+        env:
+          # Each job runs as a new user with no home folder, so nix keeps its cache in the job's temporary folder.
+          XDG_CACHE_HOME: ${{ runner.temp }}/cache
+        run: nix shell nixpkgs#oksh nixpkgs#shellcheck nixpkgs#perl nixpkgs#openssh nixpkgs#unbound -c bash .github/ci/check

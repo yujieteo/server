@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+# Offline checks of this repository, for CI and by hand on Linux.
+# Get the tools from nix, as the workflow does:
+#   nix shell nixpkgs#oksh nixpkgs#shellcheck nixpkgs#perl nixpkgs#openssh nixpkgs#unbound -c bash .github/ci/check
+# It does not contact the server. test.sh is the check that runs there.
+set -euo pipefail
+cd "$(dirname "$0")/../.."
+tmp=$(mktemp -d)
+trap 'rm -rf "${tmp}"' EXIT
+failed=0
+fail() { echo "FAIL: $*"; failed=1; }
+
+# The first line of each tracked file says what it is, so a new script is checked without a change here.
+# Files under .github are for CI only and never go to the server.
+shell=() perl=()
+while IFS= read -r f; do
+	[[ -f ${f} && ${f} != .github/* ]] || continue
+	first=
+	IFS= read -r first < "${f}" || :
+	case ${first} in
+	'#!/bin/sh'* | '#!/bin/ksh'*) shell+=("${f}") ;;
+	'#!/usr/bin/perl'*) perl+=("${f}") ;;
+	*) [[ ${f} != *.pl ]] || perl+=("${f}") ;;
+	esac
+done < <(git ls-files)
+echo "Shell scripts: ${shell[*]}"
+echo "Perl files: ${perl[*]}"
+
+# On OpenBSD, /bin/sh is the OpenBSD Korn shell. oksh is the same shell ported to Linux,
+# so it parses the scripts as the server does. The runner's own sh is bash, which accepts more.
+for f in "${shell[@]}"; do
+	oksh -n "${f}" || fail "oksh -n ${f}"
+done
+
+# The scripts are meant to be POSIX sh, so shellcheck uses that dialect.
+# Only warnings and errors fail the job. The info-level notes (SC1091, SC2016, SC2029, SC2086
+# and SC2329 at the time of writing) are left for the owner to decide on; run with -S style to see them.
+shellcheck -s sh -S warning "${shell[@]}" || fail shellcheck
+
+# The scripts load feed-common.pl with require, at run time, so perl -c of a script does not compile it.
+# feed-common.pl is therefore checked on its own. It uses OpenBSD::Pledge and OpenBSD::Unveil,
+# which exist only in OpenBSD's perl, so stand-ins that export the same names let it compile here.
+mkdir -p "${tmp}/perl/OpenBSD"
+for m in Pledge Unveil; do
+	n=$(tr '[:upper:]' '[:lower:]' <<< "${m}")
+	printf 'package OpenBSD::%s;\nuse strict;\nuse warnings;\nuse Exporter qw(import);\nour @EXPORT = qw(%s);\nsub %s { 1 }\n1;\n' \
+		"${m}" "${n}" "${n}" > "${tmp}/perl/OpenBSD/${m}.pm"
+done
+for f in "${perl[@]}"; do
+	perl -I"${tmp}/perl" -c "${f}" || fail "perl -c ${f}"
+done
+
+# install.sh checks each config with its own daemon before it installs it. Of those daemons,
+# only sshd and unbound have Linux builds that read the same config. They are newer than
+# the ones in OpenBSD base, so a pass here does not replace the check on the server.
+# httpd, smtpd, acme-client and pf are OpenBSD only, and are not checked here.
+ssh-keygen -q -t ed25519 -N '' -f "${tmp}/host_key"
+sshd -t -f etc/sshd_config -h "${tmp}/host_key" || fail 'sshd -t etc/sshd_config'
+
+# unbound.conf names files under /var/unbound, which install.sh makes on the server.
+# The copy here points at stand-ins for them, and turns off the chroot and the user change.
+# The trust anchor is the public DS record of the DNS root key (KSK-2017).
+mkdir -p "${tmp}/unbound/db" "${tmp}/unbound/etc"
+: > "${tmp}/unbound/etc/blocklist.conf"
+echo '. IN DS 20326 8 2 E06D44B80B8F1D39A95C0B0D7C65D08458E880409BBC683457104237C7F8EC8D' > "${tmp}/unbound/db/root.key"
+while IFS= read -r line; do
+	printf '%s\n' "${line//\/var\/unbound\//${tmp}/unbound/}"
+	[[ ${line} != server: ]] || printf '\tchroot: ""\n\tusername: ""\n'
+done < etc/unbound.conf > "${tmp}/unbound.conf"
+unbound-checkconf "${tmp}/unbound.conf" || fail 'unbound-checkconf etc/unbound.conf'
+
+[[ ${failed} -eq 0 ]] && echo 'All offline checks passed.'
+exit "${failed}"
