@@ -136,6 +136,28 @@ sub epoch {
 	return defined $time ? $time - offset($zone) : undef;
 }
 
+# An arXiv paper keeps its identity across revisions: the abstract address with no version number.
+# The arXiv API links to the newest revision (/abs/2102.13459v4), so the version is left out.
+# A modern id is 2102.13459. An old one has its archive first, as in math/0601001 or math.AG/0601001.
+# Any other link gives nothing, so its item keeps the id and RSS GUID it always had.
+my $arxiv_id = qr{(?:\d{4}\.\d{4,5}|[a-z]+(?:-[a-z]+)?(?:\.[A-Za-z]+(?:-[a-z]+)?)?/\d{7})};
+
+sub arxiv_identity {
+	my ($link) = @_;
+	return $link =~ m{^https?://(?:www\.|export\.)?arxiv\.org/abs/($arxiv_id)(?:v\d+)?$} ? "https://arxiv.org/abs/$1" : undef;
+}
+
+# Before arXiv items had a stable id, an item's id was the hash of the link with its version.
+# Notes saved then are under those ids, so these are the ids of every version up to this one, newest first.
+sub legacy_ids {
+	my ($link) = @_;
+	return () unless defined arxiv_identity($link);
+	my ($base, $version) = $link =~ m{^(.*?)(?:v(\d+))?$};
+	my @links = ($link);
+	push @links, map { "${base}v$_" } reverse 1 .. ($version < 100 ? $version - 1 : 99) if defined $version;
+	return map { substr(md5_hex($_), 0, 8) } @links;
+}
+
 sub parse {
 	my ($xml, $name, $limit) = @_;
 	my @items;
@@ -155,8 +177,10 @@ sub parse {
 			$text = excerpt($body, $excerpt_length);
 		}
 		next unless $title ne '' && $link =~ m{^https?://\S{1,2000}$} && defined $date;
-		push @items, { id => substr(md5_hex($link), 0, 8), title => $title, link => $link, date => $date, source => $source, label => $text eq '' ? $source : "$source: $text",
+		my $identity = arxiv_identity($link);
+		push @items, { id => substr(md5_hex($identity // $link), 0, 8), title => $title, link => $link, date => $date, source => $source, label => $text eq '' ? $source : "$source: $text",
 			body => $body, market => $description =~ m{(?:manifold\.markets|polymarket\.com|kalshi\.com)/} ? 1 : 0 };
+		$items[-1]{guid} = $identity if defined $identity;
 		last if @items == $limit;
 	}
 	return @items;
@@ -282,7 +306,8 @@ sub gather {
 			# A date over a day ahead is a mistake, so that item is left out.
 			next if $item->{date} > $now + $clock_slack;
 			$item->{date} = $now if $item->{date} > $now;
-			$seen{$item->{link}} //= $item;
+			# An arXiv paper is one item, whatever revision a link names.
+			$seen{$item->{guid} // $item->{link}} //= $item;
 		}
 	}
 	return ($working, \%seen);
@@ -292,9 +317,11 @@ my ($working, $seen) = gather(@sources);
 die "feed-update: only $working of " . scalar(@sources) . " sources worked, the old feed stays\n" if $working * 2 < @sources;
 
 # A note moves an item by one hour for each point, and its text goes first in the label.
+# A note under the item's id comes first. An arXiv item also finds a note saved under an older id.
 my $notes = read_notes($notes_text);
 for my $item (values %$seen) {
-	my $note = $notes->{$item->{id}} or next;
+	my ($note) = grep { defined } map { $notes->{$_} } $item->{id}, legacy_ids($item->{link});
+	next unless $note;
 	$item->{rank} = $note->{points} * 3600;
 	$item->{label} = "$note->{text} · $item->{label}" if $note->{text} ne '';
 }
