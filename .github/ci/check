@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Offline checks of this repository, for CI and by hand on Linux.
 # Get the tools from nix, as the workflow does:
-#   nix shell nixpkgs#oksh nixpkgs#shellcheck nixpkgs#perl nixpkgs#openssh nixpkgs#unbound -c bash .github/ci/check
+#   nix shell nixpkgs#oksh nixpkgs#shellcheck nixpkgs#perl nixpkgs#openssh nixpkgs#unbound nixpkgs#python3 -c bash .github/ci/check
 # It does not contact the server. test.sh is the check that runs there.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
@@ -11,20 +11,22 @@ failed=0
 fail() { echo "FAIL: $*"; failed=1; }
 
 # The first line of each tracked file says what it is, so a new script is checked without a change here.
-# Files under .github are for CI only and never go to the server.
-shell=() perl=()
+# The guest scripts under .github/ci run on OpenBSD too, so they get the same checks.
+shell=() perl=() python=()
 while IFS= read -r f; do
-	[[ -f ${f} && ${f} != .github/* ]] || continue
+	[[ -f ${f} && ${f} != .github/workflows/* ]] || continue
 	first=
 	IFS= read -r first < "${f}" || :
 	case ${first} in
 	'#!/bin/sh'* | '#!/bin/ksh'*) shell+=("${f}") ;;
 	'#!/usr/bin/perl'*) perl+=("${f}") ;;
+	'#!/usr/bin/env python3'*) python+=("${f}") ;;
 	*) [[ ${f} != *.pl ]] || perl+=("${f}") ;;
 	esac
 done < <(git ls-files)
 echo "Shell scripts: ${shell[*]}"
 echo "Perl files: ${perl[*]}"
+echo "Python files: ${python[*]}"
 
 # On OpenBSD, /bin/sh is the OpenBSD Korn shell. oksh is the same shell ported to Linux,
 # so it parses the scripts as the server does. The runner's own sh is bash, which accepts more.
@@ -49,6 +51,16 @@ done
 for f in "${perl[@]}"; do
 	perl -I"${tmp}/perl" -c "${f}" || fail "perl -c ${f}"
 done
+
+# A source can send any bytes. Whatever it sends, a page must stay valid UTF-8 that XML allows, with no markup of its own.
+perl -I"${tmp}/perl" -e 'require "./sbin/feed-common.pl";
+	my $out = escaped(unescaped(join("", map { chr } 0 .. 255) . "\xed\xa0\x80\xef\xbf\xbe&#1;&#xFFFE;&#55296;<b>&amp;\""));
+	my $text = $out;
+	exit !(utf8::decode($text) && $out !~ /[\x00-\x08\x0b\x0c\x0e-\x1f<>"]|\xef\xbf\xbe|\xed[\xa0-\xbf]|&(?!amp;|lt;|gt;|quot;)/)' ||
+	fail 'feed-common.pl: a hostile source can break a page'
+python3 -c 'import ast, sys; [ast.parse(open(f).read(), f) for f in sys.argv[1:]]' "${python[@]}" || fail 'python syntax'
+# The repository is public. The server makes its own keys, and local.conf stays on the Mac.
+! git grep -qE -- '-----BEGIN [A-Z ]*PRIVATE KEY-----' || fail 'a private key is tracked'
 
 # install.sh checks each config with its own daemon before it installs it. Of those daemons,
 # only sshd and unbound have Linux builds that read the same config. They are newer than
