@@ -4,7 +4,7 @@ set -eu
 usage() {
 	cat >&2 <<'EOF'
 usage: ./share [--days N] FILE   upload FILE and print a link with 128 random bits; it works for N days (1 to 365, default 30)
-       ./share --list            show the live links and the day each one ends
+       ./share --list            show the live links and their expiry dates (or no scheduled expiry)
        ./share --rm LINK         delete a link now (the whole link, or its 32-character id)
 EOF
 	exit 1
@@ -13,8 +13,20 @@ server=$ADMIN_USER@10.8.0.1
 case ${1-} in
 --list)
 	[ $# -eq 1 ] || usage
-	# Cron deletes a folder 30 days after its modification time.
-	ssh "$server" 'cd /var/www/files/f && for p in */*; do [ -f "$p" ] || continue; m=$(stat -f %m "${p%/*}"); echo "$(date -r $((m + 2592000)) +%Y-%m-%d)  https://teoyujie.org/f/$p"; done' | sort
+	# Match the expiry job: a regular .keep file exempts that share.
+	ssh "$server" '
+		cd /var/www/files/f || exit 1
+		for p in */*; do
+			[ -f "$p" ] || continue
+			folder=${p%/*}
+			if [ -f "$folder/.keep" ]; then
+				ends="no scheduled expiry"
+			else
+				m=$(stat -f %m "$folder")
+				ends=$(date -r $((m + 2592000)) +%Y-%m-%d)
+			fi
+			printf "%s  https://teoyujie.org/f/%s\n" "$ends" "$p"
+		done' | sort
 	exit 0 ;;
 --rm)
 	[ $# -eq 2 ] || usage

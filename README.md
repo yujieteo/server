@@ -18,7 +18,7 @@ This repo is public and holds no secrets. The server generates its own TLS, ACME
 | `apply` | Mac or desktop | Sends the source to the server, then checks, installs or tests it. |
 | `install.sh` | Server, as root | Renders every managed file, shows how the live server differs, and copies what differs. A fresh OpenBSD install and a running server take the same path. |
 | `test.sh` | Server, as root | Tests the running services. With `--outside` it runs on any other machine and tests what the internet and a VPN peer see. |
-| `share` | Mac | `./share [--days N] FILE` uploads a file and prints a link that lasts N days (default 30). `--list` shows the live links and `--rm LINK` deletes one. |
+| `share` | Mac | `./share [--days N] FILE` uploads a file and prints a link that lasts N days (default 30). `--list` shows the live links with an expiry date or `no scheduled expiry`; `--rm LINK` deletes one. |
 | `local.conf.example` | | Template for `local.conf`, filled with test values. |
 | `etc/` | | Configs for httpd, smtpd, acme-client, pf, sshd, unbound, doas, sysctl, cron and the public network interface. |
 | `sbin/` | Server | Scheduled jobs, the Perl helpers they share (`feed-common.pl`) and the forced command of the `deploy` user. |
