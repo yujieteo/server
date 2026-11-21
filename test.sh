@@ -133,6 +133,7 @@ t "root's own crontab holds none of these jobs" not sh -c 'crontab -l | grep -q 
 t "sshd: no root login" sh -c "sshd -T | grep -qix 'permitrootlogin no'"
 t "sshd: keys only" sh -c "sshd -T | grep -qix 'authenticationmethods publickey'"
 t "sshd: deploy runs only deploy-only" sh -c "sshd -T -C user=deploy,host=x,addr=10.8.0.2 | grep -qix 'forcecommand /usr/local/sbin/deploy-only'"
+t "sshd: deploy gets no forwarding, terminal or rc file" is_eq 4 sh -c "sshd -T -C user=deploy,host=x,addr=10.8.0.2 | grep -ciE '^(allowtcpforwarding|allowagentforwarding|permittty|permituserrc) no$'"
 t "admin keys: VPN only" not grep -qv '^from="10.8.0.0/24" ssh-' "/home/${ADMIN_USER:?}/.ssh/authorized_keys"
 
 deploy_ssh() {
