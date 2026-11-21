@@ -51,8 +51,9 @@ esac
 
 # Ages in minutes: find rounds up, so -mtime +0 would match every file.
 # feed-update hides a failing source behind its last good copy, so only the age of that copy shows it.
+# It writes the manifest last, so an old manifest also shows a run that stopped half way.
 feed=/var/www/feed
-find $feed/feed.xml -mmin +360 | sed 's#.*/##; s/$/ has not been rebuilt for 6 hours/'
+find $feed/feeds-manifest.json -mmin +360 | sed 's#.*/##; s/$/ has not been rebuilt for 6 hours: feed-update stops before it/'
 find $feed/edmw.xml -mmin +2880 2>/dev/null | sed 's#.*/##; s/$/ has not been rebuilt for 2 days/'
 # edmw-update writes its first file about a day after install, and install gives the script a new date.
 [ -e $feed/edmw.xml ] || find /usr/local/sbin/edmw-update -mmin +2880 | sed 's/.*/edmw.xml is still missing 2 days after install/'
