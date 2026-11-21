@@ -4,3 +4,5 @@ inet autoconf
 inet6 -soii
 inet6 autoconf
 inet6 -temporary
+# smtpd and httpd cannot bind an IPv6 address while it is tentative, so the daemons that start next wait for it.
+!for i in 1 2 3 4 5 6 7 8 9 10; do case $(ifconfig \$if) in *tentative*) sleep 1 ;; *) break ;; esac; done
