@@ -91,6 +91,8 @@ if [ "${1-}" = --outside ]; then
 		t "${via}: port 25 answers as a mail server" banner "${family}" "${web}" 25
 		for port in 22 53 465 587; do t "${via}: port ${port} is closed" not open "${family}" "${web}" "${port}"; done
 	done
+	# openssl has no connect timeout, so on a dead server each check below would wait minutes.
+	open "${web}" 443 2> /dev/null || finish
 	t "TLS: the certificate lasts 14 days or more" certificate_lasts "${web}:443"
 	t "TLS: version 1.2 is refused" not sh -c "openssl s_client -tls1_2 -connect ${web}:443 < /dev/null 2>&1 | grep -q 'Cipher is [A-Z]'"
 	# DANE senders check the key of the mail server against this record. Web and mail share the key.
@@ -142,8 +144,9 @@ deploy_pages() {
 deploy_replaces() {
 	touch /var/www/web/site/old.html && deploy_pages "$1" && [ ! -e /var/www/web/site/old.html ]
 }
+# The refusal itself, not any failure: an empty tar stream fails too.
 deploy_refuses() {
-	! deploy_ssh "$1" "$2" < /dev/null
+	deploy_ssh "$1" "$2" < /dev/null 2>&1 | grep -q "use 'site'"
 }
 if [ -n "${1:-}" ]; then
 	p=$(mktemp -d)
@@ -159,15 +162,21 @@ web_checks
 d=$(openssl rand -hex 16)
 mkdir "/var/www/files/f/${d}" && echo test > "/var/www/files/f/${d}/a.txt"
 t "web: file link" is_eq '200 ' status 443 teoyujie.org "/f/${d}/a.txt"
+t "web: search engines do not index file links" has_header "/f/${d}/a.txt" "X-Robots-Tag: noindex"
 rm -r "/var/www/files/f/${d}"
 
 # Each user writes its own folder and no other. A feed job, once confined, reaches nothing else at all.
 # The confined checks run as nobody: health-check reports each such refusal of the feed user as a fault.
 confined="require '/usr/local/sbin/feed-common.pl'; confine('/var/www/feed');"
+# The kill (P) and refused-file (U) marks of the user nobody so far, so the check counts only this run's.
+marks() {
+	lastcomm perl | awk '$3 == "nobody" && $2 ~ /P/ { p++ } $3 == "nobody" && $2 ~ /U/ { u++ } END { print p + 0, u + 0 }'
+}
+marks_before=$(marks)
 t "feed user: writes the feed folder" as _feed 'touch /var/www/feed/.test && rm /var/www/feed/.test'
 t "feed user: cannot write the site" not as _feed 'touch /var/www/web/site/.test'
-t "deploy user: cannot write the feed folder" not as deploy 'touch /var/www/feed/.test'
-t "web server: cannot write the site or the feed folder" not as www 'touch /var/www/web/site/.test || touch /var/www/feed/.test'
+t "deploy user: cannot write the feed folder" not as deploy 'touch /var/www/feed/.test-deploy'
+t "web server: cannot write the site or the feed folder" not as www 'touch /var/www/web/site/.test || touch /var/www/feed/.test-www'
 t "feed job: cannot write outside its folder" not as nobody "perl -e \"${confined} open(F, '>', '/tmp/.test') or exit 1\""
 t "feed job: cannot read outside its folder" not as nobody "perl -e \"${confined} open(F, '<', '/etc/passwd') or exit 1\""
 t "feed job: runs no program but ftp" not as nobody "perl -e \"${confined} exec('/bin/sh', '-c', 'true'); exit 1\""
@@ -178,13 +187,19 @@ killed() {
 }
 t "feed job: the kernel kills it if it runs a program once it parses" killed "perl -e \"${confined} fetched(); exec('/usr/bin/ftp', '-h')\""
 
-t "feed job: accounting records the kill and the refused file" sh -c "sleep 1; lastcomm perl | awk '\$3 == \"nobody\" { print \$2 }' | tr -d '\n' | grep -q 'P.*U'"
+marked_again() {
+	sleep 1
+	# shellcheck disable=SC2046
+	set -- ${marks_before} $(marks)
+	[ "$3" -gt "$1" ] && [ "$4" -gt "$2" ]
+}
+t "feed job: accounting records the kill and the refused file" marked_again
 
 mail_to() {
 	printf 'From: test@example.org\nSubject: test.sh\n\ntest\n' | smtp -C -s "smtp://$1" -F test@example.org "$2" 2>&1 | grep -q "$3"
 }
 forwards() {
-	grep -c "to=<${FORWARD_TO:?}> rcpt=<contact@teoyujie.org>" /var/log/maillog
+	grep -c "to=<${FORWARD_TO:?}> rcpt=<contact@teoyujie.org>.* result=\"Ok\"" /var/log/maillog
 }
 # The relay to the mailbox can take a quarter of a minute, so the check waits for this run's message.
 forwarded() {
@@ -209,13 +224,16 @@ t "mail: leaves only over checked TLS" grep -q '^action "outbound" relay srs tls
 t "mail: STARTTLS works with TLS 1.3" sh -c "openssl s_client -starttls smtp -tls1_3 -connect ${web}:25 < /dev/null 2>&1 | grep -q 'Cipher is [A-Z]'"
 t "mail: STARTTLS refuses TLS 1.2" not sh -c "openssl s_client -starttls smtp -tls1_2 -connect ${web}:25 < /dev/null 2>&1 | grep -q 'Cipher is [A-Z]'"
 
+# A busy queue can log the alert mail some seconds later.
 alert_mails_exceed() {
-	count=$(grep -c 'from=<_syslogd@' /var/log/maillog)
-	[ "${count}" -gt "$1" ]
+	for _ in $(jot 15); do
+		[ "$(grep -c 'from=<_syslogd@' /var/log/maillog)" -gt "$1" ] && return 0
+		sleep 1
+	done
+	return 1
 }
 before=$(grep -c 'from=<_syslogd@' /var/log/maillog)
 logger -p auth.info -t sshd "Accepted publickey for test from 192.0.2.1 port 1 ssh2"
-sleep 2
 t "SSH alert for an unknown address" alert_mails_exceed "${before}"
 p=$(mktemp -d)
 printf '%s\n' '#!/bin/sh' "echo \"\$2\" >> ${p}/sent" 'cat > /dev/null' > "${p}/mail"
@@ -282,6 +300,7 @@ blocked_name=$(awk -F'"' '/ always_nxdomain$/ { print $2; exit }' /var/unbound/e
 t "DNS: blocklist loaded" no_such_name "${blocked_name}"
 t "DNS: Firefox is told to use this resolver" no_such_name use-application-dns.net
 t "DNS: other names resolve" sh -c 'dig +short @10.8.0.1 openbsd.org | grep -q .'
+t "DNS: the resolver checks DNSSEC" sh -c 'dig @10.8.0.1 +dnssec teoyujie.org SOA | grep -q "flags:.* ad[ ;]"'
 t "health-check runs" /usr/local/sbin/health-check
 t "health-check publishes the time it ran" sh -c '[ $(($(date +%s) - $(cut -d" " -f1 /var/www/status/health.txt))) -lt 60 ]'
 finish
