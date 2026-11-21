@@ -38,4 +38,4 @@ jobs:
         env:
           # Each job runs as a new user with no home folder, so nix keeps its cache in the job's temporary folder.
           XDG_CACHE_HOME: ${{ runner.temp }}/cache
-        run: nix shell nixpkgs#oksh nixpkgs#shellcheck nixpkgs#perl nixpkgs#openssh nixpkgs#unbound -c bash .github/ci/check
+        run: nix shell nixpkgs#oksh nixpkgs#shellcheck nixpkgs#perl nixpkgs#openssh nixpkgs#unbound nixpkgs#python3 -c bash .github/ci/check
