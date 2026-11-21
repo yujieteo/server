@@ -6,8 +6,6 @@ AllowTcpForwarding no
 AllowAgentForwarding no
 PasswordAuthentication no
 KbdInteractiveAuthentication no
-X11Forwarding no
-PermitTunnel no
 
 # The deploy key already forces this command. This holds even if that key file changes.
 Match User deploy
