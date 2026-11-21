@@ -1,0 +1,219 @@
+#!/usr/bin/env python3
+"""Rebuild the server from zero in an OpenBSD 8.0 amd64 virtual machine, and run its checks there.
+
+  nix shell nixpkgs#qemu nixpkgs#python3 -c python3 -I .github/ci/openbsd
+
+It installs OpenBSD from the official mirror, then boots two copies of that fresh system:
+  A  install.sh from zero, then a backup of the keys with the command in the README.
+  B  that backup restored first, then install.sh, the same key fingerprints, test.sh and the faults.
+The work inside the guest is .github/ci/openbsd-guest. The driver talks on the serial console only.
+The CI runner may not use loopback, and each port that qemu offers the guest goes through it. So the
+answer file is typed into the installer's shell, and the files go in on a second disk that holds a tar archive.
+"""
+import atexit, base64, hashlib, os, re, shutil, socket, subprocess, sys, tarfile, tempfile, time, urllib.request
+
+
+MIRROR = 'https://cdn.openbsd.org/pub/OpenBSD/8.0/amd64/'
+# From the release's SHA256 file. The installer checks the sets itself, with the key built into it.
+PINNED = {'pxeboot': 'a8da20fc927c2050b53523a805f5e44a65f2c2ec044dd6559e1af413452ad7fe',
+          'bsd.rd': '40cddcb7a5f4320588c4ec7f49ae28702e400fe49c8c78d94f40ddf76e1e45ce'}
+repo = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+w = tempfile.mkdtemp(prefix='openbsd-ci.')
+kvm = os.access('/dev/kvm', os.R_OK | os.W_OK)
+slow = 1 if kvm else 6  # Without KVM, qemu emulates the processor, several times slower.
+password = base64.b32encode(os.urandom(10)).decode().lower()
+
+
+def log(text):
+    print(f'== {time.strftime("%H:%M:%S")} {text}', flush=True)
+
+
+def fetch(name):
+    data = urllib.request.urlopen(MIRROR + name, timeout=120).read()
+    if hashlib.sha256(data).hexdigest() != PINNED[name]:
+        sys.exit(f'{name}: the SHA-256 is not the one in the release')
+    os.makedirs(f'{w}/tftp/etc', exist_ok=True)
+    with open(f'{w}/tftp/{name}', 'wb') as f:
+        f.write(data)
+
+
+class Guest:
+    """One boot of a disk, with its serial console on a socket."""
+
+    def __init__(self, disk, boot_net=False, files=None):
+        sock = f'{w}/serial.sock'
+        if os.path.exists(sock):
+            os.unlink(sock)
+        net = 'user,id=n0'
+        if boot_net:
+            net += f',tftp={w}/tftp,bootfile=pxeboot'
+        cmd = ['qemu-system-x86_64', '-accel', 'kvm' if kvm else 'tcg', '-m', '2048', '-smp', '2',
+               '-drive', f'file={disk},if=virtio', '-netdev', net, '-device', 'virtio-net-pci,netdev=n0',
+               '-display', 'none', '-chardev', f'socket,id=s0,path={sock},server=on,wait=on', '-serial', 'chardev:s0']
+        if boot_net:
+            cmd += ['-boot', 'once=n']
+        if files:  # The guest sees it as sd1.
+            cmd += ['-drive', f'file={files},if=virtio,format=raw,readonly=on']
+        self.qemu = subprocess.Popen(cmd)
+        # A failed step exits the driver. The guest must not outlive it.
+        atexit.register(lambda q=self.qemu: q.poll() is None and q.kill())
+        for _ in range(100):
+            if os.path.exists(sock):
+                break
+            time.sleep(0.1)
+        self.s = socket.socket(socket.AF_UNIX)
+        self.s.connect(sock)
+        self.buf = ''
+        self.console = open(f'{w}/console.log', 'a')
+
+    def expect(self, pattern, timeout):
+        end = time.time() + timeout * slow
+        while time.time() < end:
+            m = re.search(pattern, self.buf)
+            if m:
+                self.buf = self.buf[m.end():]
+                return m
+            self.s.settimeout(max(0.1, end - time.time()))
+            try:
+                data = self.s.recv(65536).decode('utf-8', 'replace')
+            except socket.timeout:
+                continue
+            if not data:
+                break
+            self.console.write(data)
+            self.console.flush()
+            sys.stdout.write(data) if os.environ.get('SHOW_CONSOLE') else None
+            self.buf = (self.buf + data)[-200000:]
+        sys.exit(f'timed out waiting for {pattern!r}; the console is in {w}/console.log:\n{self.buf[-3000:]}')
+
+    def send(self, line):
+        self.s.sendall(line.encode() + b'\n')
+
+    def login(self):
+        self.expect(r'login: $', 900)
+        self.send('root')
+        self.expect(r'Password:', 60)
+        self.send(password)
+        self.expect(r'# $', 60)
+        # A short prompt, and no echo, so the output holds only what the commands print.
+        self.send("PS1='> '; stty -echo")
+        self.expect(r'> $', 60)
+
+    def run(self, command, timeout=600):
+        """Run one short command line (the tty holds 255 bytes at most) and return its status and output."""
+        self.send(f'{command}; echo "@@status $?"')
+        m = self.expect(r'(?s)(.*?)@@status (\d+)\r?\n', timeout)
+        self.expect(r'> $', 60)
+        return int(m.group(2)), m.group(1).replace('\r', '')
+
+    def halt(self):
+        self.send('halt -p')
+        self.qemu.wait(timeout=300 * slow)
+
+
+def install_openbsd():
+    """Install from the mirror, with the answers in an autoinstall(8) response file."""
+    fetch('pxeboot')
+    fetch('bsd.rd')
+    # pxeboot reads its boot.conf from the TFTP server, so the installer talks on the serial port.
+    with open(f'{w}/tftp/etc/boot.conf', 'w') as f:
+        f.write('stty com0 115200\nset tty com0\nboot tftp:/bsd.rd\n')
+    answers = f'''System hostname = teoyujie
+Network interface to configure = vio0
+IPv4 address for vio0 = autoconf
+IPv6 address for vio0 = none
+Password for root account = {password}
+Public ssh key for root account = none
+Start sshd(8) by default = yes
+Allow root ssh login = prohibit-password
+Change the default console to com0 = yes
+Which speed should com0 use = 115200
+Setup a user = no
+What timezone are you in = UTC
+Which disk is the root disk = sd0
+Use (W)hole disk MBR, whole disk (G)PT or (E)dit = whole
+Use (A)uto layout, (E)dit auto layout, or create (C)ustom layout = a
+Location of sets = http
+HTTP proxy URL = none
+HTTP Server = cdn.openbsd.org
+Server directory = pub/OpenBSD/8.0/amd64
+Set name(s) = -all bsd bsd.mp base80.tgz man80.tgz
+Do you expect to run the X Window System = no
+Continue without verification = no
+'''
+    subprocess.run(['qemu-img', 'create', '-q', '-f', 'qcow2', f'{w}/base.qcow2', '12G'], check=True)
+    log(f'installing OpenBSD 8.0 ({"KVM" if kvm else "no KVM: emulated processor"})')
+    g = Guest(f'{w}/base.qcow2', boot_net=True)
+    g.expect(r'\(I\)nstall, \(U\)pgrade, \(A\)utoinstall or \(S\)hell\? ', 600)
+    # autoinstall(8) reads /auto_install.conf of the RAM disk before it asks the network.
+    g.send('s')
+    g.expect(r'# $', 60)
+    g.send("cat > /auto_install.conf <<'EOF'")
+    for line in answers.splitlines():
+        g.send(line)
+        g.expect(r'> $', 30)  # One line at a time, so the input of the serial port never overflows.
+    g.send('EOF')
+    g.expect(r'# $', 60)
+    g.send('/autoinstall')
+    g.expect(r'CONGRATULATIONS!', 3600)
+    # The installer reboots into the new system. Its first boot makes the SSH host keys and relinks the kernel.
+    g.login()
+    g.halt()
+
+
+def as_root(t):
+    t.uid = t.gid = 0
+    t.uname = t.gname = 'root'
+    return None if '__pycache__' in t.name else t
+
+
+def boot_copy(name, extra=()):
+    """Boot a new copy of the fresh system, with the source, the guest script and EXTRA files in /root."""
+    disk = f'{w}/{name}.qcow2'
+    subprocess.run(['qemu-img', 'create', '-q', '-f', 'qcow2', '-b', f'{w}/base.qcow2', '-F', 'qcow2', disk], check=True)
+    files = f'{w}/files-{name}.tar'
+    with tarfile.open(files, 'w') as tar:
+        for f in ['install.sh', 'test.sh', 'local.conf.example', 'sbin', 'etc', 'www', 'README.md', '.github/ci']:
+            tar.add(f'{repo}/{f}', f'src/{f}', filter=as_root)
+        for f in extra:
+            tar.add(f'{w}/{f}', f, filter=as_root)
+    log(f'booting copy {name}')
+    g = Guest(disk, files=files)
+    g.login()
+    # A subshell: the console shell runs every later command, and they need the usual umask.
+    step(g, 'unpack the files from sd1', '(umask 077; rm -rf /root/src; tar -xf /dev/rsd1c -C /root)')
+    return g
+
+
+def step(g, what, command, timeout=1800):
+    log(what)
+    status, out = g.run(command, timeout)
+    print(out, end='', flush=True)
+    if status:
+        sys.exit(f'FAILED: {what} (status {status}); the console is in {w}/console.log')
+    return out
+
+
+def main():
+    install_openbsd()
+    a = boot_copy('a')
+    step(a, 'A: install.sh from zero, then No drift', 'sh /root/src/.github/ci/openbsd-guest fresh')
+    out = step(a, 'A: back up the keys as the README says', 'sh /root/src/.github/ci/openbsd-guest backup')
+    m = re.search(r'@@keys (\S+)\n(?s:.*?)@@prints\n(.*?)@@end', out, re.S)
+    keys, prints = base64.b64decode(m.group(1)), m.group(2)
+    a.halt()
+    with open(f'{w}/keys.tgz', 'wb') as f:
+        f.write(keys)
+    with open(f'{w}/prints.a', 'w') as f:
+        f.write(prints)
+    b = boot_copy('b', ['keys.tgz', 'prints.a'])
+    step(b, 'B: restore keys.tgz, install.sh, the same fingerprints, No drift', 'sh /root/src/.github/ci/openbsd-guest restore')
+    step(b, 'B: test.sh with a deploy key', 'sh /root/src/.github/ci/openbsd-guest test', 3600)
+    step(b, 'B: each fault makes its own check fail', 'sh /root/src/.github/ci/openbsd-guest faults', 3 * 3600)
+    b.halt()
+    shutil.rmtree(w)
+    log('all OpenBSD checks passed')
+
+
+if __name__ == '__main__':
+    main()

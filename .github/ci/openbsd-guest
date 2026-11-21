@@ -1,0 +1,89 @@
+#!/bin/sh
+# The part of .github/ci/openbsd that runs inside the OpenBSD guest, as root, from /root/src.
+#   fresh | backup | restore | test | faults
+cd /root/src || exit 1
+web=$(ifconfig egress | awk '$1 == "inet" { print $2; exit }')
+# The checks that cannot pass in a guest, with the reason. A guest where one of them passes fails too.
+cannot_run='mail: forwarded to the mailbox'  # FORWARD_TO is a test address, so no mailbox takes the mail.
+
+prepare() {
+	# On the server, Vultr gives the address this name. smtpd refuses a host with no reverse name.
+	grep -q teoyujie.org /etc/hosts || echo "${web} teoyujie.org" >> /etc/hosts
+	[ -e /root/deploy_key ] || ssh-keygen -q -t ed25519 -N '' -f /root/deploy_key
+	sed -e 's/^ADMIN_USER=.*/ADMIN_USER=admin/' -e "s#^DEPLOY_KEY=.*#DEPLOY_KEY='$(cat /root/deploy_key.pub)'#" local.conf.example > local.conf
+	# install.sh asks for the doas password on a terminal. The guest sets it here instead.
+	id admin > /dev/null 2>&1 || useradd -m -G wheel -s /bin/ksh -p "$(echo ci | encrypt)" admin
+}
+no_drift() {
+	sh install.sh --check > /tmp/check.out 2>&1
+	cat /tmp/check.out
+	! grep -q 'config check failed' /tmp/check.out && [ "$(tail -n 1 /tmp/check.out)" = 'No drift.' ]
+}
+prints() {
+	for f in /etc/ssh/ssh_host_*_key.pub; do ssh-keygen -lf "${f}"; done
+	ifconfig wg0 | awk '$1 == "wgpubkey"'
+	openssl pkey -in /etc/mail/dkim/teoyujie.org.2026.rsa.key -pubout | sha256
+	sha256 -q /etc/mail/srs.conf
+}
+# The FAIL lines of one run of test.sh, sorted.
+fails() {
+	sh test.sh /root/deploy_key > /tmp/test.out 2>&1
+	sed -n 's/^FAIL //p' /tmp/test.out | sort
+}
+# expect FAULT EXPECTED: the run fails exactly the checks in EXPECTED (one on each line) and those that cannot run.
+expect() {
+	want=$(printf '%s\n%s\n' "$2" "${cannot_run}" | sed '/^$/d' | sort -u)
+	got=$(fails)
+	if [ "${got}" = "${want}" ]; then
+		echo "proved   $1"
+	else
+		echo "UNPROVED $1"
+		echo "  wanted: $(echo "${want}" | tr '\n' '|')"
+		echo "  got:    $(echo "${got}" | tr '\n' '|')"
+		bad=$((bad + 1))
+	fi
+}
+drift='live equals rendered: install.sh --check finds no drift'
+keep() { for f in "$@"; do cp -p "${f}" "${f}.ci"; done; }
+back() { for f in "$@"; do mv "${f}.ci" "${f}"; done; }
+
+case $1 in
+fresh)
+	prepare
+	sh install.sh || exit 1
+	no_drift ;;
+backup)
+	# The backup command of the README, run as root on the guest.
+	cmd=$(sed -n "s/.*doas sh -c '\(umask 077; cd \/ \&\& tar -czf [^']*\) \&\& chown.*/\1/p" README.md | sed 's/ADMIN_USER/admin/g')
+	[ -n "${cmd}" ] || { echo 'The README has no backup command.'; exit 1; }
+	echo "${cmd}"
+	sh -c "${cmd}" || exit 1
+	echo "@@keys $(openssl base64 -A < /home/admin/keys.tgz)"
+	echo '@@prints'
+	prints
+	echo '@@end' ;;
+restore)
+	# Step 3 of "Rebuild from zero": the backup goes on the new server before the first install.
+	tar -xzpf /root/keys.tgz -C / || exit 1
+	prepare
+	sh install.sh || exit 1
+	no_drift || exit 1
+	prints > /root/prints.b
+	diff /root/prints.a /root/prints.b && echo 'The restored server has the same key fingerprints.' ;;
+test)
+	# install.sh restarts vio0, and test.sh reads the address of egress once: wait for the lease to come back.
+	for _ in $(jot 60); do ifconfig egress 2> /dev/null | grep -q 'inet ' && break; sleep 1; done
+	ifconfig egress > /dev/null 2>&1 || { echo 'egress has no address:'; route -n show -inet; exit 1; }
+	# cron runs the feed jobs within the hour. The web checks need what they publish, and feed-update needs a ledger from the site.
+	install -d -o deploy /var/www/web/site/api && printf 'id\tmade\turl\n' > /var/www/web/site/api/bets.txt
+	for job in feed-update edmw-update sg-update; do su -s /bin/sh _feed -c "/usr/local/sbin/${job}" > /dev/null 2>&1; done
+	got=$(fails)
+	cat /tmp/test.out
+	echo "Checks that cannot run in a guest: ${cannot_run}"
+	[ "${got}" = "${cannot_run}" ] ;;
+faults)
+	. ./.github/ci/openbsd-faults
+	echo "${bad} faults did not make their checks fail."
+	[ "${bad}" -eq 0 ] ;;
+*) echo 'usage: openbsd-guest fresh | backup | restore | test | faults' >&2; exit 2 ;;
+esac
