@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# The outside watch, from a machine that is not the server:
+#   bash .github/ci/outside          the outside set of test.sh
+#   bash .github/ci/outside --scan   and then all TCP ports, testssl.sh and the DNSSEC chain of the TLSA record
+# Tools: nix shell nixpkgs#netcat nixpkgs#openssl nixpkgs#bind.dnsutils nixpkgs#nmap nixpkgs#testssl nixpkgs#jq
+set -uo pipefail
+cd "$(dirname "$0")/../.." || exit 1
+d=teoyujie.org
+failed=0
+t() {
+	label=$1
+	shift
+	if "$@" > /dev/null 2>&1; then echo "ok   ${label}"; else echo "FAIL ${label}"; failed=1; fi
+}
+sh test.sh --outside || failed=1
+[[ ${1-} == --scan ]] || exit "${failed}"
+tmp=$(mktemp -d)
+trap 'rm -rf "${tmp}"' EXIT
+
+# A DANE sender trusts the TLSA record only through a signed chain from the root (RFC 7672, section 2.2).
+validated() { delv "$@" | grep -q '^; fully validated'; }
+t 'DNSSEC: the TLSA record is signed from the root' validated TLSA "_25._tcp.${d}"
+# A connect scan, because the runner has no root. pf answers a closed port with a reset, so a slow port is a fault too.
+nmap -Pn -sT -p- -T4 -oG "${tmp}/nmap" "${d}" > /dev/null
+ports=$(sed -n 's/.*Ports: //p' "${tmp}/nmap" | tr ',' '\n' | awk -F/ '{ gsub(/ /, "", $1); print $1 "/" $2 }' | sort -n | tr '\n' ' ')
+t "nmap: of all TCP ports only 25, 80 and 443 are open (${ports})" test "${ports}" = '25/open 80/open 443/open '
+# Any finding of MEDIUM or worse fails. Only the four groups that open fewer than 60 connections run. pf blocks a
+# host for a day when it holds 100 connections, and a closed one still counts until its state ends a minute or two later.
+severe() { jq -r '.scanResult[] | .[] | arrays | .[] | select(.severity == "MEDIUM" or .severity == "HIGH" or .severity == "CRITICAL") | .id' "$1" | tr '\n' ' '; }
+clean() { [ -s "$1" ] && [ -z "$(severe "$1")" ]; }
+testssl.sh --quiet --warnings off --ip one -p -S -P -U --jsonfile-pretty "${tmp}/443.json" "${d}:443" > /dev/null 2>&1
+t "testssl.sh: port 443 has no finding of MEDIUM or worse $(severe "${tmp}/443.json")" clean "${tmp}/443.json"
+# smtpd closes the connection of a host with no reverse DNS before TLS starts.
+if printf 'QUIT\r\n' | nc -w 8 "${d}" 25 | grep -q '^220 '; then
+	testssl.sh --quiet --warnings off --ip one -t smtp -p -S -P -U --jsonfile-pretty "${tmp}/25.json" "${d}:25" > /dev/null 2>&1
+	t "testssl.sh: port 25 has no finding of MEDIUM or worse $(severe "${tmp}/25.json")" clean "${tmp}/25.json"
+else
+	echo 'SKIP testssl.sh port 25: this machine has no reverse DNS, so the server closes before TLS'
+fi
+echo 'SKIP UDP scan: nmap needs root for it, and a home router drops the ICMP that marks a closed UDP port'
+exit "${failed}"
