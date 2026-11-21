@@ -2,7 +2,7 @@
 # Exercise share --list against disposable files; never contact the server.
 set -eu
 
-root=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
+root=$(CDPATH='' cd -- "$(dirname "$0")/.." && pwd)
 tmp=$(mktemp -d)
 trap 'rm -rf -- "$tmp"' EXIT HUP INT TERM
 mkdir -p "$tmp/bin" "$tmp/files/f/timed" "$tmp/files/f/permanent" "$tmp/files/f/marker-dir/.keep"
@@ -42,7 +42,7 @@ EOF
 chmod +x "$tmp/bin/ssh" "$tmp/bin/stat" "$tmp/bin/date"
 expected='2024-01-31  https://teoyujie.org/f/marker-dir/report
 2024-01-31  https://teoyujie.org/f/timed/report
-no expiry  https://teoyujie.org/f/permanent/report'
+no scheduled expiry  https://teoyujie.org/f/permanent/report'
 actual=$(LC_ALL=C SHARE_LIST_FIXTURE="$tmp/files/f" PATH="$tmp/bin:$PATH" sh "$tmp/share" --list)
 if [ "$actual" != "$expected" ]; then
     printf 'Expected:\n%s\nActual:\n%s\n' "$expected" "$actual" >&2

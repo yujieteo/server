@@ -4,7 +4,7 @@ set -eu
 usage() {
 	cat >&2 <<'EOF'
 usage: ./share [--days N] FILE   upload FILE and print a link with 128 random bits; it works for N days (1 to 365, default 30)
-       ./share --list            show the live links and their expiry dates (or no expiry)
+       ./share --list            show the live links and their expiry dates (or no scheduled expiry)
        ./share --rm LINK         delete a link now (the whole link, or its 32-character id)
 EOF
 	exit 1
@@ -20,7 +20,7 @@ case ${1-} in
 			[ -f "$p" ] || continue
 			folder=${p%/*}
 			if [ -f "$folder/.keep" ]; then
-				ends="no expiry"
+				ends="no scheduled expiry"
 			else
 				m=$(stat -f %m "$folder")
 				ends=$(date -r $((m + 2592000)) +%Y-%m-%d)
