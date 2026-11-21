@@ -120,7 +120,6 @@ ensure 'empty DNS blocklist' '[ -e /var/unbound/etc/blocklist.conf ]' 'install -
 ensure 'DNSSEC root key' '[ -e /var/unbound/db/root.key ]' 'unbound-anchor; chown _unbound /var/unbound/db/root.key'
 ensure 'httpd, smtpd and unbound start at boot' '[ "$(rcctl ls on | grep -cxE "httpd|smtpd|unbound")" -eq 3 ]' 'rcctl enable httpd smtpd unbound'
 ensure 'process accounting on: it marks a program that breaks its pledge or its unveil' 'rcctl ls on | grep -qx accounting' 'rcctl enable accounting && accton /var/account/acct'
-ensure 'sndiod off: a server plays no sound' '! rcctl ls on | grep -qx sndiod' 'rcctl disable sndiod && rcctl stop sndiod'
 
 # A change of WireGuard over SSH would cut the session that makes it.
 wg=0
