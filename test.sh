@@ -26,7 +26,8 @@ get() {
 		openssl s_client -quiet -connect "${web}:443" -servername "$1" 2> /dev/null | tr -d '\r'
 }
 status() {
-	if [ "$1" = 80 ]; then printf 'GET %s HTTP/1.0\r\nHost: %s\r\n\r\n' "$3" "$2" | nc -w 10 "${web}" 80 | tr -d '\r'; else get "$2" "$3"; fi |
+	# The sleep keeps stdin open: the nc of macOS can quit at its end, before the answer comes.
+	if [ "$1" = 80 ]; then { printf 'GET %s HTTP/1.0\r\nHost: %s\r\n\r\n' "$3" "$2"; sleep 1; } | nc -w 10 "${web}" 80 | tr -d '\r'; else get "$2" "$3"; fi |
 		awk 'NR == 1 { s = $2 } /^Location:/ { l = $2 } END { print s, l }'
 }
 # grep reads to the end: a client that stops early can leave openssl waiting.
