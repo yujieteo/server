@@ -248,7 +248,7 @@ sub render_page {
 <meta name="description" content="$description">
 </head>
 <body>
-<header class="wrap"><a class="name" href="/">Yu Jie Teo</a><span class="tagline">Mechanical Engineer</span></header>
+<header class="wrap"><a class="name" href="/">Yu Jie Teo</a></header>
 <main class="wrap"><section id="singapore"><h2>Singapore policy actionables</h2>
 <p class="muted">Fetched $built. Each row shows its score. <a href="/essays/singapore-policy-actionables/">How the ranking works</a>. <a href="/singapore-policy-actionables.xml">RSS feed</a>. <a href="/singapore-policy-actionables.txt">Plain text</a></p>
 <ol class="featured">
