@@ -41,7 +41,9 @@ jobs:
         run: nix shell nixpkgs#oksh nixpkgs#shellcheck nixpkgs#perl nixpkgs#openssh nixpkgs#unbound nixpkgs#python3 -c bash .github/ci/check
   openbsd:
     # install.sh, test.sh and the faults on OpenBSD itself: see .github/ci/openbsd. It downloads the release, so it is not offline.
-    runs-on: [self-hosted, desktop]
+    # Only the runner with /dev/kvm has the label kvm (machines/desktop-ci.nix in dotfiles).
+    # The other runner of server stays free for the check job.
+    runs-on: [self-hosted, desktop, kvm]
     # About 30 minutes with KVM. Without /dev/kvm, qemu is about six times slower.
     timeout-minutes: 300
     steps:
