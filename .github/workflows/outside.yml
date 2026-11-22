@@ -1,7 +1,6 @@
 # The outside watch. A dead server sends no mail, so health-check cannot report it, and this job does.
 # Every hour it runs the outside set of test.sh. Once a day it also scans all TCP ports, runs testssl.sh
 # and checks the DNSSEC chain of the TLSA record. When a check fails, it opens an issue or adds to the open one.
-# When every check passes again, it closes that issue, so an open issue always means a failing server.
 name: outside
 
 on:
@@ -54,14 +53,3 @@ jobs:
           else
             gh issue create --repo "${GITHUB_REPOSITORY}" --title "${title}" --body-file "${RUNNER_TEMP}/body.md"
           fi
-      - name: Close the open issue, because every check passed
-        if: success()
-        env:
-          XDG_CACHE_HOME: ${{ runner.temp }}/cache
-          GH_TOKEN: ${{ github.token }}
-          RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        run: |
-          gh() { nix shell nixpkgs#gh -c gh "$@"; }
-          title='The outside watch failed'
-          n=$(gh issue list --repo "${GITHUB_REPOSITORY}" --state open --search "in:title \"${title}\"" --json number --jq '.[0].number // empty')
-          [ -z "${n}" ] || gh issue close "${n}" --repo "${GITHUB_REPOSITORY}" --comment "Every check passed again: ${RUN}"

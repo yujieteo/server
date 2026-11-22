@@ -45,7 +45,7 @@ Then make a full disk checkpoint by following [ROLLBACK.md](ROLLBACK.md), and in
 ./apply --install CHECKPOINT_ID ADMIN_USER@10.8.0.1
 ```
 
-The script records the id but cannot confirm the checkpoint exists. An install restarts only the services whose files changed. It stops before any change if the WireGuard peers would change, because that would cut its own session. Until every service has started again, it keeps the list of changed files in `/var/db/server-install-pending`. So if an install stops part way, the next `--check` prints `restart pending` for each of those files, and the next install restarts their services.
+The script records the id but cannot confirm the checkpoint exists. An install restarts only the services whose files changed. It stops before any change if the WireGuard peers would change, because that would cut its own session.
 
 Test the result on the server, and from outside it:
 
@@ -230,7 +230,7 @@ The system crontab comes from `etc/crontab`. It names the user that runs each jo
 
 ## Watch from outside
 
-A server that is down sends no mail, and neither does one whose mail cannot leave, so `health-check` cannot report either. `sh test.sh --outside` needs only `nc`, `openssl` and `dig`, and exits with a failure when the server does not answer as it should. It also reads `/health.txt`, where `health-check` writes the time it ran and the count of mail that is stuck or was refused. `.github/workflows/outside.yml` runs it each hour on the desktop. It opens an issue when a check fails, and it closes the issue when every check passes again, so an open issue means that the server is failing now; GitHub stops a schedule after 60 days without a commit, and the watch is silent while the desktop is off.
+A server that is down sends no mail, and neither does one whose mail cannot leave, so `health-check` cannot report either. `sh test.sh --outside` needs only `nc`, `openssl` and `dig`, and exits with a failure when the server does not answer as it should. It also reads `/health.txt`, where `health-check` writes the time it ran and the count of mail that is stuck or was refused. `.github/workflows/outside.yml` runs it each hour on the desktop and opens an issue when it fails; GitHub stops a schedule after 60 days without a commit, and the watch is silent while the desktop is off.
 
 ## Upgrade OpenBSD
 

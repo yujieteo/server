@@ -16,8 +16,6 @@ w=$(mktemp -d)
 trap 'rm -rf "${w}"' EXIT
 t=${w}/root
 : > "${w}/changed"
-# The paths of an install that stopped before its restarts. Their services start again on the next install.
-pending=/var/db/server-install-pending
 
 # put MODE SOURCE TARGET stages a file of the repo. gen MODE TARGET stages its input.
 put() { install -D -m "$1" "$2" "${t}$3"; }
@@ -91,12 +89,6 @@ done > "${w}/live"
 while read -r f; do
 	[ -e "${t}${f}" ] || { echo "remove: ${f}"; echo "${f}" >> "${w}/changed"; }
 done < "${w}/live"
-# Such a file can match the repo already while its service still runs the old config.
-if [ -s "${pending}" ]; then
-	while read -r f; do
-		grep -qxF "${f}" "${w}/changed" || { echo "restart pending from an install that stopped: ${f}"; echo "${f}" >> "${w}/changed"; }
-	done < "${pending}"
-fi
 
 # ensure WHAT TEST MAKE runs MAKE unless TEST holds. With --check it only names WHAT.
 ensure() {
@@ -151,8 +143,6 @@ valid pfctl -nf "${t}/etc/pf.conf"
 [ "${wg}" -ne 3 ] || exit 3
 [ -z "${check}" ] || exit 0
 
-# The list goes to disk before the first copy, and leaves it only once every service has started again.
-grep '^/' "${w}/changed" > "${pending}" || :
 # The copy. mkdir -p leaves a folder that is already there as it is; install -D would reset its mode.
 while read -r f; do
 	case ${f} in
@@ -182,6 +172,5 @@ done <<EOF
 EOF
 # A run that stopped half way can leave a service down with no file left to change.
 for service in httpd smtpd unbound; do rcctl check "${service}" > /dev/null || rcctl start "${service}"; done
-rm -f "${pending}"
 [ -s /var/unbound/etc/blocklist.conf ] || /usr/local/sbin/blocklist-update
 echo "Done. WireGuard public key of the server: $(ifconfig wg0 | awk '$1 == "wgpubkey" { print $2 }')"
