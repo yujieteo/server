@@ -57,6 +57,7 @@ my $data_points = 10;
 my $ceremony_points = -30;
 my $points_per_day = -2;
 my $open_age_limit = 5;
+my $no_note = 'No summary yet.';
 
 my @lenses = (
 	['money', qr/\b(?:tax\w*|gst|stamp dut\w+|absd|cpf|propert\w+|real estate|sale sites?|land sales|interest rates?|bonds?|t-bills?|reits?|invest\w*|inflation|gdp|budget|tariffs?|fiscal|reserves|gic|temasek|price index|coe|bank\w*|insur\w+|financial|econom\w+|trade|exports?|electricity market)\b/i],
@@ -216,7 +217,8 @@ sub label {
 	}
 	push @parts, join ', ', @{$item->{lenses}} if @{$item->{lenses}};
 	my $text = join(' · ', @parts) . '.';
-	$text .= " $item->{note}" if $item->{note} ne '';
+	# Every listed document gets a note. Until an agent writes one, the row says so.
+	$text .= ' ' . ($item->{note} ne '' ? $item->{note} : $no_note);
 	return $text;
 }
 
@@ -285,18 +287,20 @@ EOF
 sub render_text {
 	my ($now, $reach_fetched, @items) = @_;
 	my $built = local_date($now);
+	my $missing = grep { $_->{note} eq '' } @items;
 	my $text = <<"EOF";
 # Singapore primary documents, ranked by fixed rules. Fetched $built. Top $text_items of the last 28 days, with consultations marked open from the last 120.
-# Columns, split by tabs: id, score, date, source, kind, lenses, why, title, link.
-# To change the ranking, add lines to notes/policy.tsv in github.com/yujieteo/site. The format is at $site/api/notes.txt
-# A note line is: id, tab, points from -60 to 60, tab, one sentence on what to do and by when.
+# Columns, split by tabs: id, score, date, source, kind, lenses, why, title, link, note.
+# Every document listed here needs a note. $missing of them have none yet: their note column is empty.
+# To add notes, add lines to notes/policy.tsv in github.com/yujieteo/site. The format is at $site/api/notes.txt
+# A note line is: id, tab, points from -60 to 60, tab, the note: what to do and by when, or the one fact worth knowing and that there is nothing to do.
 # Judge each document for a Singapore resident: investing, career, and public services to use or respond to.
 EOF
 	$text .= '# REACH kind reflects its saved snapshot (as of ' . reach_snapshot_date($reach_fetched)
 		. '), not current status. Check the REACH page for the deadline.' . "\n";
 	for my $item (@items) {
 		$text .= join("\t", $item->{id}, $item->{score}, local_date($item->{date}), $item->{source}, $item->{kind},
-			join(',', @{$item->{lenses}}), $item->{why}, $item->{title}, $item->{link}) . "\n";
+			join(',', @{$item->{lenses}}), $item->{why}, $item->{title}, $item->{link}, $item->{note}) . "\n";
 	}
 	return $text;
 }
