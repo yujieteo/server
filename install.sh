@@ -98,6 +98,14 @@ if [ -s "${pending}" ]; then
 	done < "${pending}"
 fi
 
+# A change of WireGuard over SSH would cut the session that makes it.
+# An install stops here, before ensure makes anything. A check goes on, to show the whole plan.
+wg=0
+if grep -qx /etc/hostname.wg0 "${w}/changed" && [ -e /etc/hostname.wg0 ]; then
+	case $(tty || :) in /dev/ttyC* | /dev/console) wg=1 ;; *) wg=3; echo 'The WireGuard peers would change. Run install.sh on the console of the server.' ;; esac
+fi
+[ "${wg}" -ne 3 ] || [ -n "${check}" ] || exit 3
+
 # ensure WHAT TEST MAKE runs MAKE unless TEST holds. With --check it only names WHAT.
 ensure() {
 	if eval "$2" > /dev/null 2>&1; then return; fi
@@ -129,11 +137,6 @@ ensure 'DNSSEC root key' '[ -e /var/unbound/db/root.key ]' 'unbound-anchor; chow
 ensure 'httpd, smtpd and unbound start at boot' '[ "$(rcctl ls on | grep -cxE "httpd|smtpd|unbound")" -eq 3 ]' 'rcctl enable httpd smtpd unbound'
 ensure 'process accounting on: it marks a program that breaks its pledge or its unveil' 'rcctl ls on | grep -qx accounting' 'rcctl enable accounting && accton /var/account/acct'
 
-# A change of WireGuard over SSH would cut the session that makes it.
-wg=0
-if grep -qx /etc/hostname.wg0 "${w}/changed" && [ -e /etc/hostname.wg0 ]; then
-	case $(tty || :) in /dev/ttyC* | /dev/console) wg=1 ;; *) wg=3; echo 'The WireGuard peers would change. Run install.sh on the console of the server.' ;; esac
-fi
 [ -s "${w}/changed" ] || echo 'No drift.'
 
 # The staged configs must load before any of them is copied.
