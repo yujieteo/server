@@ -91,7 +91,9 @@ run_job($first, 1, 0);
 check_reach_date('2026-12-05 SGT', 'fresh fetch');
 my @before = grep { /\tREACH\t/ } split /\n/, output('txt');
 is(scalar @before, 2, 'two REACH text rows');
-is(scalar(split /\t/, $before[0]), 9, 'text fields unchanged');
+is(scalar(split /\t/, $before[0], -1), 10, 'text rows have ten fields, the last the note');
+like(output('txt'), qr/^# Every document listed here needs a note\. 3 of them have none yet/m, 'text counts the rows without a note');
+like(output('html'), qr/No summary yet\./, 'a row without a note says so');
 
 run_job($second, 0, 0);
 check_reach_date('2026-12-05 SGT', 'failed REACH refresh');
@@ -108,5 +110,16 @@ is((stat "$out/sg-cache/reach")[9], $first, 'render preserves REACH cache date')
 utime 0, 0, "$out/sg-cache/reach", $txt or die $!;
 run_job($second, 0, 1);
 check_reach_date('unknown', 'unknown cache timestamp');
+
+# A note fills the last column and shows on the page.
+use Digest::MD5 qw(md5_hex);
+my $notice = substr md5_hex('https://example.invalid/notice'), 0, 8;
+write_file($notes, "$notice\t0\tFixture note. Nothing for a resident to do.\n");
+utime 0, 0, $txt or die $!;
+run_job($second, 0, 1);
+my ($noted) = grep { /^\Q$notice\E\t/ } split /\n/, output('txt');
+like($noted, qr/\tFixture note\. Nothing for a resident to do\.$/, 'the note is the last text column');
+like(output('html'), qr/Fixture notice<\/h3>.*Fixture note\. Nothing for a resident to do\./, 'the page shows the note');
+like(output('txt'), qr/^# Every document listed here needs a note\. 2 of them have none yet/m, 'the count drops when a note is added');
 
 done_testing;
