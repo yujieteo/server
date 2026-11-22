@@ -237,7 +237,7 @@ $page->{head}<title>$page->{title}</title>
 <meta name="description" content="$description">
 </head>
 <body>
-<header class="wrap"><a class="name" href="/">Yu Jie Teo</a><span class="tagline">Mechanical Engineer</span></header>
+<header class="wrap"><a class="name" href="/">Yu Jie Teo</a></header>
 <main class="wrap"><section id="$page->{id}"><h2>$page->{title}</h2>
 <p class="muted">Updated $built. $page->{note}</p>
 <ol class="featured">
