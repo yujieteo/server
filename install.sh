@@ -16,6 +16,8 @@ w=$(mktemp -d)
 trap 'rm -rf "${w}"' EXIT
 t=${w}/root
 : > "${w}/changed"
+# The paths of an install that stopped before its restarts. Their services start again on the next install.
+pending=/var/db/server-install-pending
 
 # put MODE SOURCE TARGET stages a file of the repo. gen MODE TARGET stages its input.
 put() { install -D -m "$1" "$2" "${t}$3"; }
@@ -89,6 +91,20 @@ done > "${w}/live"
 while read -r f; do
 	[ -e "${t}${f}" ] || { echo "remove: ${f}"; echo "${f}" >> "${w}/changed"; }
 done < "${w}/live"
+# Such a file can match the repo already while its service still runs the old config.
+if [ -s "${pending}" ]; then
+	while read -r f; do
+		grep -qxF "${f}" "${w}/changed" || { echo "restart pending from an install that stopped: ${f}"; echo "${f}" >> "${w}/changed"; }
+	done < "${pending}"
+fi
+
+# A change of WireGuard over SSH would cut the session that makes it.
+# An install stops here, before ensure makes anything. A check goes on, to show the whole plan.
+wg=0
+if grep -qx /etc/hostname.wg0 "${w}/changed" && [ -e /etc/hostname.wg0 ]; then
+	case $(tty || :) in /dev/ttyC* | /dev/console) wg=1 ;; *) wg=3; echo 'The WireGuard peers would change. Run install.sh on the console of the server.' ;; esac
+fi
+[ "${wg}" -ne 3 ] || [ -n "${check}" ] || exit 3
 
 # ensure WHAT TEST MAKE runs MAKE unless TEST holds. With --check it only names WHAT.
 ensure() {
@@ -121,11 +137,6 @@ ensure 'DNSSEC root key' '[ -e /var/unbound/db/root.key ]' 'unbound-anchor; chow
 ensure 'httpd, smtpd and unbound start at boot' '[ "$(rcctl ls on | grep -cxE "httpd|smtpd|unbound")" -eq 3 ]' 'rcctl enable httpd smtpd unbound'
 ensure 'process accounting on: it marks a program that breaks its pledge or its unveil' 'rcctl ls on | grep -qx accounting' 'rcctl enable accounting && accton /var/account/acct'
 
-# A change of WireGuard over SSH would cut the session that makes it.
-wg=0
-if grep -qx /etc/hostname.wg0 "${w}/changed" && [ -e /etc/hostname.wg0 ]; then
-	case $(tty || :) in /dev/ttyC* | /dev/console) wg=1 ;; *) wg=3; echo 'The WireGuard peers would change. Run install.sh on the console of the server.' ;; esac
-fi
 [ -s "${w}/changed" ] || echo 'No drift.'
 
 # The staged configs must load before any of them is copied.
@@ -143,6 +154,8 @@ valid pfctl -nf "${t}/etc/pf.conf"
 [ "${wg}" -ne 3 ] || exit 3
 [ -z "${check}" ] || exit 0
 
+# The list goes to disk before the first copy, and leaves it only once every service has started again.
+grep '^/' "${w}/changed" > "${pending}" || :
 # The copy. mkdir -p leaves a folder that is already there as it is; install -D would reset its mode.
 while read -r f; do
 	case ${f} in
@@ -172,5 +185,6 @@ done <<EOF
 EOF
 # A run that stopped half way can leave a service down with no file left to change.
 for service in httpd smtpd unbound; do rcctl check "${service}" > /dev/null || rcctl start "${service}"; done
+rm -f "${pending}"
 [ -s /var/unbound/etc/blocklist.conf ] || /usr/local/sbin/blocklist-update
 echo "Done. WireGuard public key of the server: $(ifconfig wg0 | awk '$1 == "wgpubkey" { print $2 }')"

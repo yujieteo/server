@@ -56,12 +56,17 @@ find $feed/feeds-manifest.json -mmin +360 | sed 's#.*/##; s/$/ has not been rebu
 find $feed/edmw.xml -mmin +2880 2>/dev/null | sed 's#.*/##; s/$/ has not been rebuilt for 2 days/'
 # edmw-update writes its first file about a day after install, and install gives the script a new date.
 [ -e $feed/edmw.xml ] || find /usr/local/sbin/edmw-update -mmin +2880 | sed 's/.*/edmw.xml is still missing 2 days after install/'
+# sg-update touches sg-cache/fetched after each weekly fetch that works. The page age alone is no clock for
+# the fetch: sg-update --render writes the pages again after each deploy that brings new notes.
+# The page age still shows a fetch that worked but found no document to list.
+fetched=$feed/sg-cache/fetched
+find $fetched -mmin +11520 2>/dev/null | sed 's/.*/the Singapore sources have not been fetched for 8 days: sg-update fails before its stamp/'
 find $feed/singapore-policy-actionables.txt -mmin +11520 2>/dev/null | sed 's#.*/##; s/$/ has not been rebuilt for 8 days/'
 # Every listed document needs a note. An agent writes them after the Saturday fetch; a day is long enough.
 policy=$feed/singapore-policy-actionables.txt
-find $policy -mmin +1440 2>/dev/null | grep -q . &&
+find $fetched -mmin +1440 2>/dev/null | grep -q . &&
 	awk -F'\t' '!/^#/ && $10 == "" { n++ } END { if (n) print n " Singapore policy documents have had no note for a day: add lines to notes/policy.tsv in the site repo" }' $policy
-find $feed/sg-cache -type f -mmin +30240 2>/dev/null | sed 's#.*/##; s/^/Singapore source has not loaded for 3 weeks: /'
+find $feed/sg-cache -type f ! -name fetched -mmin +30240 2>/dev/null | sed 's#.*/##; s/^/Singapore source has not loaded for 3 weeks: /'
 find $feed/cache -type f -mmin +4320 ! -name 'forecaster-*' 2>/dev/null | sed 's#.*/##; s/^/feed source has not loaded for 3 days: /'
 # A quiet forecaster still has a feed that loads, so none loading in a day means hnrss.org is down.
 find $feed/cache -type f -name 'forecaster-*' ! -name 'forecaster-lw-*' ! -name 'forecaster-blog-*' -mmin -1440 2>/dev/null | grep -q . || echo "no Hacker News forecaster feed has loaded for a day"

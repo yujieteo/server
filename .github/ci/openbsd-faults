@@ -276,11 +276,14 @@ sed -i "s/^Expires: .*/Expires: $(date -r $(($(date +%s) + 86400)) +%Y-%m-%d)T00
 reports 'security.txt about to expire' 'security.txt ends on'
 back /var/www/htdocs/server/.well-known/security.txt
 for f in feeds-manifest.json singapore-policy-actionables.txt; do touch -t "${old}" "/var/www/feed/${f}"; done
-set -- /var/www/feed/sg-cache/*
+# One saved source copy, not the fetch stamp, which health-check checks on its own.
+sg_source=$(find /var/www/feed/sg-cache -type f ! -name fetched | head -n 1)
+[ -n "${sg_source}" ] || sg_source=/var/www/feed/sg-cache/ci-source
 mv /var/www/feed/edmw.xml /tmp/edmw.xml.ci 2> /dev/null
-touch -t "${old}" /usr/local/sbin/edmw-update "$1" /var/www/feed/cache/*
+touch -t "${old}" /usr/local/sbin/edmw-update "${sg_source}" /var/www/feed/sg-cache/fetched /var/www/feed/cache/*
 reports 'a feed run that stopped' 'feeds-manifest.json has not been rebuilt'
 reports 'an old Singapore page' 'singapore-policy-actionables.txt has not been rebuilt'
+reports 'no Singapore fetch for 8 days' 'Singapore sources have not been fetched'
 reports 'no EDMW page two days after install' 'edmw.xml is still missing'
 reports 'a Singapore source that does not load' 'Singapore source has not loaded'
 reports 'a feed source that does not load' 'feed source has not loaded'
