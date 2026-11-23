@@ -179,7 +179,7 @@ rm -r "/var/www/files/f/${d}"
 lattice_get() {
 	printf 'GET / HTTP/1.0\r\nHost: lattice.teoyujie.org\r\n%b\r\n' "$1" |
 		openssl s_client -quiet -connect "${web}:443" -servername lattice.teoyujie.org 2> /dev/null | tr -d '\r' |
-		awk 'NR == 1 { s = $2 } /^Location:/ { l = $2 } END { print s, l }'
+		awk 'NR == 1 { s = $2 } tolower($1) == "location:" { l = $2 } END { print s, l }'
 }
 if nc -z -w 3 10.8.0.4 18490 2> /dev/null; then
 	t "lattice: a stranger gets the gateway's sign-in page" is_eq '303 /__gateway/login?next=/' lattice_get 'Accept: text/html\r\n'
