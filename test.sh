@@ -309,7 +309,9 @@ t "pf: the feed user reaches no VPN peer" blocked _feed 10.8.0.2 22
 t "pf: the web server user reaches nothing" blocked www cdn.openbsd.org 443
 t "pf: the mail user reaches only mail servers" blocked _smtpd cdn.openbsd.org 443
 t "pf: relayd reaches no other VPN peer" blocked _relayd 10.8.0.2 22
-t "pf: relayd reaches nothing on the internet" blocked _relayd cdn.openbsd.org 443
+# By address: relayd may not look up names, and a blocked lookup must not pass for a blocked connection.
+internet=$(host -t A cdn.openbsd.org | awk '/has address/ { print $4; exit }')
+t "pf: relayd reaches nothing on the internet" blocked _relayd "${internet}" 443
 t "pf: blocked packets are in the log" logged "${logged_before}"
 # These checks made the count that health-check reports. Clear it, unless it held a real one before.
 [ "${start}" -ne 0 ] || pfctl -z
