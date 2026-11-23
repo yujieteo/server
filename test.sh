@@ -37,6 +37,10 @@ has_header() {
 has_body() {
 	get teoyujie.org "$1" | grep -F "$2"
 }
+# relayd picks the certificate by the name the client asks for.
+certificate_names() {
+	openssl s_client -connect "${web}:443" -servername "$1" < /dev/null 2> /dev/null | openssl x509 -noout -subject | grep -q "CN *= *$2\$"
+}
 web_checks() {
 	for u in / /.well-known/security.txt /contact.gpg /.well-known/openpgpkey/hu/dj3498u4hyyarh35rkjfnghbjxug6b19; do
 		t "web: ${u}" is_eq '200 ' status 443 teoyujie.org "${u}"
@@ -62,6 +66,9 @@ web_checks() {
 	t "web: ACME on HTTP" is_eq '404 ' status 80 teoyujie.org /.well-known/acme-challenge/x
 	t "web: MTA-STS policy" is_eq '200 ' status 443 mta-sts.teoyujie.org /.well-known/mta-sts.txt
 	t "web: no file list" not is_eq '200 ' status 443 teoyujie.org /f/
+	t "web: the site keeps its own certificate" certificate_names teoyujie.org teoyujie.org
+	t "web: www keeps the site's certificate" certificate_names www.teoyujie.org teoyujie.org
+	t "lattice: relayd serves the Lattice certificate" certificate_names lattice.teoyujie.org lattice.teoyujie.org
 }
 finish() {
 	if [ "${fails}" -eq 0 ]; then echo "all tests passed"; exit 0; fi
@@ -166,6 +173,23 @@ mkdir "/var/www/files/f/${d}" && echo test > "/var/www/files/f/${d}/a.txt"
 t "web: file link" is_eq '200 ' status 443 teoyujie.org "/f/${d}/a.txt"
 t "web: search engines do not index file links" has_header "/f/${d}/a.txt" "X-Robots-Tag: noindex"
 rm -r "/var/www/files/f/${d}"
+
+# Lattice runs on the desktop, behind relayd. These checks need the desktop on, so they say SKIP when it does not answer.
+# lattice_get HEADERS: the status and Location of GET / with these extra headers (each ends in \r\n).
+lattice_get() {
+	printf 'GET / HTTP/1.0\r\nHost: lattice.teoyujie.org\r\n%b\r\n' "$1" |
+		openssl s_client -quiet -connect "${web}:443" -servername lattice.teoyujie.org 2> /dev/null | tr -d '\r' |
+		awk 'NR == 1 { s = $2 } /^Location:/ { l = $2 } END { print s, l }'
+}
+if nc -z -w 3 10.8.0.4 18490 2> /dev/null; then
+	t "lattice: a stranger gets the gateway's sign-in page" is_eq '303 /__gateway/login?next=/' lattice_get 'Accept: text/html\r\n'
+	# Without "http websockets", relayd itself refuses the upgrade with 403. The gateway asks a stranger to sign in.
+	t "lattice: relayd lets a WebSocket upgrade through to the gateway" is_eq '401 ' lattice_get \
+		"Connection: Upgrade\\r\\nUpgrade: websocket\\r\\nSec-WebSocket-Version: 13\\r\\nSec-WebSocket-Key: $(openssl rand -base64 16)\\r\\n"
+	t "pf: relayd reaches the Lattice gateway" as _relayd 'nc -z -w 8 10.8.0.4 18490'
+else
+	echo "SKIP lattice: the gateway on the desktop does not answer"
+fi
 
 # Each user writes its own folder and no other. A feed job, once confined, reaches nothing else at all.
 # The confined checks run as nobody: health-check reports each such refusal of the feed user as a fault.
@@ -284,6 +308,8 @@ t "pf: the feed user reaches no other port" blocked _feed cdn.openbsd.org 80
 t "pf: the feed user reaches no VPN peer" blocked _feed 10.8.0.2 22
 t "pf: the web server user reaches nothing" blocked www cdn.openbsd.org 443
 t "pf: the mail user reaches only mail servers" blocked _smtpd cdn.openbsd.org 443
+t "pf: relayd reaches no other VPN peer" blocked _relayd 10.8.0.2 22
+t "pf: relayd reaches nothing on the internet" blocked _relayd cdn.openbsd.org 443
 t "pf: blocked packets are in the log" logged "${logged_before}"
 # These checks made the count that health-check reports. Clear it, unless it held a real one before.
 [ "${start}" -ne 0 ] || pfctl -z

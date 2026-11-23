@@ -19,6 +19,8 @@ lost=$(zcat -f /var/log/maillog.0.gz /var/log/maillog 2>/dev/null | grep -c 'mta
 syspatch -c 2>&1 | sed 's/^/patch not installed: /'
 openssl x509 -checkend 1209600 -noout -in /etc/ssl/$d.fullchain.pem >/dev/null ||
 	echo "the certificate ends in less than 14 days"
+openssl x509 -checkend 1209600 -noout -in /etc/ssl/lattice.$d.fullchain.pem >/dev/null ||
+	echo "the certificate of lattice.$d ends in less than 14 days"
 
 rdap_end=$(ftp -MVo - https://rdap.publicinterestregistry.org/rdap/domain/$d | tr -d ' \t\n' |
 	sed -n 's/.*"eventAction":"expiration","eventDate":"\([0-9-]*\)T.*/\1/p')

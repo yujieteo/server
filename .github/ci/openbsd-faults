@@ -63,7 +63,7 @@ rm -f /tmp/.test
 # Group 3: the web server drops its security headers, its redirects and public files, and lists folders.
 keep /etc/httpd.conf /var/www/htdocs/server/.well-known/mta-sts.txt /var/www/htdocs/server/contact.gpg
 perl -0pi -e '
-	s/\n\thsts subdomains//; s/\n[^\n]*"(X-Content-Type-Options|Referrer-Policy|X-Frame-Options)"[^\n]*//g;
+	s/\n[^\n]*"(Strict-Transport-Security|X-Content-Type-Options|Referrer-Policy|X-Frame-Options)"[^\n]*//g;
 	s/\n\theader set "Content-Security-Policy" "default-src[^\n]*//; s/\n[^\n]*\$no_script always//g;
 	s/(location "\/reading.txt" \{\n\t\troot "\/feed")\n[^\n]*/$1/; s/\n\tlocation "\/feeds-manifest.json" \{[^}]*\}//;
 	s/block return 301 [^\n]*/block return 403/g; s/(location "\/f\/\*" \{)/$1\n\t\tdirectory auto index/' /etc/httpd.conf
@@ -153,13 +153,15 @@ rcctl restart smtpd unbound > /dev/null
 
 # Group 6: pf lets the internet reach SSH and the limited users reach what they should not.
 pf_fault 'pass in on egress proto tcp to (egress) port 22' 'pass out on egress proto tcp user _feed' 'pass out on wg0 proto { tcp udp } user _feed' \
-	'pass out on egress proto tcp to port https user _smtpd'
+	'pass out on egress proto tcp to port https user _smtpd' 'pass out on wg0 proto tcp user _relayd' 'pass out on egress proto tcp user _relayd'
 pfctl -q -t flood -T kill
 expect 'pf opens SSH and the limited users' "pf: the internet reaches only the public services on the public addresses
 pf: the flood table exists
 pf: the feed user reaches no other port
 pf: the feed user reaches no VPN peer
-pf: the mail user reaches only mail servers"
+pf: the mail user reaches only mail servers
+pf: relayd reaches no other VPN peer
+pf: relayd reaches nothing on the internet"
 pfctl -f /etc/pf.conf
 
 # Group 7: pf logs nothing, the feed user reaches no HTTPS and www reaches all; deploy takes any folder; contact@ refused; alerts read the whole line.
@@ -188,6 +190,27 @@ back /etc/mail/virtual /etc/mail/smtpd.conf
 rcctl restart smtpd > /dev/null
 pfctl -f /etc/pf.conf
 
+# Group 8: relayd refuses WebSockets and has only the Lattice certificate.
+keep /etc/relayd.conf
+perl -0pi -e 's/\n\thttp websockets//; s/\n\ttls keypair "teoyujie.org"[^\n]*//g' /etc/relayd.conf
+rcctl restart relayd > /dev/null
+expect 'relayd without WebSockets and the site certificate' "${drift}
+web: the site keeps its own certificate
+web: www keeps the site's certificate
+lattice: relayd lets a WebSocket upgrade through to the gateway"
+back /etc/relayd.conf
+
+# Group 9: relayd has no Lattice certificate and sends Lattice to the site.
+keep /etc/relayd.conf
+perl -0pi -e 's/\n\ttls keypair "lattice[^\n]*//g; s/\n\tpass request quick header "Host"[^\n]*//' /etc/relayd.conf
+rcctl restart relayd > /dev/null
+expect 'relayd sends Lattice to the site' "${drift}
+lattice: relayd serves the Lattice certificate
+lattice: a stranger gets the gateway's sign-in page
+lattice: relayd lets a WebSocket upgrade through to the gateway"
+back /etc/relayd.conf
+rcctl restart relayd > /dev/null
+
 expect 'no fault: every check passes again' ''
 
 # The rebuild check: a server with any key other than the backup's must not have its fingerprints.
@@ -215,20 +238,20 @@ inside_only=$(printf '%s\n' 'address: port 22 is closed' 'TLS: the certificate l
 	'DNS: the TLSA record matches the TLS key' 'health: the daily check ran in the last 26 hours, and no mail is stuck or lost' | sort)
 [ "$(outside)" = "${inside_only}" ] && echo 'proved   outside: only the four guest checks fail' ||
 	{ echo 'UNPROVED outside: other checks fail with no fault'; bad=$((bad + 1)); }
-keep /etc/httpd.conf
-sed -i 's/protocols "tlsv1.3"/protocols "tlsv1.2,tlsv1.3"/' /etc/httpd.conf
-rcctl reload httpd > /dev/null
+keep /etc/relayd.conf
+sed -i '/tls { no tlsv1.2 }/d' /etc/relayd.conf
+rcctl restart relayd > /dev/null
 unbound-control -q local_zone_remove use-application-dns.net
 unbound-control -q local_data 'openbsd.org. 60 IN TXT "fault"'
 want=$(printf '%s\nTLS: version 1.2 is refused\nVPN: the resolver blocks a listed name\nVPN: the resolver answers for other names\n' "${inside_only}" | sort)
-[ "$(outside)" = "${want}" ] && echo 'proved   outside: httpd takes TLS 1.2, the VPN resolver blocks nothing and fails others' ||
-	{ echo 'UNPROVED outside: httpd takes TLS 1.2, the VPN resolver blocks nothing and fails others'; bad=$((bad + 1)); }
-back /etc/httpd.conf
-rcctl reload httpd > /dev/null
+[ "$(outside)" = "${want}" ] && echo 'proved   outside: relayd takes TLS 1.2, the VPN resolver blocks nothing and fails others' ||
+	{ echo 'UNPROVED outside: relayd takes TLS 1.2, the VPN resolver blocks nothing and fails others'; bad=$((bad + 1)); }
+back /etc/relayd.conf
+rcctl restart relayd > /dev/null
 rcctl restart unbound > /dev/null
 
 # install.sh tests each rendered config with its own daemon. A broken source config must stop it.
-for f in ssh/sshd_config httpd.conf mail/smtpd.conf unbound.conf acme-client.conf pf.conf; do
+for f in ssh/sshd_config httpd.conf relayd.conf mail/smtpd.conf unbound.conf acme-client.conf pf.conf; do
 	src=etc/${f#*/}
 	keep "${src}"
 	echo 'fault-line-that-no-daemon-reads' >> "${src}"
