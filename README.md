@@ -2,9 +2,10 @@
 
 Configuration for the teoyujie.org server: OpenBSD 8.0. The config needs the base system and one package, `opensmtpd-filter-dkimsign`.
 
-It does four things:
+It does five things:
 
-- Serves the website and temporary file links with httpd.
+- Serves the website and temporary file links with httpd, behind relayd, which ends TLS on port 443.
+- Sends `lattice.teoyujie.org` through relayd and the VPN to Lattice on the desktop (dotfiles: `machines/desktop-lattice.nix`).
 - Forwards mail for teoyujie.org with smtpd, and signs mail that starts on the server or the VPN with DKIM.
 - Runs a WireGuard VPN, which is the only way to reach SSH.
 - Blocks ads, trackers and malware names for VPN clients with unbound.
@@ -20,7 +21,7 @@ This repo is public and holds no secrets. The server generates its own TLS, ACME
 | `test.sh` | Server, as root | Tests the running services. With `--outside` it runs on any other machine and tests what the internet and a VPN peer see. |
 | `share` | Mac | `./share [--days N] FILE` uploads a file and prints a link that lasts N days (default 30). `--list` shows the live links with an expiry date or `no scheduled expiry`; `--rm LINK` deletes one. |
 | `local.conf.example` | | Template for `local.conf`, filled with test values. |
-| `etc/` | | Configs for httpd, smtpd, acme-client, pf, sshd, unbound, doas, sysctl, cron and the public network interface. |
+| `etc/` | | Configs for httpd, relayd, smtpd, acme-client, pf, sshd, unbound, doas, sysctl, cron and the public network interface. |
 | `sbin/` | Server | Scheduled jobs, the Perl helpers they share (`feed-common.pl`) and the forced command of the `deploy` user. |
 | `www/` | | Public files: `security.txt`, the GPG key and WKD, the MTA-STS policy. `security.txt` carries your GPG signature: before its `Expires` date, or after any edit, strip the signature, edit and run `gpg --clearsign` again. |
 | `reports` | Mac | `python3 -I reports FILE...` prints each failure in the DMARC and TLS reports that other providers send, and each sender that is not this server. Keep the reports out of the repo. |
@@ -67,7 +68,7 @@ Do not pass `test.sh` a deploy key on a live server, because that replaces the s
 7. Once `dig +short teoyujie.org` shows the new address, get the real certificate:
 
    ```sh
-   ssh -t ADMIN_USER@10.8.0.1 'doas acme-client -v teoyujie.org && doas rcctl reload httpd && doas rcctl restart smtpd'
+   ssh -t ADMIN_USER@10.8.0.1 'doas acme-client -v teoyujie.org && doas acme-client -v lattice.teoyujie.org && doas rcctl reload relayd && doas rcctl restart smtpd'
    ```
 
 8. Deploy the site by running `scripts/deploy.sh` in the site repo with the VPN on.
@@ -114,6 +115,7 @@ Attach `keys.tgz` and `local.conf` to an entry in your password vault, then dele
 | `2026._domainkey` | TXT | `"v=DKIM1; k=rsa; p=PUBLIC_KEY"` |
 | `www` | CNAME | `teoyujie.org.` |
 | `mta-sts` | CNAME | `teoyujie.org.` |
+| `lattice` | CNAME | `teoyujie.org.` |
 | `_mta-sts` | TXT | `"v=STSv1; id=20261101"` |
 | `_smtp._tls` | TXT | `"v=TLSRPTv1; rua=mailto:contact@teoyujie.org"` |
 | `_25._tcp` | TLSA | `3 1 1 KEY_HASH` |
@@ -201,10 +203,11 @@ These are the rules the server keeps. The first twelve are rebuilt from #49, whi
 | The package and the OpenBSD patches stay current. | `health-check`: `patch not installed` | A fresh guest, which has none of the patches. |
 | The `deploy` user can only swap in a new `site` folder. | `sshd: deploy …`, `deploy: …` | No `ForceCommand` or `AllowTcpForwarding`, a `deploy-only` that runs the command or takes any folder. |
 | smtpd takes mail only for the listed addresses and relays nothing for others. | `mail: … is accepted`, `mail: … is refused`, `mail: VPN to another domain is refused`, `mail: forwarded to the mailbox` | An alias removed or added, a VPN listener that relays, a guest with no mailbox. |
-| Web and mail speak only TLS 1.3, with a certificate that lasts 14 days or more and a TLSA record that matches its key and is signed from the root. | `mail: STARTTLS …`, outside: `TLS: …`, `DNS: the TLSA record …`, `.github/ci/outside`: testssl.sh and delv, `health-check`: the certificate | `protocols "tlsv1.2"` on the mail listener, the guest's one-day certificate. |
+| Web and mail speak only TLS 1.3, with a certificate that lasts 14 days or more and a TLSA record that matches its key and is signed from the root. | `mail: STARTTLS …`, outside: `TLS: …`, `DNS: the TLSA record …`, `.github/ci/outside`: testssl.sh and delv, `health-check`: the certificate | `protocols "tlsv1.2"` on the mail listener, `no tlsv1.2` taken out of relayd, the guest's one-day certificate. |
 | VPN peers are all on wg0, reach each other through the server, and get a resolver that checks DNSSEC and answers "no such name" for the blocklist and `use-application-dns.net`. | `VPN: …`, `DNS: …` | A peer removed, forwarding off, an empty blocklist, the canary zone removed, `insecure_add`. |
 | Every page carries HSTS, nosniff, no referrer, no framing, and a CSP that loads only from this site and allows no inline code. | `web: HSTS is on` … `web: no page may run an inline script or style`, `web: a cached feed keeps the security headers` | Each header line removed, `unsafe-inline` added. |
 | httpd sends www and HTTP to `https://teoyujie.org`, answers ACME on HTTP, serves the public files, file links and MTA-STS policy, keeps file links out of search engines, lists no folder, and lets feed files be reused for five minutes. | the other `web: …` checks | Each redirect, location, header or file removed; `directory auto index`; mode 700 on the share folder. |
+| relayd serves each name with its own certificate: the site's for the site, www and mta-sts, and a separate one for Lattice. It sends `lattice.teoyujie.org` to the gateway on the desktop with WebSockets on, and the rest to httpd on loopback. `_relayd` reaches only the gateway port of the desktop. | `web: the site keeps its own certificate`, `web: www keeps …`, `lattice: …`, `pf: relayd …`, `health-check`: the Lattice certificate. The `lattice:` checks that need the desktop say SKIP when it is off. | The site's keypair taken out, `http websockets` taken out, the Lattice keypair and its `forward to` taken out, pf rules that pass more for `_relayd`. In the VM, a stand-in (`.github/ci/gateway-stand-in`) on loopback plays the desktop, so `pf: relayd reaches the Lattice gateway` passes there with no pf rule; only the live server tests that rule. |
 | `health-check` runs each day, reports each problem it names, and publishes the time it ran. | `health-check runs`, `health-check publishes the time it ran`, the `health-check` part of `openbsd-faults` | Mode 644 on the script, an old `health.txt`, and one fault for each report. |
 | An SSH login from outside the VPN mails root, and a user name cannot fake one. | `SSH alert …` | `exit 0` in `ssh-alert`, a match on the whole log line. |
 | Each job runs from `/etc/crontab`, and root's own crontab is empty. | `root's own crontab holds none of these jobs` | A job in root's crontab. |

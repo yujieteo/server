@@ -76,6 +76,9 @@ test)
 	ifconfig egress > /dev/null 2>&1 || { echo 'egress has no address:'; route -n show -inet; exit 1; }
 	# cron runs the feed jobs within the hour. The web checks need what they publish, and feed-update needs a ledger from the site.
 	install -d -o deploy /var/www/web/site/api && printf 'id\tmade\turl\n' > /var/www/web/site/api/bets.txt
+	# The desktop's address on a loopback interface, with a stand-in for the Lattice gateway. It runs through the faults too.
+	ifconfig lo1 create 2> /dev/null; ifconfig lo1 inet 10.8.0.4/32
+	pgrep -qf gateway-stand-in || perl .github/ci/gateway-stand-in 10.8.0.4 18490 > /dev/null 2>&1 &
 	for job in feed-update edmw-update sg-update; do su -s /bin/sh _feed -c "/usr/local/sbin/${job}" > /dev/null 2>&1; done
 	got=$(fails)
 	cat /tmp/test.out

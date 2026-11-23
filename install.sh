@@ -32,6 +32,7 @@ while read -r mode source target; do put "${mode}" "etc/${source}" "${target}"; 
 644 sysctl.conf /etc/sysctl.conf
 644 sshd_config /etc/ssh/sshd_config
 644 httpd.conf /etc/httpd.conf
+600 relayd.conf /etc/relayd.conf
 644 acme-client.conf /etc/acme-client.conf
 644 smtpd.conf /etc/mail/smtpd.conf
 644 unbound.conf /var/unbound/etc/unbound.conf
@@ -130,11 +131,13 @@ folder _dkimsign 700 /etc/mail/dkim
 ensure 'site folder' '[ -d /var/www/web/site ]' 'install -d -o deploy -m 755 /var/www/web/site'
 ensure 'TLS key and a one-day certificate, which acme-client replaces' "[ -e /etc/ssl/${d}.fullchain.pem ]" \
 	"(umask 077; openssl ecparam -genkey -name prime256v1 -out /etc/ssl/private/${d}.key) && openssl req -x509 -new -key /etc/ssl/private/${d}.key -days 1 -subj /CN=${d} -out /etc/ssl/${d}.fullchain.pem"
+ensure 'TLS key and a one-day certificate for Lattice, which acme-client replaces' "[ -e /etc/ssl/lattice.${d}.fullchain.pem ]" \
+	"(umask 077; openssl ecparam -genkey -name prime256v1 -out /etc/ssl/private/lattice.${d}.key) && openssl req -x509 -new -key /etc/ssl/private/lattice.${d}.key -days 1 -subj /CN=lattice.${d} -out /etc/ssl/lattice.${d}.fullchain.pem"
 ensure 'SRS key' '[ -e /etc/mail/srs.conf ]' '(umask 077; echo "srs key $(openssl rand -hex 32)" > /etc/mail/srs.conf)'
 ensure 'DKIM key' "[ -e ${dkim_key} ]" "(umask 077; openssl genrsa -out ${dkim_key} 2048 2> /dev/null) && chown _dkimsign ${dkim_key}"
 ensure 'empty DNS blocklist' '[ -e /var/unbound/etc/blocklist.conf ]' 'install -m 644 /dev/null /var/unbound/etc/blocklist.conf'
 ensure 'DNSSEC root key' '[ -e /var/unbound/db/root.key ]' 'unbound-anchor; chown _unbound /var/unbound/db/root.key'
-ensure 'httpd, smtpd and unbound start at boot' '[ "$(rcctl ls on | grep -cxE "httpd|smtpd|unbound")" -eq 3 ]' 'rcctl enable httpd smtpd unbound'
+ensure 'httpd, relayd, smtpd and unbound start at boot' '[ "$(rcctl ls on | grep -cxE "httpd|relayd|smtpd|unbound")" -eq 4 ]' 'rcctl enable httpd relayd smtpd unbound'
 ensure 'process accounting on: it marks a program that breaks its pledge or its unveil' 'rcctl ls on | grep -qx accounting' 'rcctl enable accounting && accton /var/account/acct'
 
 [ -s "${w}/changed" ] || echo 'No drift.'
@@ -145,6 +148,15 @@ valid() {
 }
 valid sshd -t -f "${t}/etc/ssh/sshd_config"
 valid httpd -n -f "${t}/etc/httpd.conf"
+# relayd loads its certificates while it checks. A check runs before ensure makes them, so a missing one gets a stand-in here.
+cp "${t}/etc/relayd.conf" "${w}/relayd.conf"
+for name in ${d} lattice.${d}; do
+	[ ! -e "/etc/ssl/${name}.fullchain.pem" ] || continue
+	(umask 077; openssl ecparam -genkey -name prime256v1 -out "${w}/${name}.key" 2> /dev/null)
+	openssl req -x509 -new -key "${w}/${name}.key" -days 1 -subj "/CN=${name}" -out "${w}/${name}.pem"
+	sed -i -e "s#/etc/ssl/${name}.fullchain.pem#${w}/${name}.pem#" -e "s#/etc/ssl/private/${name}.key#${w}/${name}.key#" "${w}/relayd.conf"
+done
+valid relayd -n -f "${w}/relayd.conf"
 # smtpd reads its tables while it checks, and on a new server they are only in the stage tree yet.
 sed "s#file:/etc/mail/#file:${t}/etc/mail/#" "${t}/etc/mail/smtpd.conf" > "${w}/smtpd.conf"
 valid smtpd -n -f "${w}/smtpd.conf"
@@ -180,11 +192,12 @@ done <<EOF
 /etc/ssh/ rcctl restart sshd
 /etc/syslog.conf|/usr/local/sbin/ssh-alert rcctl restart syslogd
 /etc/httpd.conf rcctl restart httpd
+/etc/relayd.conf rcctl restart relayd
 /etc/mail/ rcctl restart smtpd
 /var/unbound/ rcctl restart unbound
 EOF
 # A run that stopped half way can leave a service down with no file left to change.
-for service in httpd smtpd unbound; do rcctl check "${service}" > /dev/null || rcctl start "${service}"; done
+for service in httpd relayd smtpd unbound; do rcctl check "${service}" > /dev/null || rcctl start "${service}"; done
 rm -f "${pending}"
 [ -s /var/unbound/etc/blocklist.conf ] || /usr/local/sbin/blocklist-update
 echo "Done. WireGuard public key of the server: $(ifconfig wg0 | awk '$1 == "wgpubkey" { print $2 }')"
