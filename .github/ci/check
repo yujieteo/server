@@ -76,6 +76,11 @@ while IFS= read -r line; do
 done < etc/unbound.conf > "${tmp}/unbound.conf"
 unbound-checkconf "${tmp}/unbound.conf" || fail 'unbound-checkconf etc/unbound.conf'
 
+# share computes expiry dates from life=N, and the cron job deletes share folders with -mtime +N. They must agree.
+life=$(sed -n 's/^life=\([0-9][0-9]*\)$/\1/p' share)
+mtime=$(sed -n 's@.*find /var/www/files/f .*-mtime +\([0-9][0-9]*\) .*@\1@p' etc/crontab)
+[[ -n ${life} && ${life} == "${mtime}" ]] || fail "share has life=${life}, but etc/crontab deletes share folders at -mtime +${mtime}"
+
 # The offline tests of the feed jobs and of share --list.
 prove tests/ || fail prove
 sh tests/share-list.sh || fail share-list
