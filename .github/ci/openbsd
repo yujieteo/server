@@ -16,7 +16,7 @@ import atexit, base64, hashlib, os, re, shutil, socket, subprocess, sys, tarfile
 # The release of the server. A new release needs a new RELEASE and new PINNED values.
 RELEASE = '8.0'
 MIRROR = f'https://cdn.openbsd.org/pub/OpenBSD/{RELEASE}/amd64/'
-SETS = RELEASE.replace('.', '')  # The sets of 8.0 are base80.tgz and man80.tgz.
+SETS = RELEASE.replace('.', '')  # The set file names hold the release without its dot.
 # From the release's SHA256 file. The installer checks the sets itself, with the key built into it.
 PINNED = {'pxeboot': 'a8da20fc927c2050b53523a805f5e44a65f2c2ec044dd6559e1af413452ad7fe',
           'bsd.rd': '40cddcb7a5f4320588c4ec7f49ae28702e400fe49c8c78d94f40ddf76e1e45ce'}

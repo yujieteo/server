@@ -69,7 +69,7 @@ Do not pass `test.sh` a deploy key on a live server, because that replaces the s
 ## Rebuild from zero
 
 1. At Vultr, deploy OpenBSD 8.0 (plan vc2-1c-1gb, Singapore) with the Mac's SSH key and the hostname `teoyujie.org`. Set reverse DNS for the IPv4 and IPv6 addresses to `teoyujie.org`.
-2. Run `cp local.conf.example local.conf` and fill in the real values. Create the Mac and iPhone tunnels in the WireGuard app first, and get the desktop's public key from its WireGuard config in dotfiles, so you can add all three keys to `WG_PEERS`. The desktop must keep 10.8.0.4, because relayd and pf send Lattice to that address. After the next step, SSH only works through the VPN.
+2. Run `cp local.conf.example local.conf` and fill in the real values. Create the Mac and iPhone tunnels in the WireGuard app first, and print the desktop's public key on the desktop with `sudo wg pubkey < /var/lib/wireguard/private.key`, so you can add all three keys to `WG_PEERS`. The desktop must keep 10.8.0.4, because relayd and pf send Lattice to that address. After the next step, SSH only works through the VPN.
 3. To keep the old keys, put the backup on the new server first: `ssh root@NEW_IPV4 'tar -xzpf - -C /' < keys.tgz`. Skip this after a break-in, and follow the last column of [What a rebuild loses](#what-a-rebuild-loses).
 4. Run `./apply --bootstrap root@NEW_IPV4`. It asks you to set the admin's doas password, prints the server's WireGuard public key, and turns off root login.
 5. Add that key to the WireGuard clients if it is new, turn on the tunnel, and test `ssh ADMIN_USER@10.8.0.1`. If the VPN fails, log in as the admin in the Vultr web console.
@@ -169,7 +169,7 @@ AllowedIPs = 10.8.0.0/24
 PersistentKeepalive = 25
 ```
 
-The iPhone uses `Address = 10.8.0.3/32`. The desktop is the third peer, at 10.8.0.4. Its tunnel is set in dotfiles (`machines/desktop.nix`), not in the WireGuard app. relayd sends `lattice.teoyujie.org` to that address (`etc/relayd.conf`), and pf lets only relayd reach the Lattice gateway port there (`etc/pf.conf`). So the desktop must keep this address. Only traffic to 10.8.0.0/24 goes through the VPN, but all DNS goes to the server. The server forwards between clients, so one device can reach another, for example SSH from the phone to the Mac. Turn on "On Demand" on the Mac and the iPhone.
+The iPhone uses `Address = 10.8.0.3/32`. The desktop is the third peer, at 10.8.0.4. Its tunnel is set in dotfiles (`machines/desktop.nix`), not in the WireGuard app. That file holds the server's public key and its IPv4 address as the endpoint, so a new server key or address needs a change there too. relayd sends `lattice.teoyujie.org` to that address (`etc/relayd.conf`), and pf lets only relayd reach the Lattice gateway port there (`etc/pf.conf`). So the desktop must keep this address. Only traffic to 10.8.0.0/24 goes through the VPN, but all DNS goes to the server. The server forwards between clients, so one device can reach another, for example SSH from the phone to the Mac. Turn on "On Demand" on the Mac and the iPhone.
 
 To add a peer, add its key to `WG_PEERS` and run `./apply --check`. It stops, keeps its stage folder on the server, and prints the command to run in the Vultr web console. Only the console may change WireGuard.
 
