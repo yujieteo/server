@@ -86,11 +86,6 @@ sub plain {
 	return $text;
 }
 
-sub field {
-	my ($block, $tag) = @_;
-	return $block =~ m{<\Q$tag\E(?:\s[^>]*)?>(.*?)</\Q$tag\E>}s ? $1 : '';
-}
-
 # Midnight in Singapore on that date.
 sub midnight {
 	my ($year, $month, $day) = @_;
