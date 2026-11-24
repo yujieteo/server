@@ -69,7 +69,7 @@ Do not pass `test.sh` a deploy key on a live server, because that replaces the s
 ## Rebuild from zero
 
 1. At Vultr, deploy OpenBSD 8.0 (plan vc2-1c-1gb, Singapore) with the Mac's SSH key and the hostname `teoyujie.org`. Set reverse DNS for the IPv4 and IPv6 addresses to `teoyujie.org`.
-2. Run `cp local.conf.example local.conf` and fill in the real values. Create the Mac and iPhone tunnels in the WireGuard app first, so you can add their public keys to `WG_PEERS`. After the next step, SSH only works through the VPN.
+2. Run `cp local.conf.example local.conf` and fill in the real values. Create the Mac and iPhone tunnels in the WireGuard app first, and get the desktop's public key from its WireGuard config in dotfiles, so you can add all three keys to `WG_PEERS`. The desktop must keep 10.8.0.4, because relayd and pf send Lattice to that address. After the next step, SSH only works through the VPN.
 3. To keep the old keys, put the backup on the new server first: `ssh root@NEW_IPV4 'tar -xzpf - -C /' < keys.tgz`. Skip this after a break-in, and follow the last column of [What a rebuild loses](#what-a-rebuild-loses).
 4. Run `./apply --bootstrap root@NEW_IPV4`. It asks you to set the admin's doas password, prints the server's WireGuard public key, and turns off root login.
 5. Add that key to the WireGuard clients if it is new, turn on the tunnel, and test `ssh ADMIN_USER@10.8.0.1`. If the VPN fails, log in as the admin in the Vultr web console.
@@ -136,7 +136,7 @@ Do not add a wildcard record, because it breaks GnuPG key lookup through WKD. If
 
 The IPv6 address is the one the Vultr panel shows, made from the network card's MAC. `etc/hostname.vio0` makes OpenBSD use that address and no other.
 
-The `2026` in the record name is the DKIM selector. It is set in `etc/smtpd.conf`. To rotate the key, change it there and here, install, and add the new record.
+The `2026` in the record name is the DKIM selector. It is set in `etc/smtpd.conf`, in the `-s` value and in the key file name after `-k`. To rotate the key, change both there, change the record name above and the key file name in the command below, install, and add the new record. `install.sh`, `health-check` and the CI scripts read the selector from `etc/smtpd.conf`.
 
 A new server makes a new DKIM key. To print `PUBLIC_KEY`, run this on the server:
 
@@ -169,7 +169,7 @@ AllowedIPs = 10.8.0.0/24
 PersistentKeepalive = 25
 ```
 
-The iPhone uses `Address = 10.8.0.3/32`. Only traffic to 10.8.0.0/24 goes through the VPN, but all DNS goes to the server. The server forwards between clients, so one device can reach another, for example SSH from the phone to the Mac. Turn on "On Demand" on both devices.
+The iPhone uses `Address = 10.8.0.3/32`. The desktop is the third peer, at 10.8.0.4. Its tunnel is set in dotfiles (`machines/desktop.nix`), not in the WireGuard app. relayd sends `lattice.teoyujie.org` to that address (`etc/relayd.conf`), and pf lets only relayd reach the Lattice gateway port there (`etc/pf.conf`). So the desktop must keep this address. Only traffic to 10.8.0.0/24 goes through the VPN, but all DNS goes to the server. The server forwards between clients, so one device can reach another, for example SSH from the phone to the Mac. Turn on "On Demand" on the Mac and the iPhone.
 
 To add a peer, add its key to `WG_PEERS` and run `./apply --check`. It stops, keeps its stage folder on the server, and prints the command to run in the Vultr web console. Only the console may change WireGuard.
 
@@ -202,12 +202,12 @@ These are the rules the server keeps. The first twelve are rebuilt from #49, whi
 | A rebuild from the README backup keeps the SSH, WireGuard, DKIM and SRS keys. | `.github/ci/openbsd` compares the key fingerprints | A backup that leaves out a key. |
 | SSH is reachable only through the VPN, with a key, and never as root. | `sshd: no root login`, `sshd: keys only`, `admin keys: VPN only`, outside: `port 22 is closed` | `PermitRootLogin yes`, `AuthenticationMethods any`, a key with no `from=`, a pf rule that passes port 22. |
 | The internet reaches only TCP ports 25, 80 and 443 and UDP port 51820, and a host that opens connections too fast is blocked for a day (`doas pfctl -t flood -T delete ADDRESS` lets it out). | `pf: the internet reaches only the public services`, `pf: the flood table exists`, outside: the closed ports, `.github/ci/outside`: nmap | The same pf rule, the table deleted. |
-| `_feed` reaches only DNS and HTTPS, `_smtpd` only DNS and mail servers, and `www`, `deploy` and `_dkimsign` nothing; none reaches a VPN peer, and pf logs each packet it blocks. | `pf: the feed user …`, `pf: the web server user reaches nothing`, `pf: the mail user …`, `pf: blocked packets are in the log`, `health-check`: blocked packets | pf rules that pass more for `_feed`, `www` and `_smtpd`, or drop one; `log` taken off the block rule. |
+| `_feed` reaches only DNS and HTTPS, `_smtpd` only DNS and mail servers, and `www`, `deploy` and `_dkimsign` nothing; none reaches a VPN peer, and pf logs each packet it blocks. | `pf: the feed user …`, `pf: the web server user reaches nothing`, `pf: the mail user …`, `pf: the deploy user reaches nothing`, `pf: the DKIM signer reaches nothing`, `pf: blocked packets are in the log`, `health-check`: blocked packets | pf rules that pass more for `_feed`, `www`, `_smtpd`, `deploy` and `_dkimsign`, or drop one; `log` taken off the block rule. |
 | A feed job writes only `/var/www/feed`, gives up running programs before it parses, and process accounting records each kill (`lastcomm perl`: `P` a kill, `U` a refused file). | `feed job: …`, `health-check`: runs that broke their limits | `unveil('/', 'rwcx')` and no `pledge` in `feed-common.pl`, or `accton` off. |
 | Each user writes only its own folder. | `feed user: …`, `deploy user: …`, `web server: …` | Mode 777 on the feed folder, `a+w` in `deploy-only`. |
 | Mail leaves only over TLS to a checked certificate, and mail that starts on the server or the VPN is signed with DKIM. | `mail: leaves only over checked TLS`, `mail: each listener … signs with DKIM` | `relay srs` without `tls`, `dkimsign` taken off the VPN listener. |
 | DNS names this server: A, AAAA from the MAC, MX, NS and the DKIM key. | `health-check`: `A is now`, `AAAA is now`, `MX is now`, `NS is now`, the DKIM record | A guest with other addresses and keys, and no answer from Quad9. |
-| A dead server shows from outside within an hour. | `.github/workflows/outside.yml` opens an issue; outside: `health` | `test.sh --outside 192.0.2.1`, an address with no server. |
+| A dead server shows from outside within an hour. | `.github/workflows/outside.yml` opens an issue; outside: `port 80 is open`, `port 443 is open`, `port 25 answers as a mail server`, and `health` when the daily check stops | `test.sh --outside 192.0.2.1`, an address with no server, in `.github/ci/openbsd-faults`. In the guest, `health` already fails with no fault. |
 | No text from a source can break a feed page or run a script there. | `.github/ci/check`: `a hostile source can break a page`, `web: feed pages run no script` | `escaped()` that returns its input, the `$no_script` lines removed. |
 | The package and the OpenBSD patches stay current. | `health-check`: `patch not installed` | A fresh guest, which has none of the patches. |
 | The `deploy` user can only swap in a new `site` folder. | `sshd: deploy …`, `deploy: …` | No `ForceCommand` or `AllowTcpForwarding`, a `deploy-only` that runs the command or takes any folder. |
@@ -217,7 +217,7 @@ These are the rules the server keeps. The first twelve are rebuilt from #49, whi
 | Every page carries HSTS, nosniff, no referrer, no framing, and a CSP that loads only from this site and allows no inline code. | `web: HSTS is on` … `web: no page may run an inline script or style`, `web: a cached feed keeps the security headers` | Each header line removed, `unsafe-inline` added. |
 | httpd sends www and HTTP to `https://teoyujie.org`, answers ACME on HTTP, serves the public files, file links and MTA-STS policy, keeps file links out of search engines, lists no folder, and lets feed files be reused for five minutes. | the other `web: …` checks | Each redirect, location, header or file removed; `directory auto index`; mode 700 on the share folder. |
 | relayd serves each name with its own certificate: the site's for the site, www and mta-sts, and a separate one for Lattice. It sends `lattice.teoyujie.org` to the gateway on the desktop with WebSockets on, and the rest to httpd on loopback. `_relayd` reaches only the gateway port of the desktop. | `web: the site keeps its own certificate`, `web: www keeps …`, `lattice: …`, `pf: relayd …`, `health-check`: the Lattice certificate. The `lattice:` checks that need the desktop say SKIP when it is off. | The site's keypair taken out, `http websockets` taken out, the Lattice keypair and its `forward to` taken out, pf rules that pass more for `_relayd`. In the VM, a stand-in (`.github/ci/gateway-stand-in`) on loopback plays the desktop, so `pf: relayd reaches the Lattice gateway` passes there with no pf rule; only the live server tests that rule. |
-| `health-check` runs each day, reports each problem it names, and publishes the time it ran. | `health-check runs`, `health-check publishes the time it ran`, the `health-check` part of `openbsd-faults` | Mode 644 on the script, an old `health.txt`, and one fault for each report. |
+| `health-check` runs each day, reports each problem it names, and publishes the time it ran. | `health-check runs`, `health-check publishes the time it ran`, the `health-check` part of `openbsd-faults` | Mode 644 on the script, an old `health.txt`, and one fault for most reports. A stand-in for `uname -r` makes the release old. In the guest, the reports about patches, the certificates and the DNS records are true with no fault. These reports have no fault: mail stuck in the queue (it takes 6 hours), a domain that ends in 30 days, Spamhaus refusing the query, a new release on Monday, and an unknown certificate (Cert Spotter limits queries without an account, and the guest makes many). |
 | An SSH login from outside the VPN mails root, and a user name cannot fake one. | `SSH alert …` | `exit 0` in `ssh-alert`, a match on the whole log line. |
 | Each job runs from `/etc/crontab`, and root's own crontab is empty. | `root's own crontab holds none of these jobs` | A job in root's crontab. |
 | The repo holds no private key. | `.github/ci/check`: `a private key is tracked` | A tracked key. |
@@ -250,4 +250,4 @@ There is a new release every six months. `health-check` reminds you each Monday 
 
 1. Run `ssh -t ADMIN_USER@10.8.0.1 doas sysupgrade`. It takes about 10 minutes.
 2. Follow [Change the live server](#change-the-live-server). This rewrites any configs that sysmerge left alone.
-3. Change `8.0` in this file to the new release.
+3. Change `8.0` to the new release in these places: the top of this file, step 1 of [Rebuild from zero](#rebuild-from-zero), and `RELEASE` in `.github/ci/openbsd`. In `.github/ci/openbsd`, also change `PINNED` to the SHA-256 values of `pxeboot` and `bsd.rd` in the new release's `SHA256` file.

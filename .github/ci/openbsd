@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Rebuild the server from zero in an OpenBSD 8.0 amd64 virtual machine, and run its checks there.
+"""Rebuild the server from zero in an OpenBSD amd64 virtual machine (the release is RELEASE below), and run its checks there.
 
   nix shell nixpkgs#qemu nixpkgs#python3 -c python3 -I .github/ci/openbsd
 
@@ -13,7 +13,10 @@ answer file is typed into the installer's shell, and the files go in on a second
 import atexit, base64, hashlib, os, re, shutil, socket, subprocess, sys, tarfile, tempfile, time, urllib.request
 
 
-MIRROR = 'https://cdn.openbsd.org/pub/OpenBSD/8.0/amd64/'
+# The release of the server. A new release needs a new RELEASE and new PINNED values.
+RELEASE = '8.0'
+MIRROR = f'https://cdn.openbsd.org/pub/OpenBSD/{RELEASE}/amd64/'
+SETS = RELEASE.replace('.', '')  # The sets of 8.0 are base80.tgz and man80.tgz.
 # From the release's SHA256 file. The installer checks the sets itself, with the key built into it.
 PINNED = {'pxeboot': 'a8da20fc927c2050b53523a805f5e44a65f2c2ec044dd6559e1af413452ad7fe',
           'bsd.rd': '40cddcb7a5f4320588c4ec7f49ae28702e400fe49c8c78d94f40ddf76e1e45ce'}
@@ -136,13 +139,13 @@ Use (A)uto layout, (E)dit auto layout, or create (C)ustom layout = a
 Location of sets = http
 HTTP proxy URL = none
 HTTP Server = cdn.openbsd.org
-Server directory = pub/OpenBSD/8.0/amd64
-Set name(s) = -all bsd bsd.mp base80.tgz man80.tgz
+Server directory = pub/OpenBSD/{RELEASE}/amd64
+Set name(s) = -all bsd bsd.mp base{SETS}.tgz man{SETS}.tgz
 Do you expect to run the X Window System = no
 Continue without verification = no
 '''
     subprocess.run(['qemu-img', 'create', '-q', '-f', 'qcow2', f'{w}/base.qcow2', '12G'], check=True)
-    log(f'installing OpenBSD 8.0 ({"KVM" if kvm else "no KVM: emulated processor"})')
+    log(f'installing OpenBSD {RELEASE} ({"KVM" if kvm else "no KVM: emulated processor"})')
     g = Guest(f'{w}/base.qcow2', boot_net=True)
     g.expect(r'\(I\)nstall, \(U\)pgrade, \(A\)utoinstall or \(S\)hell\? ', 600)
     # autoinstall(8) reads /auto_install.conf of the RAM disk before it asks the network.

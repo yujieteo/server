@@ -85,13 +85,16 @@ elif released "$next_release" && [ "$(date +%u)" = 1 ]; then
 fi
 
 ct_last_id_file=/var/db/ct-last-id
-key=$(openssl pkey -in /etc/ssl/private/$d.key -pubout -outform DER | sha256)
+# Each name has its own key: every domain key in acme-client.conf. A certificate with any other key was not made here.
+keys=$(sed -n 's/^[[:space:]]*domain key "\([^"]*\)".*/\1/p' /etc/acme-client.conf |
+	while read -r k; do openssl pkey -in "$k" -pubout -outform DER | sha256; done | tr '\n' ' ')
 last=$(cat $ct_last_id_file 2>/dev/null)
 ftp -MVo - "https://api.certspotter.com/v1/issuances?domain=$d&include_subdomains=true${last:+&after=$last}" |
-	tr -d ' \t"[]{}\n' | tr ',' '\n' | awk -F: -v key="$key" -v s="$ct_last_id_file" -v new="${last:+yes}" '
+	tr -d ' \t"[]{}\n' | tr ',' '\n' | awk -F: -v keys="$keys" -v s="$ct_last_id_file" -v new="${last:+yes}" '
+	BEGIN { n = split(keys, k, " "); for (i = 1; i <= n; i++) own[k[i]] = 1 }
 	$1 == "id" { id = $2 }
 	$1 == "cert_sha256" { cert = $2 }
-	$1 == "pubkey_sha256" && $2 != key && new { print "certificate not made by this server: https://crt.sh/?q=" cert }
+	$1 == "pubkey_sha256" && !($2 in own) && new { print "certificate not made by this server: https://crt.sh/?q=" cert }
 	END { if (id) print id > s }'
 
 # Every line of this check travels by mail, so a server whose mail cannot leave looks like one with

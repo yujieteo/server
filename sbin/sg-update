@@ -324,7 +324,7 @@ fetched();
 my ($working, %seen, %copies) = (0);
 my $reach_fetched;
 for my $source (@sources) {
-	my ($name, $url, $format, $text) = @$source;
+	my ($name, undef, $format, $text) = @$source;
 	(my $key = lc $name) =~ s/\W+/-/g;
 	my $copy = "$cache/$key";
 	$copies{$key} = 1;

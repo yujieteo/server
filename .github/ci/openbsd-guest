@@ -5,6 +5,8 @@ cd /root/src || exit 1
 web=$(ifconfig egress | awk '$1 == "inet" { print $2; exit }')
 # The checks that cannot pass in a guest, with the reason. A guest where one of them passes fails too.
 cannot_run='mail: forwarded to the mailbox'  # FORWARD_TO is a test address, so no mailbox takes the mail.
+# The DKIM key that smtpd.conf names, read as install.sh reads it, so a new selector needs no change here.
+dkim_key=$(sed -n 's/.* -k \([^" ]*\).*/\1/p' etc/smtpd.conf)
 
 prepare() {
 	# On the server, Vultr gives the address this name. smtpd refuses a host with no reverse name.
@@ -22,7 +24,7 @@ no_drift() {
 prints() {
 	for f in /etc/ssh/ssh_host_*_key.pub; do ssh-keygen -lf "${f}"; done
 	ifconfig wg0 | awk '$1 == "wgpubkey"'
-	openssl pkey -in /etc/mail/dkim/teoyujie.org.2026.rsa.key -pubout | sha256
+	openssl pkey -in "${dkim_key}" -pubout | sha256
 	sha256 -q /etc/mail/srs.conf
 }
 # The FAIL lines of one run of test.sh, sorted.

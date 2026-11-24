@@ -50,7 +50,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Rebuild in an OpenBSD 8.0 VM, restore the keys, test, and inject the faults
+      - name: Rebuild in an OpenBSD VM, restore the keys, test, and inject the faults
         env:
           XDG_CACHE_HOME: ${{ runner.temp }}/cache
           TMPDIR: ${{ runner.temp }}

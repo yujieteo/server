@@ -25,6 +25,7 @@ my $pause = 2;
 my $publish_every = $day - 600;
 my $history_needed = 20 * $hour;
 my $comment_age = 36 * $hour;
+# Long-running chit-chat threads would otherwise fill every day's list, so they are left out after this age.
 my $max_thread_age = 30 * $day;
 my $picks_kept = 7 * $day;
 
@@ -37,8 +38,7 @@ my $min_reactions = 5;
 my $min_characters = 40;
 my $excerpt_length = 600;
 
-# Long-running chit-chat threads would otherwise fill every day's list, so
-# $max_thread_age leaves them out. Best effort. Add to this list when something unsuitable gets through.
+# A thread title, comment or author name with one of these words is left out. Best effort. Add to this list when something unsuitable gets through.
 my $blocked = join '|', qw(
 	fuck\w* shit\w* cunts? cocks? puss(?:y|ies) dicks? bitch\w* whor\w* slut\w*
 	nudes? naked porn\w* sex sexy sexual\w* onlyfans boobs? tits? titties milfs?

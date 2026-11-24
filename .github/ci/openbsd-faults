@@ -1,5 +1,5 @@
 #!/bin/sh
-# shellcheck disable=SC2034,SC2154 # bad and drift belong to openbsd-guest, which sources this file.
+# shellcheck disable=SC2034,SC2154 # bad, drift and dkim_key belong to openbsd-guest, which sources this file.
 # Sourced by openbsd-guest. Each group injects faults that do not touch each other, runs test.sh once,
 # and requires exactly the expected checks to fail. Then it undoes the faults. A clean run ends the list.
 bad=0
@@ -153,7 +153,8 @@ rcctl restart smtpd unbound > /dev/null
 
 # Group 6: pf lets the internet reach SSH and the limited users reach what they should not.
 pf_fault 'pass in on egress proto tcp to (egress) port 22' 'pass out on egress proto tcp user _feed' 'pass out on wg0 proto { tcp udp } user _feed' \
-	'pass out on egress proto tcp to port https user _smtpd' 'pass out on wg0 proto tcp user _relayd' 'pass out on egress proto tcp user _relayd'
+	'pass out on egress proto tcp to port https user _smtpd' 'pass out on wg0 proto tcp user _relayd' 'pass out on egress proto tcp user _relayd' \
+	'pass out on egress proto tcp user { deploy _dkimsign }'
 pfctl -q -t flood -T kill
 expect 'pf opens SSH and the limited users' "pf: the internet reaches only the public services on the public addresses
 pf: the flood table exists
@@ -161,7 +162,9 @@ pf: the feed user reaches no other port
 pf: the feed user reaches no VPN peer
 pf: the mail user reaches only mail servers
 pf: relayd reaches no other VPN peer
-pf: relayd reaches nothing on the internet"
+pf: relayd reaches nothing on the internet
+pf: the deploy user reaches nothing
+pf: the DKIM signer reaches nothing"
 pfctl -f /etc/pf.conf
 
 # Group 7: pf logs nothing, the feed user reaches no HTTPS and www reaches all; deploy takes any folder; contact@ refused; alerts read the whole line.
@@ -218,14 +221,14 @@ differs() {
 	if prints | diff -q /root/prints.a - > /dev/null; then echo "UNPROVED rebuild: $1"; bad=$((bad + 1)); else echo "proved   rebuild: $1"; fi
 }
 prints | diff -q /root/prints.a - > /dev/null || { echo 'UNPROVED rebuild: the fingerprints differ with no fault'; bad=$((bad + 1)); }
-keep /etc/ssh/ssh_host_ed25519_key.pub /etc/mail/dkim/teoyujie.org.2026.rsa.key /etc/mail/srs.conf
+keep /etc/ssh/ssh_host_ed25519_key.pub "${dkim_key}" /etc/mail/srs.conf
 rm -f /tmp/k /tmp/k.pub && ssh-keygen -q -t ed25519 -N '' -f /tmp/k && cp /tmp/k.pub /etc/ssh/ssh_host_ed25519_key.pub
 differs 'a new SSH host key'
-openssl genrsa -out /etc/mail/dkim/teoyujie.org.2026.rsa.key 2048 2> /dev/null
+openssl genrsa -out "${dkim_key}" 2048 2> /dev/null
 differs 'a new DKIM key'
 echo fault >> /etc/mail/srs.conf
 differs 'a new SRS secret'
-back /etc/ssh/ssh_host_ed25519_key.pub /etc/mail/dkim/teoyujie.org.2026.rsa.key /etc/mail/srs.conf
+back /etc/ssh/ssh_host_ed25519_key.pub "${dkim_key}" /etc/mail/srs.conf
 ifconfig wg0 wgkey "$(openssl rand -base64 32)"
 differs 'a new WireGuard key'
 sh /etc/netstart wg0
@@ -249,6 +252,10 @@ want=$(printf '%s\nTLS: version 1.2 is refused\nVPN: the resolver blocks a liste
 back /etc/relayd.conf
 rcctl restart relayd > /dev/null
 rcctl restart unbound > /dev/null
+# An address with no server: the open ports fail, and the run stops before the checks that need TLS.
+dead=$(printf '%s\n' 'address: port 25 answers as a mail server' 'address: port 443 is open' 'address: port 80 is open' | sort)
+[ "$(sh test.sh --outside 192.0.2.1 2>&1 | sed -n 's/^FAIL //p' | sort)" = "${dead}" ] && echo 'proved   outside: an address with no server fails' ||
+	{ echo 'UNPROVED outside: an address with no server fails'; bad=$((bad + 1)); }
 
 # install.sh tests each rendered config with its own daemon. A broken source config must stop it.
 for f in ssh/sshd_config httpd.conf relayd.conf mail/smtpd.conf unbound.conf acme-client.conf pf.conf; do
@@ -298,6 +305,10 @@ keep /var/www/htdocs/server/.well-known/security.txt
 sed -i "s/^Expires: .*/Expires: $(date -r $(($(date +%s) + 86400)) +%Y-%m-%d)T00:00:00.000Z/" /var/www/htdocs/server/.well-known/security.txt
 reports 'security.txt about to expire' 'security.txt ends on'
 back /var/www/htdocs/server/.well-known/security.txt
+# A listed document with an empty note column (the tenth), added before the page gets its old date.
+policy=/var/www/feed/singapore-policy-actionables.txt
+keep "${policy}"
+printf 'ci\t0\t2026-01-01\tci\tci\tci\tci\tci\thttps://example.org/\t\n' >> "${policy}"
 for f in feeds-manifest.json singapore-policy-actionables.txt; do touch -t "${old}" "/var/www/feed/${f}"; done
 # One saved source copy, not the fetch stamp, which health-check checks on its own.
 sg_source=$(find /var/www/feed/sg-cache -type f ! -name fetched | head -n 1)
@@ -307,6 +318,7 @@ touch -t "${old}" /usr/local/sbin/edmw-update "${sg_source}" /var/www/feed/sg-ca
 reports 'a feed run that stopped' 'feeds-manifest.json has not been rebuilt'
 reports 'an old Singapore page' 'singapore-policy-actionables.txt has not been rebuilt'
 reports 'no Singapore fetch for 8 days' 'Singapore sources have not been fetched'
+reports 'a Singapore document with no note a day after the fetch' 'have had no note for a day'
 reports 'no EDMW page two days after install' 'edmw.xml is still missing'
 reports 'a Singapore source that does not load' 'Singapore source has not loaded'
 reports 'a feed source that does not load' 'feed source has not loaded'
@@ -314,6 +326,7 @@ reports 'no Hacker News feed loads' 'no Hacker News forecaster feed'
 mv /tmp/edmw.xml.ci /var/www/feed/edmw.xml 2> /dev/null || echo > /var/www/feed/edmw.xml
 touch -t "${old}" /var/www/feed/edmw.xml
 reports 'an old EDMW page' 'edmw.xml has not been rebuilt'
+back "${policy}"
 touch /usr/local/sbin/edmw-update /var/www/feed/feeds-manifest.json /var/www/feed/singapore-policy-actionables.txt /var/www/feed/sg-cache/* /var/www/feed/cache/*
 pf_fault 'block return out quick to 9.9.9.9'
 reports 'DNS that names no server' '^NS is now'
@@ -322,6 +335,20 @@ pfctl -f /etc/pf.conf
 pf_fault 'block return out quick proto tcp to port 443'
 reports 'no answer about the domain' 'no answer from RDAP'
 pfctl -f /etc/pf.conf
+# health-check asks the local resolver, so a local answer lists the guest's address.
+listed=$(echo "${web}" | awk -F. '{ print $4 "." $3 "." $2 "." $1 }').zen.spamhaus.org
+unbound-control -q local_data "${listed}. 60 IN A 127.0.0.2"
+reports 'an address on Spamhaus ZEN' 'is on Spamhaus ZEN'
+unbound-control -q local_data_remove "${listed}"
+# No fault can make the guest's release old, so a stand-in answers uname -r with the release two before it.
+# The two releases after that are out, so health-check must say that the old one gets no patches.
+mkdir -p /tmp/ci-bin
+printf '#!/bin/sh\n[ "$*" = -r ] && echo %s || exec /usr/bin/uname "$@"\n' "$(uname -r | awk '{ printf "%.1f", $1 - 0.2 }')" > /tmp/ci-bin/uname
+chmod 755 /tmp/ci-bin/uname
+PATH=/tmp/ci-bin:${PATH}
+reports 'a release that gets no patches' 'no longer gets patches: run sysupgrade'
+PATH=${PATH#/tmp/ci-bin:}
+rm -r /tmp/ci-bin
 fill=$(df -k /home | awk 'NR == 2 { print int($2 * 0.9 - $3) }')
 dd if=/dev/zero of=/home/fill bs=1k count="${fill}" 2> /dev/null
 reports 'a full disk' '^disk /home is'
