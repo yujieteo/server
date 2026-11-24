@@ -82,5 +82,9 @@ while IFS= read -r line; do
 done < etc/unbound.conf > "${tmp}/unbound.conf"
 unbound-checkconf "${tmp}/unbound.conf" || fail 'unbound-checkconf etc/unbound.conf'
 
+# The offline tests of the feed jobs and of share --list.
+prove tests/ || fail prove
+sh tests/share-list.sh || fail share-list
+
 [[ ${failed} -eq 0 ]] && echo 'All offline checks passed.'
 exit "${failed}"
