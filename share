@@ -10,6 +10,9 @@ EOF
 	exit 1
 }
 server=$ADMIN_USER@10.8.0.1
+# The days cron keeps a share folder after its modification time. etc/crontab says the same with -mtime +30,
+# and .github/ci/check fails when the two differ.
+life=30
 case ${1-} in
 --list)
 	[ $# -eq 1 ] || usage
@@ -23,7 +26,7 @@ case ${1-} in
 				ends="no scheduled expiry"
 			else
 				m=$(stat -f %m "$folder")
-				ends=$(date -r $((m + 2592000)) +%Y-%m-%d)
+				ends=$(date -r $((m + '"$((life * 86400))"')) +%Y-%m-%d)
 			fi
 			printf "%s  https://teoyujie.org/f/%s\n" "$ends" "$p"
 		done' | sort
@@ -47,8 +50,8 @@ fi
 [ $# -eq 1 ] || usage
 case $days in '' | 0* | *[!0-9]*) usage ;; *) ;; esac
 [ "$days" -le 365 ] || usage
-# Cron deletes a folder 30 days after its modification time, so a date in the past or future sets the lifetime.
-offset=$((days - 30))
+# Cron deletes a folder $life days after its modification time, so a date in the past or future sets the lifetime.
+offset=$((days - life))
 [ "$offset" -lt 0 ] || offset=+$offset
 stamp=$(date -u -v"${offset}"d +%Y-%m-%dT%H:%M:%SZ)
 n=$(basename "$1" | tr -d '\n' | tr -c 'A-Za-z0-9._-' _)

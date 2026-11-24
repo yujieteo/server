@@ -41,19 +41,13 @@ shellcheck -s sh -S warning "${shell[@]}" || fail shellcheck
 
 # The scripts load feed-common.pl with require, at run time, so perl -c of a script does not compile it.
 # feed-common.pl is therefore checked on its own. It uses OpenBSD::Pledge and OpenBSD::Unveil,
-# which exist only in OpenBSD's perl, so stand-ins that export the same names let it compile here.
-mkdir -p "${tmp}/perl/OpenBSD"
-for m in Pledge Unveil; do
-	n=$(tr '[:upper:]' '[:lower:]' <<< "${m}")
-	printf 'package OpenBSD::%s;\nuse strict;\nuse warnings;\nuse Exporter qw(import);\nour @EXPORT = qw(%s);\nsub %s { 1 }\n1;\n' \
-		"${m}" "${n}" "${n}" > "${tmp}/perl/OpenBSD/${m}.pm"
-done
+# which exist only in OpenBSD's perl, so the stand-ins in tests/lib, which export the same names, let it compile here.
 for f in "${perl[@]}"; do
-	perl -I"${tmp}/perl" -c "${f}" || fail "perl -c ${f}"
+	perl -I tests/lib -c "${f}" || fail "perl -c ${f}"
 done
 
 # A source can send any bytes. Whatever it sends, a page must stay valid UTF-8 that XML allows, with no markup of its own.
-perl -I"${tmp}/perl" -e 'require "./sbin/feed-common.pl";
+perl -I tests/lib -e 'require "./sbin/feed-common.pl";
 	my $out = escaped(unescaped(join("", map { chr } 0 .. 255) . "\xed\xa0\x80\xef\xbf\xbe&#1;&#xFFFE;&#55296;<b>&amp;\""));
 	my $text = $out;
 	exit !(utf8::decode($text) && $out !~ /[\x00-\x08\x0b\x0c\x0e-\x1f<>"]|\xef\xbf\xbe|\xed[\xa0-\xbf]|&(?!amp;|lt;|gt;|quot;)/)' ||
@@ -71,15 +65,25 @@ sshd -t -f etc/sshd_config -h "${tmp}/host_key" || fail 'sshd -t etc/sshd_config
 
 # unbound.conf names files under /var/unbound, which install.sh makes on the server.
 # The copy here points at stand-ins for them, and turns off the chroot and the user change.
+# It also sets the working folder and the pid file, because the default /etc/unbound does not exist on a Mac.
 # The trust anchor is the public DS record of the DNS root key (KSK-2017).
 mkdir -p "${tmp}/unbound/db" "${tmp}/unbound/etc"
 : > "${tmp}/unbound/etc/blocklist.conf"
 echo '. IN DS 20326 8 2 E06D44B80B8F1D39A95C0B0D7C65D08458E880409BBC683457104237C7F8EC8D' > "${tmp}/unbound/db/root.key"
 while IFS= read -r line; do
 	printf '%s\n' "${line//\/var\/unbound\//${tmp}/unbound/}"
-	[[ ${line} != server: ]] || printf '\tchroot: ""\n\tusername: ""\n'
+	[[ ${line} != server: ]] || printf '\tchroot: ""\n\tusername: ""\n\tdirectory: "%s"\n\tpidfile: "%s"\n' "${tmp}/unbound" "${tmp}/unbound/unbound.pid"
 done < etc/unbound.conf > "${tmp}/unbound.conf"
 unbound-checkconf "${tmp}/unbound.conf" || fail 'unbound-checkconf etc/unbound.conf'
+
+# share computes expiry dates from life=N, and the cron job deletes share folders with -mtime +N. They must agree.
+life=$(sed -n 's/^life=\([0-9][0-9]*\)$/\1/p' share)
+mtime=$(sed -n 's@.*find /var/www/files/f .*-mtime +\([0-9][0-9]*\) .*@\1@p' etc/crontab)
+[[ -n ${life} && ${life} == "${mtime}" ]] || fail "share has life=${life}, but etc/crontab deletes share folders at -mtime +${mtime}"
+
+# The offline tests of the feed jobs and of share --list.
+prove tests/ || fail prove
+sh tests/share-list.sh || fail share-list
 
 [[ ${failed} -eq 0 ]] && echo 'All offline checks passed.'
 exit "${failed}"

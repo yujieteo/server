@@ -94,14 +94,6 @@ sub plain {
 	return $text;
 }
 
-sub field {
-	my ($block, @tags) = @_;
-	for my $tag (@tags) {
-		return $1 if $block =~ m{<\Q$tag\E(?:\s[^>]*)?>(.*?)</\Q$tag\E>}s;
-	}
-	return '';
-}
-
 sub link_of {
 	my ($block) = @_;
 	my $text = plain(field($block, 'link'));

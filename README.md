@@ -28,6 +28,15 @@ This repo is public and holds no secrets. The server generates its own TLS, ACME
 | `ROLLBACK.md` | | The checkpoint and recovery plan for live installs. |
 | `LICENSE` | | The MIT License for this repository. |
 
+## Work on this repo
+
+- The offline check does not contact the server. Run it from the repo root:
+  `nix shell nixpkgs#oksh nixpkgs#shellcheck nixpkgs#perl nixpkgs#openssh nixpkgs#unbound nixpkgs#python3 -c bash .github/ci/check`
+- `test.sh` has no local mode. Both of its modes test the live server.
+- The name of each `t` check in `test.sh` must match the [Rules](#rules) table and the `expect` lists in `.github/ci/openbsd-faults`. Change all three together.
+- The scripts run under the OpenBSD Korn shell and the BSD tools, not bash or GNU tools.
+- A change to the live server needs the owner's consent and a checkpoint from [ROLLBACK.md](ROLLBACK.md) first.
+
 ## Change the live server
 
 Run these from the Mac or desktop with the VPN on.

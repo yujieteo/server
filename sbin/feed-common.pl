@@ -88,6 +88,15 @@ sub headline {
 	return excerpt($text, 300);
 }
 
+# The text inside the first of these tags that the block holds, or an empty string.
+sub field {
+	my ($block, @tags) = @_;
+	for my $tag (@tags) {
+		return $1 if $block =~ m{<\Q$tag\E(?:\s[^>]*)?>(.*?)</\Q$tag\E>}s;
+	}
+	return '';
+}
+
 sub publish {
 	my ($path, $content) = @_;
 	my $temporary = "$path.new";
