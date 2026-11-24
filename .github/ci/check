@@ -71,13 +71,14 @@ sshd -t -f etc/sshd_config -h "${tmp}/host_key" || fail 'sshd -t etc/sshd_config
 
 # unbound.conf names files under /var/unbound, which install.sh makes on the server.
 # The copy here points at stand-ins for them, and turns off the chroot and the user change.
+# It also sets the working folder and the pid file, because the default /etc/unbound does not exist on a Mac.
 # The trust anchor is the public DS record of the DNS root key (KSK-2017).
 mkdir -p "${tmp}/unbound/db" "${tmp}/unbound/etc"
 : > "${tmp}/unbound/etc/blocklist.conf"
 echo '. IN DS 20326 8 2 E06D44B80B8F1D39A95C0B0D7C65D08458E880409BBC683457104237C7F8EC8D' > "${tmp}/unbound/db/root.key"
 while IFS= read -r line; do
 	printf '%s\n' "${line//\/var\/unbound\//${tmp}/unbound/}"
-	[[ ${line} != server: ]] || printf '\tchroot: ""\n\tusername: ""\n'
+	[[ ${line} != server: ]] || printf '\tchroot: ""\n\tusername: ""\n\tdirectory: "%s"\n\tpidfile: "%s"\n' "${tmp}/unbound" "${tmp}/unbound/unbound.pid"
 done < etc/unbound.conf > "${tmp}/unbound.conf"
 unbound-checkconf "${tmp}/unbound.conf" || fail 'unbound-checkconf etc/unbound.conf'
 
