@@ -14,7 +14,7 @@ touch "$tmp/files/f/timed/report" "$tmp/files/f/permanent/report" \
 cat > "$tmp/bin/ssh" <<'EOF'
 #!/bin/sh
 set -eu
-[ "$#" -eq 2 ] && [ "$1" = test@10.8.0.1 ]
+[ "$#" -eq 2 ] && [ "$1" = test@10.8.0.1 ] || exit 1
 case $2 in
     *'cd /var/www/files/f'*) ;;
     *) exit 1 ;;
@@ -26,7 +26,7 @@ EOF
 cat > "$tmp/bin/stat" <<'EOF'
 #!/bin/sh
 set -eu
-[ "$#" -eq 3 ] && [ "$1" = -f ] && [ "$2" = %m ]
+[ "$#" -eq 3 ] && [ "$1" = -f ] && [ "$2" = %m ] || exit 1
 case $3 in
     marker-dir|permanent|timed) printf '%s\n' 1704067200 ;;
     *) exit 1 ;;
@@ -35,7 +35,7 @@ EOF
 cat > "$tmp/bin/date" <<'EOF'
 #!/bin/sh
 set -eu
-[ "$#" -eq 3 ] && [ "$1" = -r ] && [ "$2" = 1706659200 ] && [ "$3" = +%Y-%m-%d ]
+[ "$#" -eq 3 ] && [ "$1" = -r ] && [ "$2" = 1706659200 ] && [ "$3" = +%Y-%m-%d ] || exit 1
 printf '%s\n' 2024-01-31
 EOF
 
