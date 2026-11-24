@@ -7,27 +7,13 @@ use File::Path qw(make_path);
 use File::Temp qw(tempdir);
 use FindBin;
 use Test::More;
+use lib "$FindBin::Bin/lib";
+use TestFiles;
 use Time::Local qw(timegm);
-
-sub write_file {
-	my ($path, $content) = @_;
-	open my $fh, '>', $path or die "$path: $!";
-	print {$fh} $content or die "$path: $!";
-	close $fh or die "$path: $!";
-}
-
-sub read_file {
-	my ($path) = @_;
-	open my $fh, '<', $path or die "$path: $!";
-	local $/;
-	return scalar <$fh>;
-}
 
 my $tmp = tempdir(CLEANUP => 1);
 my $out = "$tmp/out";
-make_path("$tmp/OpenBSD", $out);
-write_file("$tmp/OpenBSD/Pledge.pm", 'package OpenBSD::Pledge; sub import { *main::pledge = sub { 1 } } 1;');
-write_file("$tmp/OpenBSD/Unveil.pm", 'package OpenBSD::Unveil; sub import { *main::unveil = sub { 1 } } 1;');
+make_path($out);
 copy("$FindBin::Bin/../sbin/feed-common.pl", "$tmp/feed-common.pl") or die $!;
 my $job = "$FindBin::Bin/../sbin/sg-update";
 my $driver = "$tmp/driver.pl";
@@ -70,7 +56,7 @@ sub run_job {
 	local $ENV{FIXTURE_REACH} = $reach;
 	local $ENV{FIXTURE_RENDER} = $render;
 	my @flags = $render ? ('--render') : ();
-	is(system($^X, "-I$tmp", $driver, $job, @flags, $out, $notes), 0, 'job succeeds');
+	is(system($^X, "-I$FindBin::Bin/lib", $driver, $job, @flags, $out, $notes), 0, 'job succeeds');
 }
 sub output {
 	my ($ext) = @_;
