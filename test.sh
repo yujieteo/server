@@ -63,6 +63,8 @@ web_checks() {
 	t "web: a cached feed keeps the security headers" has_header /reading.txt "X-Content-Type-Options: nosniff"
 	t "web: www to bare" is_eq '301 https://teoyujie.org/a' status 443 www.teoyujie.org /a
 	t "web: HTTP to HTTPS" is_eq '301 https://teoyujie.org/a' status 80 teoyujie.org /a
+	t "web: HTTP to HTTPS for Lattice" is_eq '301 https://lattice.teoyujie.org/a' status 80 lattice.teoyujie.org /a
+	t "web: ACME on HTTP for Lattice" is_eq '404 ' status 80 lattice.teoyujie.org /.well-known/acme-challenge/x
 	t "web: ACME on HTTP" is_eq '404 ' status 80 teoyujie.org /.well-known/acme-challenge/x
 	t "web: MTA-STS policy" is_eq '200 ' status 443 mta-sts.teoyujie.org /.well-known/mta-sts.txt
 	t "web: no file list" not is_eq '200 ' status 443 teoyujie.org /f/

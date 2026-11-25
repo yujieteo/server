@@ -85,6 +85,7 @@ web: the feed manifest is served
 web: a cached feed keeps the security headers
 web: www to bare
 web: HTTP to HTTPS
+web: HTTP to HTTPS for Lattice
 web: MTA-STS policy
 web: no file list"
 back /etc/httpd.conf /var/www/htdocs/server/.well-known/mta-sts.txt /var/www/htdocs/server/contact.gpg
@@ -94,7 +95,7 @@ rcctl reload httpd > /dev/null
 # Group 4: inline scripts, no ACME answer, shared files unreadable, writable folders, mail TLS 1.2 only, health-check broken.
 keep /etc/httpd.conf /usr/local/sbin/deploy-only /etc/mail/smtpd.conf /usr/local/sbin/health-check
 sed -i "s/default-src 'self'; img-src/default-src 'self' 'unsafe-inline'; img-src/" /etc/httpd.conf
-perl -0pi -e 's/\n\tlocation "\/.well-known\/acme-challenge\/\*" \{[^}]*\}//' /etc/httpd.conf
+perl -0pi -e 's/\n\tlocation "\/.well-known\/acme-challenge\/\*" \{[^}]*\}//g' /etc/httpd.conf
 sed -i '/X-Robots-Tag/d' /etc/httpd.conf
 rcctl reload httpd > /dev/null
 chmod 700 /var/www/files/f
@@ -107,6 +108,7 @@ echo '1 stuck=0 lost=0' > /var/www/status/health.txt
 expect 'inline scripts, writable folders, mail TLS 1.2, health-check broken' "${drift}
 web: no page may run an inline script or style
 web: ACME on HTTP
+web: ACME on HTTP for Lattice
 web: file link
 web: search engines do not index file links
 feed user: cannot write the site
