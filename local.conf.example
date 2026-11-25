@@ -8,4 +8,4 @@ FORWARD_TO=you@example.com
 
 ALIASES='shop forum'
 
-WG_PEERS='mac:10.8.0.2:LhKtpXWoWMpryX+dR8AiL21BsFczQXP0WAqAqjIBNRY= phone:10.8.0.3:MK3g2jdrlmHM+HbLiO/ZWudGiWXb41XDSrQt7YNZZSw='
+WG_PEERS='mac:10.8.0.2:LhKtpXWoWMpryX+dR8AiL21BsFczQXP0WAqAqjIBNRY= phone:10.8.0.3:MK3g2jdrlmHM+HbLiO/ZWudGiWXb41XDSrQt7YNZZSw= desktop:10.8.0.4:j29vOVmdgte3VElswROGvfhJrW4T1WpffFtyQWIV1PU='

@@ -59,7 +59,7 @@ python3 -c 'import ast, sys; [ast.parse(open(f).read(), f) for f in sys.argv[1:]
 # install.sh checks each config with its own daemon before it installs it. Of those daemons,
 # only sshd and unbound have Linux builds that read the same config. They are newer than
 # the ones in OpenBSD base, so a pass here does not replace the check on the server.
-# httpd, smtpd, acme-client and pf are OpenBSD only, and are not checked here.
+# httpd, relayd, smtpd, acme-client and pf are OpenBSD only, and are not checked here.
 ssh-keygen -q -t ed25519 -N '' -f "${tmp}/host_key"
 sshd -t -f etc/sshd_config -h "${tmp}/host_key" || fail 'sshd -t etc/sshd_config'
 

@@ -41,7 +41,7 @@ Do not call this a zero-impact install.
 3. Restore every disk from the same stopped-server checkpoint set. Check each disk id and restore result before you boot. If the host cannot restore one, keep the server off and use its disk recovery path.
 4. Boot from that set. Use the console to check local admin and root access. Check the VPN from a client, then the site, mail, cron and service flags. Resume writes only when those checks pass.
 
-   If SSH works but the site or mail does not, run `rcctl check httpd smtpd` on the console. If `/var/log/daemon` or `/var/log/maillog` reports `Can't assign requested address` at boot, check `ifconfig egress` and `ifconfig wg0`. Once the listener addresses are present, use `rcctl start` for each failed daemon. Repeat the service checks and confirm the site response and a fresh VPN SSH login from the client.
+   If SSH works but the site or mail does not, run `rcctl check httpd relayd smtpd` on the console. If `/var/log/daemon` or `/var/log/maillog` reports `Can't assign requested address` at boot, check `ifconfig egress` and `ifconfig wg0`. Once the listener addresses are present, use `rcctl start` for each failed daemon. Repeat the service checks and confirm the site response and a fresh VPN SSH login from the client.
 
 A disposable OpenBSD VM can prove the disk restore method.
 It cannot prove your host's checkpoint coverage or your console access.

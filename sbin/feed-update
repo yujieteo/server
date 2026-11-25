@@ -282,7 +282,7 @@ sub gather {
 	my $working = 0;
 	my %seen;
 	for my $source (@list) {
-		my ($name, $url, $limit, $key, $xml) = @$source;
+		my ($name, undef, $limit, $key, $xml) = @$source;
 		my @items = parse($xml, $name, $limit);
 		(my $saved_name = $key // $name) =~ s/[^\w.-]+/-/g;
 		my $saved = "$cache/$saved_name";
@@ -539,7 +539,7 @@ for my $bet (@bets) {
 @feed_items = sort { $b->{date} <=> $a->{date} || $a->{guid} cmp $b->{guid} } @feed_items;
 splice @feed_items, $forecasters_max_items if @feed_items > $forecasters_max_items;
 
-my %forecasters = (title => 'Forecasters', id => 'forecasters', xml => 'forecasters.xml', about => $forecasters_about);
+my %forecasters = (id => 'forecasters', xml => 'forecasters.xml', about => $forecasters_about);
 publish("$folder/forecasters.html", render_bets($now, @bets));
 publish("$folder/forecasters.xml", render($now, \%forecasters, @feed_items));
 my $queue = strftime('%Y-%m-%d %H:%M UTC', gmtime $now);
