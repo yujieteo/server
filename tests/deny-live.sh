@@ -40,6 +40,9 @@ refuse 'scp a admin@10.8.0.1:b'
 refuse 'rsync -a ./x admin@10.8.0.1:y'
 refuse 'sh install.sh -n'
 refuse 'sh < install.sh'
+refuse 'sh ci/apply'
+refuse 'echo "<<EOF"
+./apply --install chk1 admin@10.8.0.1'
 
 allow 'bash .github/ci/check'
 allow 'oksh -n apply'

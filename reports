@@ -19,22 +19,24 @@ def server_addresses():
     return {ipaddress.ip_address(line) for line in out.split()}
 
 
-def unpack(name, data):
+def unpack(name, data, depth=0):
     """Yield (name, text) for each report in a file."""
+    if len(data) > LIMIT:
+        raise ValueError('larger than 50 MB')
+    if depth > 8:
+        raise ValueError('archive nested too deeply')
     if data[:2] == b'\x1f\x8b':
-        yield from unpack(name, gzip.GzipFile(fileobj=io.BytesIO(data)).read(LIMIT + 1))
+        yield from unpack(name, gzip.GzipFile(fileobj=io.BytesIO(data)).read(LIMIT + 1), depth + 1)
     elif data[:4] == b'PK\x03\x04':
         with zipfile.ZipFile(io.BytesIO(data)) as z:
             for member in z.infolist():
                 with z.open(member) as f:
-                    yield from unpack(f'{name}:{member.filename}', f.read(LIMIT + 1))
-    elif len(data) > LIMIT:
-        raise ValueError('larger than 50 MB unpacked')
+                    yield from unpack(f'{name}:{member.filename}', f.read(LIMIT + 1), depth + 1)
     else:
         yield name, data
 
 
-def dmarc(name, root, ours):
+def dmarc(root, ours):
     org = root.findtext('report_metadata/org_name', '?')
     for record in root.iter('record'):
         ip = record.findtext('row/source_ip', '').strip()
@@ -55,7 +57,7 @@ def dmarc(name, root, ours):
             yield f'not this server: {where}: dkim={policy["dkim"]} spf={policy["spf"]}'
 
 
-def tlsrpt(name, report, ours):
+def tlsrpt(report, ours):
     org = report.get('organization-name', '?')
     for p in report.get('policies', []):
         policy = p.get('policy', {})
@@ -84,9 +86,9 @@ def main(paths):
             for name, text in unpack(path, data):
                 reports += 1
                 if text.lstrip()[:1] == b'{':
-                    lines = tlsrpt(name, json.loads(text), ours)
+                    lines = tlsrpt(json.loads(text), ours)
                 else:
-                    lines = dmarc(name, ET.fromstring(text), ours)
+                    lines = dmarc(ET.fromstring(text), ours)
                 for line in lines:
                     print(f'{line}    [{name}]')
                     found += 1
