@@ -68,6 +68,7 @@ my %rss = (
 }
 my $result = do $job;
 die $@ if $@;
+die $! unless defined $result;
 DRIVER
 
 sub run_job {

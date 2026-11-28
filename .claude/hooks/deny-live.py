@@ -115,6 +115,24 @@ def shell_reads(line):
     return False
 
 
+HEREDOC_OR_QUOTED = re.compile(
+    r"""<<-?\s*(['"]?)(?P<delim>[A-Za-z_][A-Za-z0-9_]*)\1|'[^']*'|"[^"\\]*(?:\\.[^"\\]*)*" """.strip()
+)
+
+
+def find_heredoc(line):
+    for match in HEREDOC_OR_QUOTED.finditer(line):
+        delim = match.group("delim")
+        if delim:
+            return delim
+        tok = match.group(0)
+        if tok.startswith('"') and "$(" in tok:
+            inner = HEREDOC.search(tok[tok.index("$(") :])
+            if inner:
+                return inner.group(2)
+    return None
+
+
 def without_data_heredocs(text):
     lines = text.split("\n")
     kept = []
@@ -123,11 +141,11 @@ def without_data_heredocs(text):
         line = lines[i]
         kept.append(line)
         i += 1
-        match = HEREDOC.search(line)
-        if match is None:
+        delim = find_heredoc(line)
+        if delim is None:
             continue
         body = []
-        while i < len(lines) and lines[i].strip() != match.group(2):
+        while i < len(lines) and lines[i].strip() != delim:
             body.append(lines[i])
             i += 1
         i += 1
@@ -147,12 +165,7 @@ def rsync_to_host(args):
 
 
 def is_live_script_path(path):
-    p = PurePosixPath(path)
-    if p.name not in LIVE_SCRIPTS:
-        return False
-    # Allow tests/share-list.sh etc., refuse top-level apply, install.sh, test.sh, share.
-    parts = [x for x in p.parts if x != "."]
-    return len(parts) == 1 or (len(parts) >= 2 and parts[-2] not in {"tests", "ci"})
+    return PurePosixPath(path).name in LIVE_SCRIPTS
 
 
 def reason(words):
