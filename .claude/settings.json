@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "deny": [
+      "Read(/local.conf)",
+      "Read(**/local.conf)",
+      "Edit(/local.conf)",
+      "Write(/local.conf)",
+      "Read(**/keys.tgz)",
+      "Bash(./apply)",
+      "Bash(./apply *)",
+      "Bash(sh apply *)",
+      "Bash(bash apply *)",
+      "Bash(./install.sh)",
+      "Bash(./install.sh *)",
+      "Bash(sh install.sh *)",
+      "Bash(./test.sh)",
+      "Bash(./test.sh *)",
+      "Bash(sh test.sh *)",
+      "Bash(./share)",
+      "Bash(./share *)",
+      "Bash(ssh *)",
+      "Bash(scp *)",
+      "Bash(sftp *)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 -I \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/deny-live.py",
+            "onFailure": "block"
+          }
+        ]
+      }
+    ]
+  }
+}

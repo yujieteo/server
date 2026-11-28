@@ -18,7 +18,7 @@ Do not make those changes as part of this run.
 2. Open the host's web console. Test a local admin login and root access there. Keep it open. SSH through the VPN is not a recovery path.
 3. List all disks and mounts in the console with `sysctl hw.disknames`, `mount` and `cat /etc/fstab`. Note each disk, its mount, and what holds mail, site data and home dirs. Include each one in the checkpoint. If any disk has no full restore path, stop.
 4. Pause all writers and jobs. Halt the server from the console with `shutdown -hp now`. Wait for it to stop. Make a full checkpoint of each disk at the host. Wait for each one to finish. Note the disk ids, checkpoint ids and restore steps. A live file copy or a source archive is not enough.
-5. Start the server. Check the console, VPN, mail and site. Do not resume other writes or jobs yet. Run `./apply --check ADMIN_USER@10.8.0.1` on the desktop. A failed check means stop.
+5. Start the server. Check the console, VPN, mail and site. Do not resume other writes or jobs yet. Run `./apply --check ADMIN_USER@10.8.0.1` from the Mac (where `local.conf` lives) with the VPN on. A failed check means stop.
 6. Read the diff from the check before you approve the install. With the same source and settings, run `./apply --install CHECKPOINT_ID ADMIN_USER@10.8.0.1`. This id is your receipt, not a host API check. The script cannot prove that a checkpoint exists or covers all disks.
 7. Run `./apply --test ADMIN_USER@10.8.0.1`, then `sh test.sh --outside`. Check the console, VPN, site and mail. Keep the checkpoint until these checks pass. Then resume jobs and writes.
 
