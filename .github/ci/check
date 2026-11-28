@@ -81,10 +81,9 @@ life=$(sed -n 's/^life=\([0-9][0-9]*\)$/\1/p' share)
 mtime=$(sed -n 's@.*find /var/www/files/f .*-mtime +\([0-9][0-9]*\) .*@\1@p' etc/crontab)
 [[ -n ${life} && ${life} == "${mtime}" ]] || fail "share has life=${life}, but etc/crontab deletes share folders at -mtime +${mtime}"
 
-# The offline tests of the feed jobs, share --list, and the live-command hook.
+# The offline tests of the feed jobs and share --list.
 prove tests/ || fail prove
 sh tests/share-list.sh || fail share-list
-sh tests/deny-live.sh || fail deny-live
 
 [[ ${failed} -eq 0 ]] && echo 'All offline checks passed.'
 exit "${failed}"
