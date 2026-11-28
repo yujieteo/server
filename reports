@@ -70,8 +70,13 @@ def tlsrpt(report, ours):
                    f'from {d.get("sending-mta-ip", "?")} to {d.get("receiving-mx-hostname", "?")} {d.get("receiving-ip", "")}'
                    f' {d.get("failure-reason-code", "")} {d.get("additional-information", "")}'.rstrip())
             ip = d.get('receiving-ip')
-            if ip and ipaddress.ip_address(ip) not in ours:
-                yield f'not this server: {org}: mail for {DOMAIN} went to {ip}'
+            if ip:
+                try:
+                    outside = ipaddress.ip_address(ip) not in ours
+                except ValueError:
+                    outside = True
+                if outside:
+                    yield f'not this server: {org}: mail for {DOMAIN} went to {ip}'
 
 
 def main(paths):
@@ -80,9 +85,9 @@ def main(paths):
     ours = server_addresses()
     found = reports = 0
     for path in paths:
-        with open(path, 'rb') as f:
-            data = f.read(LIMIT + 1)
         try:
+            with open(path, 'rb') as f:
+                data = f.read(LIMIT + 1)
             for name, text in unpack(path, data):
                 reports += 1
                 if text.lstrip()[:1] == b'{':

@@ -185,7 +185,7 @@ sub rank {
 	my $note = $notes->{$item->{id}};
 	if ($note && $note->{points}) {
 		$score += $note->{points};
-		push @why, sprintf 'claude %+d', $note->{points};
+		push @why, sprintf 'note %+d', $note->{points};
 	}
 	$item->{note} = $note ? $note->{text} : '';
 	$item->{score} = $score;
