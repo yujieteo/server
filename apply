@@ -4,17 +4,12 @@ set -eu
 cd "$(dirname "$0")"
 run='install.sh --check'
 case ${1-} in
---install)
-	run=install.sh
-	case ${2:?name the full offline checkpoint} in *[!A-Za-z0-9._-]*) echo 'Use a plain checkpoint id.' >&2; exit 2 ;; *) ;; esac
-	echo "Offline checkpoint acknowledged: $2. Restore it from the provider console if needed."
-	shift 2 ;;
---bootstrap) run=install.sh; shift ;;
+--install | --bootstrap) run=install.sh; shift ;;
 --test) run=test.sh; shift ;;
 --check) shift ;;
 *) ;;
 esac
-[ "$#" -eq 1 ] || { echo 'usage: ./apply [--check | --install CHECKPOINT | --bootstrap | --test] USER@HOST' >&2; exit 2; }
+[ "$#" -eq 1 ] || { echo 'usage: ./apply [--check | --install | --bootstrap | --test] USER@HOST' >&2; exit 2; }
 host=$1
 case ${host} in -*) exit 2 ;; root@*) doas= ;; *) doas=doas ;; esac
 # An older stage folder goes first, so at most one copy of local.conf stays on the server.

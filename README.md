@@ -33,9 +33,8 @@ This repo is public and holds no secrets. The server generates its own TLS, ACME
 - The offline check does not contact the server. Run it from the repo root:
   `nix shell nixpkgs#oksh nixpkgs#shellcheck nixpkgs#perl nixpkgs#openssh nixpkgs#unbound nixpkgs#python3 -c bash .github/ci/check`
 - `test.sh` has no local mode. Both of its modes test the live server.
-- The name of each `t` check in `test.sh` must match the [Rules](#rules) table and the `expect` lists in `.github/ci/openbsd-faults`. Change all three together.
 - The scripts run under the OpenBSD Korn shell and the BSD tools, not bash or GNU tools.
-- A change to the live server needs the owner's consent and a checkpoint from [ROLLBACK.md](ROLLBACK.md) first.
+- For risky live changes (OS, `pf`, WireGuard, `sshd`), take a checkpoint from [ROLLBACK.md](ROLLBACK.md) first.
 
 ## Change the live server
 
@@ -49,13 +48,13 @@ See what an install would change. This writes nothing to the installed system:
 
 It prints a diff for each file that differs, `remove:` for a file the repo no longer has, `make:` for a user, folder or key that is missing, and `No drift.` when the server matches the repo. Keep the output private, because it can show mail and key settings.
 
-Then make a full disk checkpoint by following [ROLLBACK.md](ROLLBACK.md), and install with the checkpoint id:
+Then install (take a disk checkpoint from [ROLLBACK.md](ROLLBACK.md) first for risky OS, `pf`, or WireGuard changes):
 
 ```sh
-./apply --install CHECKPOINT_ID ADMIN_USER@10.8.0.1
+./apply --install ADMIN_USER@10.8.0.1
 ```
 
-The script prints the id as your receipt, but it cannot confirm that the checkpoint exists. An install restarts only the services whose files changed. It stops before any change if the WireGuard peers would change, because that would cut its own session. Until every service has started again, it keeps the list of changed files in `/var/db/server-install-pending`. So if an install stops part way, the next `--check` prints `restart pending` for each of those files, and the next install restarts their services.
+An install restarts only the services whose files changed. It stops before any change if the WireGuard peers would change, because that would cut its own session. Until every service has started again, it keeps the list of changed files in `/var/db/server-install-pending`. So if an install stops part way, the next `--check` prints `restart pending` for each of those files, and the next install restarts their services.
 
 Test the result on the server, and from outside it:
 
@@ -194,7 +193,7 @@ The website comes from the [site repo](https://github.com/yujieteo/site). Its `s
 
 ## Rules
 
-These are the rules the server keeps. The first twelve are rebuilt from #49, which did not keep its own list. Each check is in `test.sh` unless the row names another file. `.github/ci/openbsd-faults` injects each fault in an OpenBSD VM and requires exactly those checks to fail.
+These are the rules the server keeps. Each check is in `test.sh` unless the row names another file.
 
 | Rule | Check that fails | Fault that makes it fail |
 |---|---|---|

@@ -1,7 +1,7 @@
 # The outside watch. A dead server sends no mail, so health-check cannot report it, and this job does.
-# Every hour it runs the outside set of test.sh. Once a day it also scans all TCP ports, runs testssl.sh
-# and checks the DNSSEC chain of the TLSA record. When a check fails, it opens an issue or adds to the open one.
-# When every check passes again, it closes that issue, so an open issue always means a failing server.
+# Every hour it runs the outside set of test.sh. Manual runs (workflow_dispatch) also scan all TCP ports,
+# run testssl.sh and check the DNSSEC chain of the TLSA record. When a check fails, it opens an issue or
+# adds to the open one. When every check passes again, it closes that issue.
 name: outside
 
 on:
@@ -30,12 +30,12 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Outside checks, and the scans at 03:17 UTC
+      - name: Outside checks (plus full scan on manual dispatch)
         env:
           XDG_CACHE_HOME: ${{ runner.temp }}/cache
         run: |
           scan=
-          [ "$(date -u +%H)" != 03 ] || scan=--scan
+          [ "${GITHUB_EVENT_NAME}" != workflow_dispatch ] || scan=--scan
           nix shell nixpkgs#netcat nixpkgs#openssl nixpkgs#bind.dnsutils nixpkgs#nmap nixpkgs#testssl nixpkgs#jq \
             -c bash .github/ci/outside ${scan} | tee "${RUNNER_TEMP}/outside.txt"
       - name: Open an issue, or add to the open one

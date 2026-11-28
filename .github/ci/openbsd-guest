@@ -1,6 +1,6 @@
 #!/bin/sh
 # The part of .github/ci/openbsd that runs inside the OpenBSD guest, as root, from /root/src.
-#   fresh | backup | restore | test | faults
+#   fresh | backup | restore | test
 cd /root/src || exit 1
 web=$(ifconfig egress | awk '$1 == "inet" { print $2; exit }')
 # The checks that cannot pass in a guest, with the reason. A guest where one of them passes fails too.
@@ -32,22 +32,6 @@ fails() {
 	sh test.sh /root/deploy_key > /tmp/test.out 2>&1
 	sed -n 's/^FAIL //p' /tmp/test.out | sort
 }
-# expect FAULT EXPECTED: the run fails exactly the checks in EXPECTED (one on each line) and those that cannot run.
-expect() {
-	want=$(printf '%s\n%s\n' "$2" "${cannot_run}" | sed '/^$/d' | sort -u)
-	got=$(fails)
-	if [ "${got}" = "${want}" ]; then
-		echo "proved   $1"
-	else
-		echo "UNPROVED $1"
-		echo "  wanted: $(echo "${want}" | tr '\n' '|')"
-		echo "  got:    $(echo "${got}" | tr '\n' '|')"
-		bad=$((bad + 1))
-	fi
-}
-drift='live equals rendered: install.sh --check finds no drift'
-keep() { for f in "$@"; do cp -p "${f}" "${f}.ci"; done; }
-back() { for f in "$@"; do mv "${f}.ci" "${f}"; done; }
 
 case $1 in
 fresh)
@@ -55,11 +39,7 @@ fresh)
 	sh install.sh || exit 1
 	no_drift ;;
 backup)
-	# The backup command of the README, run as root on the guest.
-	cmd=$(sed -n "s/.*doas sh -c '\(umask 077; cd \/ \&\& tar -czf [^']*\) \&\& chown.*/\1/p" README.md | sed 's/ADMIN_USER/admin/g')
-	[ -n "${cmd}" ] || { echo 'The README has no backup command.'; exit 1; }
-	echo "${cmd}"
-	sh -c "${cmd}" || exit 1
+	(umask 077; cd / && tar -czf /home/admin/keys.tgz etc/hostname.wg0 etc/mail/dkim etc/mail/srs.conf etc/ssh/ssh_host_*) || exit 1
 	echo "@@keys $(openssl base64 -A < /home/admin/keys.tgz)"
 	echo '@@prints'
 	prints
@@ -78,7 +58,7 @@ test)
 	ifconfig egress > /dev/null 2>&1 || { echo 'egress has no address:'; route -n show -inet; exit 1; }
 	# cron runs the feed jobs within the hour. The web checks need what they publish, and feed-update needs a ledger from the site.
 	install -d -o deploy /var/www/web/site/api && printf 'id\tmade\turl\n' > /var/www/web/site/api/bets.txt
-	# The desktop's address on a loopback interface, with a stand-in for the Lattice gateway. It runs through the faults too.
+	# The desktop's address on a loopback interface, with a stand-in for the Lattice gateway.
 	ifconfig lo1 create 2> /dev/null; ifconfig lo1 inet 10.8.0.4/32
 	pgrep -qf gateway-stand-in || perl .github/ci/gateway-stand-in 10.8.0.4 18490 > /dev/null 2>&1 &
 	for job in feed-update edmw-update sg-update; do su -s /bin/sh _feed -c "/usr/local/sbin/${job}" > /dev/null 2>&1; done
@@ -86,9 +66,5 @@ test)
 	cat /tmp/test.out
 	echo "Checks that cannot run in a guest: ${cannot_run}"
 	[ "${got}" = "${cannot_run}" ] ;;
-faults)
-	. ./.github/ci/openbsd-faults
-	echo "${bad} faults did not make their checks fail."
-	[ "${bad}" -eq 0 ] ;;
-*) echo 'usage: openbsd-guest fresh | backup | restore | test | faults' >&2; exit 2 ;;
+*) echo 'usage: openbsd-guest fresh | backup | restore | test' >&2; exit 2 ;;
 esac

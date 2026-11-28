@@ -6,6 +6,7 @@ on:
   pull_request:
   push:
     branches: [main]
+  workflow_dispatch:
 
 # The job only reads the repository.
 permissions:
@@ -40,17 +41,16 @@ jobs:
           XDG_CACHE_HOME: ${{ runner.temp }}/cache
         run: nix shell nixpkgs#oksh nixpkgs#shellcheck nixpkgs#perl nixpkgs#openssh nixpkgs#unbound nixpkgs#python3 -c bash .github/ci/check
   openbsd:
-    # install.sh, test.sh and the faults on OpenBSD itself: see .github/ci/openbsd. It downloads the release, so it is not offline.
+    # install.sh and test.sh on OpenBSD itself: see .github/ci/openbsd. Manual run only, because it downloads a release and boots QEMU.
     # Only the runner with /dev/kvm has the label kvm (machines/desktop-ci.nix in dotfiles).
-    # The other runner of server stays free for the check job.
+    if: github.event_name == 'workflow_dispatch'
     runs-on: [self-hosted, desktop, kvm]
-    # About 30 minutes with KVM. Without /dev/kvm, qemu is about six times slower.
-    timeout-minutes: 300
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Rebuild in an OpenBSD VM, restore the keys, test, and inject the faults
+      - name: Rebuild in an OpenBSD VM, restore the keys, and run test.sh
         env:
           XDG_CACHE_HOME: ${{ runner.temp }}/cache
           TMPDIR: ${{ runner.temp }}

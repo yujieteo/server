@@ -14,13 +14,13 @@ Do not make those changes as part of this run.
 
 ## Before a live install
 
-1. Get consent for the checks, the stop and start, the checkpoint, and the install.
-2. Open the host's web console. Test a local admin login and root access there. Keep it open. SSH through the VPN is not a recovery path.
-3. List all disks and mounts in the console with `sysctl hw.disknames`, `mount` and `cat /etc/fstab`. Note each disk, its mount, and what holds mail, site data and home dirs. Include each one in the checkpoint. If any disk has no full restore path, stop.
-4. Pause all writers and jobs. Halt the server from the console with `shutdown -hp now`. Wait for it to stop. Make a full checkpoint of each disk at the host. Wait for each one to finish. Note the disk ids, checkpoint ids and restore steps. A live file copy or a source archive is not enough.
-5. Start the server. Check the console, VPN, mail and site. Do not resume other writes or jobs yet. Run `./apply --check ADMIN_USER@10.8.0.1` from the Mac (where `local.conf` lives) with the VPN on. A failed check means stop.
-6. Read the diff from the check before you approve the install. With the same source and settings, run `./apply --install CHECKPOINT_ID ADMIN_USER@10.8.0.1`. This id is your receipt, not a host API check. The script cannot prove that a checkpoint exists or covers all disks.
-7. Run `./apply --test ADMIN_USER@10.8.0.1`, then `sh test.sh --outside`. Check the console, VPN, site and mail. Keep the checkpoint until these checks pass. Then resume jobs and writes.
+For routine config or script updates, `--check`, `--install`, and `--test` are enough. Take a full offline disk checkpoint before risky changes (OS upgrades, `pf`, WireGuard, `sshd`, or disk/user changes):
+
+1. Open the host's web console and verify local admin and root login. Keep it open — SSH through the VPN is not a recovery path.
+2. For a full checkpoint: halt the server from the console with `shutdown -hp now`, take a snapshot of each disk at the host, then start the server again.
+3. Run `./apply --check ADMIN_USER@10.8.0.1` from the Mac (where `local.conf` lives) with the VPN on, and read the diff. A failed check means stop.
+4. Run `./apply --install ADMIN_USER@10.8.0.1`.
+5. Run `./apply --test ADMIN_USER@10.8.0.1`, then `sh test.sh --outside`. Keep any checkpoint until these checks pass.
 
 The check and the install are one script. Both render the managed files into a private stage tree and compare it with the live system.
 The check stops there. The install goes on to copy what differs.

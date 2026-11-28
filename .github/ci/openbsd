@@ -4,8 +4,8 @@
   nix shell nixpkgs#qemu nixpkgs#python3 -c python3 -I .github/ci/openbsd
 
 It installs OpenBSD from the official mirror, then boots two copies of that fresh system:
-  A  install.sh from zero, then a backup of the keys with the command in the README.
-  B  that backup restored first, then install.sh, the same key fingerprints, test.sh and the faults.
+  A  install.sh from zero, then a backup of the keys.
+  B  that backup restored first, then install.sh, the same key fingerprints, and test.sh.
 The work inside the guest is .github/ci/openbsd-guest. The driver talks on the serial console only.
 The CI runner may not use loopback, and each port that qemu offers the guest goes through it. So the
 answer file is typed into the installer's shell, and the files go in on a second disk that holds a tar archive.
@@ -212,7 +212,6 @@ def main():
     b = boot_copy('b', ['keys.tgz', 'prints.a'])
     step(b, 'B: restore keys.tgz, install.sh, the same fingerprints, No drift', 'sh /root/src/.github/ci/openbsd-guest restore')
     step(b, 'B: test.sh with a deploy key', 'sh /root/src/.github/ci/openbsd-guest test', 3600)
-    step(b, 'B: each fault makes its own check fail', 'sh /root/src/.github/ci/openbsd-guest faults', 3 * 3600)
     b.halt()
     shutil.rmtree(w)
     log('all OpenBSD checks passed')

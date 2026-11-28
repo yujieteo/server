@@ -23,19 +23,24 @@ esac
 cd "$SHARE_LIST_FIXTURE"
 sh -ec "$(printf '%s\n' "$2" | sed 's@cd /var/www/files/f@cd .@')"
 EOF
-cat > "$tmp/bin/stat" <<'EOF'
+life=$(sed -n 's/^life=\([0-9][0-9]*\)$/\1/p' "$root/share")
+[ -n "$life" ] || { printf 'Could not read life= from share\n' >&2; exit 1; }
+base_epoch=1704067200
+expected_epoch=$((base_epoch + life * 86400))
+
+cat > "$tmp/bin/stat" <<EOF
 #!/bin/sh
 set -eu
-[ "$#" -eq 3 ] && [ "$1" = -f ] && [ "$2" = %m ] || exit 1
-case $3 in
-    marker-dir|permanent|timed) printf '%s\n' 1704067200 ;;
+[ "\$#" -eq 3 ] && [ "\$1" = -f ] && [ "\$2" = %m ] || exit 1
+case \$3 in
+    marker-dir|permanent|timed) printf '%s\n' $base_epoch ;;
     *) exit 1 ;;
 esac
 EOF
-cat > "$tmp/bin/date" <<'EOF'
+cat > "$tmp/bin/date" <<EOF
 #!/bin/sh
 set -eu
-[ "$#" -eq 3 ] && [ "$1" = -r ] && [ "$2" = 1706659200 ] && [ "$3" = +%Y-%m-%d ] || exit 1
+[ "\$#" -eq 3 ] && [ "\$1" = -r ] && [ "\$2" = $expected_epoch ] && [ "\$3" = +%Y-%m-%d ] || exit 1
 printf '%s\n' 2024-01-31
 EOF
 
